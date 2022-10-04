@@ -1,8 +1,8 @@
-# Readme
+# Cli_Reference
 
 
 ## Context
-This page tracks bootstrap decisions for readme during steady build work.
+This page tracks bootstrap decisions for cli_reference during steady build work.
 
 ## Usage
 - Rewrote the ingest explanation around the maintained behavior.
