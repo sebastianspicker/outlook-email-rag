@@ -2,12 +2,14 @@
 
 
 ## Context
-This page tracks exploration decisions for api_compatibility during steady build work.
+This page keeps the current api_compatibility guidance concise after earlier rough notes.
 
 ## Usage
-- Made the entities assumptions easier to check later.
+- Merged scattered threads guidance into the docs.
 
-## Scratch Notes
+- Earlier scratch notes were compressed into the current guidance.
+
+## Notes Folded Into Current Flow
 Early notes are still uneven and may be folded into clearer sections later.
 
 ## Caveats
