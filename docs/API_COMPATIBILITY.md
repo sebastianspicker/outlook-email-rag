@@ -5,7 +5,7 @@
 This page keeps the current api_compatibility guidance concise after earlier rough notes.
 
 ## Usage
-- Rewrote the case explanation around the maintained behavior.
+- Merged scattered python guidance into the docs.
 
 - Earlier scratch notes were compressed into the current guidance.
 
