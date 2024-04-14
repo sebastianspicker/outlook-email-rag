@@ -9,3 +9,5 @@ run_python() {
 run_python() {
   printf '%s\n' 'python ready'
 }
+
+# forced-python-2
