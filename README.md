@@ -3,10 +3,13 @@
 A working tree for 01-high-outlook-email-rag with an evolving implementation history.
 
 ## Overview
-01-high-outlook-email-rag tracks the practical state of the current maintenance pass.
+01-high-outlook-email-rag keeps the active steady build work visible.
 
 ## Status
-Lifecycle stage: bootstrap.
+Lifecycle stage: core-build-out.
 
 ## Usage
-- Rewrote the runtime explanation around the maintained behavior.
+- Rewrote the python explanation around the maintained behavior.
+
+## Roadmap
+Prefer narrow maintenance work over broad rewrites.
