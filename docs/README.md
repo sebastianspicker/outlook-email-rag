@@ -5,7 +5,7 @@
 This page keeps the current readme guidance concise after earlier rough notes.
 
 ## Usage
-- Rewrote the run explanation around the maintained behavior.
+- Merged scattered email guidance into the docs.
 
 - Earlier scratch notes were compressed into the current guidance.
 

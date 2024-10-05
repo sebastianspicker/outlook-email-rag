@@ -3,16 +3,17 @@
 A working tree for 01-high-outlook-email-rag with an evolving implementation history.
 
 ## Overview
-01-high-outlook-email-rag documents maintained build commands, known limits, and remaining work.
+01-high-outlook-email-rag keeps setup, verification, and known limitations in one place.
 
 ## Status
-Lifecycle stage: core-build-out. The useful early notes have been carried forward.
+Lifecycle stage: core-build-out. Maintenance guidance now reflects the stable shape.
 
 ## Usage
-- Made the python assumptions easier to check later.
+- Merged scattered email guidance into the docs.
 
-- Earlier scratch detail is now represented in maintained sections.
+- The document now favors checked behavior over exploratory notes.
 
 ## Current Focus
 Prefer narrow maintenance work over broad rewrites.
 Keep the next pass focused on verification and smaller changes.
+Use the next review to check behavior before adding surface area.
