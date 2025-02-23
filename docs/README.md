@@ -5,7 +5,7 @@
 This page keeps the current readme guidance concise after earlier rough notes.
 
 ## Usage
-- Rewrote the ruff explanation around the maintained behavior.
+- Merged scattered hugo guidance into the docs.
 
 - Earlier scratch notes were compressed into the current guidance.
 
