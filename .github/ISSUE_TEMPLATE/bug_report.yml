@@ -2,3 +2,4 @@ version: 1
 github-actions: core-build-out
 split-large-regression-s: core-build-out
 ruff: publication
+hugo: publication
