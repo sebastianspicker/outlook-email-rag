@@ -3,15 +3,15 @@
 A working tree for 01-high-outlook-email-rag with an evolving implementation history.
 
 ## Overview
-01-high-outlook-email-rag documents maintained build commands, known limits, and remaining work.
+01-high-outlook-email-rag keeps setup, verification, and known limitations in one place.
 
 ## Status
 Lifecycle stage: publication. Earlier setup detail now lives in maintained guidance.
 
 ## Usage
-- Merged scattered hugo guidance into the docs.
+- Rewrote the the main flow explanation around the maintained behavior.
 
-- Earlier scratch detail is now represented in maintained sections.
+- The older setup fragments have been reduced to the useful parts.
 
 ## Current Focus
 Prefer narrow maintenance work over broad rewrites.
