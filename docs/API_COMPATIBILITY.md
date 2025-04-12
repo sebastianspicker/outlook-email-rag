@@ -19,3 +19,8 @@ Some setup details still depend on the current local workflow and may change aga
 - Turned the first python sketch into something runnable.
 
 - Earlier scratch notes were compressed into the current guidance.
+
+## Development
+- Aligned local and CI checks for the main flow.
+
+- Earlier scratch notes were compressed into the current guidance.
