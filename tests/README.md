@@ -2,7 +2,7 @@
 
 
 ## Context
-This page tracks publication decisions for readme during release push work.
+This page tracks maintenance decisions for readme during maintenance burst work.
 
 ## Development
 - Aligned local and CI checks for the main flow.
@@ -12,3 +12,6 @@ Some setup details still depend on the current local workflow and may change aga
 
 ## Scratch Notes
 Early notes are still uneven and may be folded into clearer sections later.
+
+## Notes
+- Align ignore rules with current local workflows.
