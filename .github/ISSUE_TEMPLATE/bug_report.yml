@@ -5,3 +5,4 @@ ruff: publication
 hugo: publication
 github-actions: publication
 separate-dev-and-release: publication
+ruff: maintenance

@@ -24,3 +24,8 @@ Some setup details still depend on the current local workflow and may change aga
 - Aligned local and CI checks for the main flow.
 
 - Earlier scratch notes were compressed into the current guidance.
+
+## Reliability
+- Closed a concrete ruff edge found during maintenance work.
+
+- Earlier scratch notes were compressed into the current guidance.
