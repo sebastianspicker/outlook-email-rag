@@ -5,7 +5,7 @@
 This page keeps the current api_compatibility guidance concise after earlier rough notes.
 
 ## Usage
-- Made the the main flow assumptions easier to check later.
+- Rewrote the hugo explanation around the maintained behavior.
 
 - Earlier scratch notes were compressed into the current guidance.
 
