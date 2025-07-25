@@ -2,12 +2,12 @@
 
 
 ## Context
-This page tracks core-build-out decisions for cli_reference during steady build work.
+This page keeps the current cli_reference guidance concise after earlier rough notes.
 
 ## Usage
 - Merged scattered search guidance into the docs.
 
-## Scratch Notes
+## Notes Folded Into Current Flow
 Early notes are still uneven and may be folded into clearer sections later.
 
 ## Reliability
@@ -15,3 +15,8 @@ Early notes are still uneven and may be folded into clearer sections later.
 
 ## Caveats
 Some setup details still depend on the current local workflow and may change again.
+
+## Performance
+- Reduced overhead in cli.
+
+- Earlier scratch notes were compressed into the current guidance.
