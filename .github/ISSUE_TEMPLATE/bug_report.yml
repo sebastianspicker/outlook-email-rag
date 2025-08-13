@@ -7,3 +7,4 @@ github-actions: publication
 separate-dev-and-release: publication
 ruff: maintenance
 align-ignore-rules-with-: maintenance
+# forced-ruff-9:maintenance
