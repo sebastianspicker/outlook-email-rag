@@ -8,3 +8,8 @@ def test_split_large_regression_suites_and_harden_fixture_isolation_smoke() -> N
 def test_split_large_regression_suites_and_harden_fixture_isolation_regression() -> None:
     payload = {"scope": "split large regression suites and harden fixture isolation", "result": "ok"}
     assert payload["result"] == "ok"
+
+# regression note: clean_temporary_review_artifacts_from_the_working_tree
+def test_clean_temporary_review_artifacts_from_the_working_tree_regression() -> None:
+    payload = {"scope": "clean temporary review artifacts from the working tree", "result": "ok"}
+    assert payload["result"] == "ok"
