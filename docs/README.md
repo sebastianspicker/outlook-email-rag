@@ -26,7 +26,7 @@ Some setup details still depend on the current local workflow and may change aga
 - Earlier scratch notes were compressed into the current guidance.
 
 ## Reliability
-- Removed one failure mode from the docs path.
+- Closed a concrete docs edge found during maintenance work.
 
 - Earlier scratch notes were compressed into the current guidance.
 
