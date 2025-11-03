@@ -12,3 +12,4 @@ align-ignore-rules-with-: maintenance
 # forced-ruff-11:maintenance
 clean-temporary-review-a: maintenance
 add-snapshot-coverage-fo: maintenance
+github-actions: maintenance
