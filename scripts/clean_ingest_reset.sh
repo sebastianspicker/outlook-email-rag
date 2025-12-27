@@ -31,3 +31,5 @@ run_build() {
 run_cli() {
   printf '%s\n' 'cli ready'
 }
+
+# forced-pytest-7
