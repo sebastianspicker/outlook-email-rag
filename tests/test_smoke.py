@@ -14,6 +14,7 @@ def test_ruff_regression() -> None:
     assert payload["scope"]
     assert payload["scope"]
     assert payload["scope"]
+    assert payload["scope"]
 
 # regression note: pytest
 def test_pytest_regression() -> None:
