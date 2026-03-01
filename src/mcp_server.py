@@ -1,3 +1,11 @@
+"""MCP Server for Email RAG."""
+
+from __future__ import annotations
+
+import json
+import re
+import threading
+from datetime import date
 """
 MCP Server for Email RAG.
 
@@ -22,6 +30,17 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .config import get_settings
+
+load_dotenv()
+mcp = FastMCP("email_mcp")
+
+_retriever = None
+_retriever_lock = threading.Lock()
+ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+OSC_ESCAPE_RE = re.compile(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)")
 from pydantic import BaseModel, Field, ConfigDict
 
 load_dotenv()
@@ -39,9 +58,13 @@ def get_retriever():
     with _retriever_lock:
         if _retriever is None:
             from .retriever import EmailRetriever
+
             _retriever = EmailRetriever()
     return _retriever
 
+
+class EmailSearchInput(BaseModel):
+    """Input for semantic email search."""
 
 # ── Tool Input Models ──────────────────────────────────────────
 
@@ -52,6 +75,20 @@ class EmailSearchInput(BaseModel):
 
     query: str = Field(
         ...,
+        description="Natural language search query.",
+        min_length=1,
+        max_length=500,
+    )
+    top_k: int = Field(default=10, ge=1, le=30)
+
+
+class EmailSearchBySenderInput(BaseModel):
+    """Input for sender-filtered search."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: str = Field(..., min_length=1, max_length=500)
+    sender: str = Field(..., min_length=1)
         description="Natural language search query. Be specific — e.g., 'budget approval from finance team in Q3 2023' works better than 'budget'.",
         min_length=1,
         max_length=500,
@@ -83,6 +120,62 @@ class EmailSearchBySenderInput(BaseModel):
 
 
 class EmailSearchByDateInput(BaseModel):
+    """Input for date-filtered search."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: str = Field(..., min_length=1, max_length=500)
+    date_from: Optional[str] = Field(default=None)
+    date_to: Optional[str] = Field(default=None)
+    top_k: int = Field(default=10, ge=1, le=30)
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def validate_iso_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        date.fromisoformat(value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_window(self):
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from cannot be later than date_to")
+        return self
+
+
+class ListSendersInput(BaseModel):
+    """Input for listing senders."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    limit: int = Field(default=30, ge=1, le=200)
+
+
+class EmailSearchStructuredInput(BaseModel):
+    """Structured JSON search input for automation clients."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: str = Field(..., min_length=1, max_length=500)
+    top_k: int = Field(default=10, ge=1, le=30)
+    sender: Optional[str] = Field(default=None)
+    date_from: Optional[str] = Field(default=None)
+    date_to: Optional[str] = Field(default=None)
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def validate_iso_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        date.fromisoformat(value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_window(self):
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from cannot be later than date_to")
+        return self
     """Input for date-filtered email search."""
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -129,6 +222,10 @@ class ListSendersInput(BaseModel):
     },
 )
 async def email_search(params: EmailSearchInput) -> str:
+    """Search through the email archive using natural language."""
+    retriever = get_retriever()
+    results = retriever.search(params.query, top_k=params.top_k)
+    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
     """Search through the email archive using natural language.
 
     Performs semantic search across all indexed emails and returns the most
@@ -163,6 +260,10 @@ async def email_search(params: EmailSearchInput) -> str:
     },
 )
 async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
+    """Search emails filtered by sender."""
+    retriever = get_retriever()
+    results = retriever.search_by_sender(params.query, params.sender, top_k=params.top_k)
+    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
     """Search emails filtered by a specific sender.
 
     Combines semantic search with sender filtering. The sender filter
@@ -193,6 +294,7 @@ async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
     },
 )
 async def email_search_by_date(params: EmailSearchByDateInput) -> str:
+    """Search emails filtered by date range."""
     """Search emails within a specific date range.
 
     Combines semantic search with date filtering. Provide one or both of
@@ -215,6 +317,7 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
         date_to=params.date_to,
         top_k=params.top_k,
     )
+    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
     return retriever.format_results_for_claude(results)
 
 
@@ -229,6 +332,7 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
     },
 )
 async def email_list_senders(params: ListSendersInput) -> str:
+    """List unique senders sorted by frequency."""
     """List all unique senders in the email archive, sorted by frequency.
 
     Useful for discovering who is in the archive before searching for
@@ -248,6 +352,11 @@ async def email_list_senders(params: ListSendersInput) -> str:
         return "No senders found in the archive."
 
     lines = [f"Top {len(senders)} senders in the email archive:\n"]
+    for sender in senders:
+        safe_name = _sanitize_untrusted_text(str(sender["name"]))
+        safe_email = _sanitize_untrusted_text(str(sender["email"]))
+        name_part = f"{safe_name} " if safe_name else ""
+        lines.append(f"  {sender['count']:>4} emails - {name_part}<{safe_email}>")
     for s in senders:
         name_part = f"{s['name']} " if s["name"] else ""
         lines.append(f"  {s['count']:>4} emails — {name_part}<{s['email']}>")
@@ -266,6 +375,59 @@ async def email_list_senders(params: ListSendersInput) -> str:
     },
 )
 async def email_stats() -> str:
+    """Return JSON-formatted archive stats."""
+    retriever = get_retriever()
+    return json.dumps(retriever.stats(), indent=2)
+
+
+@mcp.tool(
+    name="email_search_structured",
+    annotations={
+        "title": "Search Emails (Structured JSON)",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+async def email_search_structured(params: EmailSearchStructuredInput) -> str:
+    """Search emails and return stable JSON output for automation clients."""
+    retriever = get_retriever()
+    results = retriever.search_filtered(
+        query=params.query,
+        top_k=params.top_k,
+        sender=params.sender,
+        date_from=params.date_from,
+        date_to=params.date_to,
+    )
+    payload = _serialize_results(retriever, params.query, results)
+    payload["top_k"] = params.top_k
+    payload["filters"] = {
+        "sender": params.sender,
+        "date_from": params.date_from,
+        "date_to": params.date_to,
+    }
+    payload["model"] = get_settings().embedding_model
+    return json.dumps(payload, indent=2)
+
+
+def _serialize_results(retriever, query: str, results) -> dict:
+    if hasattr(retriever, "serialize_results"):
+        return retriever.serialize_results(query, results)
+
+    return {
+        "query": query,
+        "count": len(results),
+        "results": [result.to_dict() for result in results],
+    }
+
+
+def _sanitize_untrusted_text(value: str) -> str:
+    no_osc = OSC_ESCAPE_RE.sub("", value)
+    no_ansi = ANSI_ESCAPE_RE.sub("", no_osc)
+    no_esc = no_ansi.replace("\x1b", "")
+    return "".join(ch for ch in no_esc if ch in "\n\t" or ord(ch) >= 0x20)
+
     """Get statistics about the email archive.
 
     Returns total email count, date range, number of unique senders,

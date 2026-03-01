@@ -5,6 +5,23 @@ OLM files are ZIP archives containing XML-formatted email messages.
 Structure: Accounts/<email>/com.microsoft.__Messages/<folder>/<message>.xml
 """
 
+from __future__ import annotations
+
+import hashlib
+import logging
+import os
+import re
+import zipfile
+from dataclasses import dataclass, field
+from html import unescape
+from typing import Generator
+
+from lxml import etree
+
+logger = logging.getLogger(__name__)
+MAX_XML_BYTES = 10_000_000
+MAX_XML_FILES = 200_000
+MAX_TOTAL_XML_BYTES = 1_000_000_000
 import zipfile
 import os
 from dataclasses import dataclass, field
@@ -18,12 +35,14 @@ import hashlib
 @dataclass
 class Email:
     """Represents a single parsed email."""
+
     message_id: str
     subject: str
     sender_name: str
     sender_email: str
     to: list[str]
     cc: list[str]
+    date: str
     date: str  # ISO format string
     body_text: str
     body_html: str
@@ -35,6 +54,9 @@ class Email:
     def uid(self) -> str:
         """Stable unique ID for deduplication."""
         if self.message_id:
+            return hashlib.md5(self.message_id.encode(), usedforsecurity=False).hexdigest()
+        key = f"{self.subject}|{self.date}|{self.sender_email}"
+        return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
             return hashlib.md5(self.message_id.encode()).hexdigest()
         # Fallback: hash subject + date + sender
         key = f"{self.subject}|{self.date}|{self.sender_email}"
@@ -67,6 +89,7 @@ class Email:
 
 
 def parse_olm(olm_path: str) -> Generator[Email, None, None]:
+    """Parse an .olm file and yield Email objects."""
     """
     Parse an .olm file and yield Email objects.
 
@@ -80,6 +103,44 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
         raise FileNotFoundError(f"OLM file not found: {olm_path}")
 
     with zipfile.ZipFile(olm_path, "r") as zf:
+        processed_xml_files = 0
+        processed_xml_bytes = 0
+
+        for info in zf.infolist():
+            xml_path = info.filename
+            if not xml_path.endswith(".xml") or "com.microsoft.__Messages" not in xml_path:
+                continue
+
+            if processed_xml_files >= MAX_XML_FILES:
+                logger.warning(
+                    "Stopping parse due to MAX_XML_FILES limit (%s).",
+                    MAX_XML_FILES,
+                )
+                break
+
+            if processed_xml_bytes + info.file_size > MAX_TOTAL_XML_BYTES:
+                logger.warning(
+                    "Stopping parse due to MAX_TOTAL_XML_BYTES limit (%s).",
+                    MAX_TOTAL_XML_BYTES,
+                )
+                break
+
+            try:
+                if info.file_size > MAX_XML_BYTES:
+                    logger.warning(
+                        "Skipping oversized XML payload (%s bytes): %s",
+                        info.file_size,
+                        xml_path,
+                    )
+                    continue
+                processed_xml_files += 1
+                processed_xml_bytes += info.file_size
+                with zf.open(xml_path) as file_obj:
+                    email = _parse_email_xml(file_obj.read(), xml_path)
+                    if email:
+                        yield email
+            except Exception as exc:  # pragma: no cover - defensive branch
+                logger.warning("Failed to parse %s: %s", xml_path, exc)
         # Find all XML files that look like email messages
         xml_files = [
             name for name in zf.namelist()
@@ -101,6 +162,31 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
 def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     """Parse a single email XML file from the OLM archive."""
     try:
+        root = etree.fromstring(xml_bytes, parser=_new_xml_parser())
+    except etree.XMLSyntaxError:
+        return None
+
+    ns = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
+
+    def text(xpath: str, default: str = "") -> str:
+        element = root.find(xpath, ns)
+        return (element.text or default) if element is not None else default
+
+    folder = _extract_folder(source_path)
+
+    sender_el = root.find(".//o:OPFMessageCopySenderAddress", ns)
+    sender_name_el = root.find(".//o:OPFMessageCopySenderName", ns)
+
+    to_addresses = _extract_addresses(root, ns, "OPFMessageCopyToAddresses")
+    cc_addresses = _extract_addresses(root, ns, "OPFMessageCopyCCAddresses")
+
+    body_text = text(".//o:OPFMessageCopyBody")
+    body_html = text(".//o:OPFMessageCopyHTMLBody")
+
+    attachment_els = root.findall(".//o:OPFMessageCopyAttachmentList/o:messageAttachment", ns)
+    attachment_names: list[str] = []
+    for attachment in attachment_els:
+        name_el = attachment.find("o:OPFAttachmentName", ns)
         root = etree.fromstring(xml_bytes)
     except etree.XMLSyntaxError:
         return None
@@ -146,6 +232,7 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
         body_text=body_text,
         body_html=body_html,
         folder=folder,
+        has_attachments=bool(attachment_names),
         has_attachments=len(attachment_names) > 0,
         attachment_names=attachment_names,
     )
@@ -156,6 +243,8 @@ def _extract_addresses(root, ns: dict, tag_name: str) -> list[str]:
     container = root.find(f".//o:{tag_name}", ns)
     if container is None:
         return []
+
+    addresses: list[str] = []
     addresses = []
     for addr_el in container.findall(".//o:emailAddress", ns):
         addr = addr_el.find("o:OPFContactEmailAddressAddress", ns)
@@ -166,6 +255,11 @@ def _extract_addresses(root, ns: dict, tag_name: str) -> list[str]:
 
 def _extract_folder(path: str) -> str:
     """Extract the folder name from the OLM internal path."""
+    parts = path.split("/")
+    msg_idx = None
+    for index, part in enumerate(parts):
+        if "com.microsoft.__Messages" in part:
+            msg_idx = index
     # Path looks like: Accounts/.../com.microsoft.__Messages/Inbox/msg.xml
     parts = path.split("/")
     msg_idx = None
@@ -180,6 +274,11 @@ def _extract_folder(path: str) -> str:
 
 def _html_to_text(html: str) -> str:
     """Simple HTML to text conversion."""
+    text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
     # Remove style and script blocks
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
@@ -194,6 +293,11 @@ def _html_to_text(html: str) -> str:
 
 
 def _clean_text(text: str) -> str:
+    """Normalize whitespace and collapse repeated blank lines."""
+    lines = text.splitlines()
+    cleaned: list[str] = []
+    blank_count = 0
+
     """Clean up text: normalize whitespace, remove excessive blank lines."""
     lines = text.splitlines()
     cleaned = []
@@ -207,4 +311,11 @@ def _clean_text(text: str) -> str:
         else:
             blank_count = 0
             cleaned.append(stripped)
+
+    return "\n".join(cleaned).strip()
+
+
+def _new_xml_parser() -> etree.XMLParser:
+    """Create a parser with safe defaults for untrusted XML."""
+    return etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
     return "\n".join(cleaned).strip()

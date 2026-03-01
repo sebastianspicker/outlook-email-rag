@@ -1,10 +1,32 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
 
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+.coverage
+htmlcov/
+
+# Local worktree artifacts
+.claude/worktrees/
+
+# Runtime artifacts
+*.log
+.db
+*.sqlite3
+*.bak
+*.orig
+.tmp/
+tmp/
+
+# Data (do not commit private mail/indexes)
 # Data (don't commit your emails!)
 data/*.olm
 data/chromadb/
