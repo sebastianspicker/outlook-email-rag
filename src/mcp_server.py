@@ -1,11 +1,3 @@
-"""MCP Server for Email RAG."""
-
-from __future__ import annotations
-
-import json
-import re
-import threading
-from datetime import date
 """
 MCP Server for Email RAG.
 
@@ -24,8 +16,12 @@ Configure in Claude Code's MCP settings:
 }
 """
 
+from __future__ import annotations
+
 import json
+import re
 import threading
+from datetime import date
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -35,22 +31,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .config import get_settings
 
 load_dotenv()
+
 mcp = FastMCP("email_mcp")
 
 _retriever = None
 _retriever_lock = threading.Lock()
 ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 OSC_ESCAPE_RE = re.compile(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)")
-from pydantic import BaseModel, Field, ConfigDict
-
-load_dotenv()
-
-# Initialize MCP server
-mcp = FastMCP("email_mcp")
-
-# Lazy-load retriever with a lock to prevent races on concurrent tool calls
-_retriever = None
-_retriever_lock = threading.Lock()
 
 
 def get_retriever():
@@ -63,32 +50,16 @@ def get_retriever():
     return _retriever
 
 
-class EmailSearchInput(BaseModel):
-    """Input for semantic email search."""
-
 # ── Tool Input Models ──────────────────────────────────────────
 
 
 class EmailSearchInput(BaseModel):
     """Input for semantic email search."""
+
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     query: str = Field(
         ...,
-        description="Natural language search query.",
-        min_length=1,
-        max_length=500,
-    )
-    top_k: int = Field(default=10, ge=1, le=30)
-
-
-class EmailSearchBySenderInput(BaseModel):
-    """Input for sender-filtered search."""
-
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-
-    query: str = Field(..., min_length=1, max_length=500)
-    sender: str = Field(..., min_length=1)
         description="Natural language search query. Be specific — e.g., 'budget approval from finance team in Q3 2023' works better than 'budget'.",
         min_length=1,
         max_length=500,
@@ -103,6 +74,7 @@ class EmailSearchBySenderInput(BaseModel):
 
 class EmailSearchBySenderInput(BaseModel):
     """Input for sender-filtered email search."""
+
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     query: str = Field(
@@ -120,13 +92,24 @@ class EmailSearchBySenderInput(BaseModel):
 
 
 class EmailSearchByDateInput(BaseModel):
-    """Input for date-filtered search."""
+    """Input for date-filtered email search."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
-    query: str = Field(..., min_length=1, max_length=500)
-    date_from: Optional[str] = Field(default=None)
-    date_to: Optional[str] = Field(default=None)
+    query: str = Field(
+        ...,
+        description="Natural language search query.",
+        min_length=1,
+        max_length=500,
+    )
+    date_from: Optional[str] = Field(
+        default=None,
+        description="Start date in YYYY-MM-DD format (inclusive). E.g., '2023-01-01'.",
+    )
+    date_to: Optional[str] = Field(
+        default=None,
+        description="End date in YYYY-MM-DD format (inclusive). E.g., '2023-12-31'.",
+    )
     top_k: int = Field(default=10, ge=1, le=30)
 
     @field_validator("date_from", "date_to")
@@ -149,7 +132,12 @@ class ListSendersInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    limit: int = Field(default=30, ge=1, le=200)
+    limit: int = Field(
+        default=30,
+        description="Max number of senders to return, sorted by email count.",
+        ge=1,
+        le=200,
+    )
 
 
 class EmailSearchStructuredInput(BaseModel):
@@ -176,36 +164,6 @@ class EmailSearchStructuredInput(BaseModel):
         if self.date_from and self.date_to and self.date_from > self.date_to:
             raise ValueError("date_from cannot be later than date_to")
         return self
-    """Input for date-filtered email search."""
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-
-    query: str = Field(
-        ...,
-        description="Natural language search query.",
-        min_length=1,
-        max_length=500,
-    )
-    date_from: Optional[str] = Field(
-        default=None,
-        description="Start date in YYYY-MM-DD format (inclusive). E.g., '2023-01-01'.",
-    )
-    date_to: Optional[str] = Field(
-        default=None,
-        description="End date in YYYY-MM-DD format (inclusive). E.g., '2023-12-31'.",
-    )
-    top_k: int = Field(default=10, ge=1, le=30)
-
-
-class ListSendersInput(BaseModel):
-    """Input for listing senders."""
-    model_config = ConfigDict(extra="forbid")
-
-    limit: int = Field(
-        default=30,
-        description="Max number of senders to return, sorted by email count.",
-        ge=1,
-        le=200,
-    )
 
 
 # ── Tools ──────────────────────────────────────────────────────
@@ -222,10 +180,6 @@ class ListSendersInput(BaseModel):
     },
 )
 async def email_search(params: EmailSearchInput) -> str:
-    """Search through the email archive using natural language."""
-    retriever = get_retriever()
-    results = retriever.search(params.query, top_k=params.top_k)
-    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
     """Search through the email archive using natural language.
 
     Performs semantic search across all indexed emails and returns the most
@@ -246,7 +200,7 @@ async def email_search(params: EmailSearchInput) -> str:
     """
     retriever = get_retriever()
     results = retriever.search(params.query, top_k=params.top_k)
-    return retriever.format_results_for_claude(results)
+    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 @mcp.tool(
@@ -260,10 +214,6 @@ async def email_search(params: EmailSearchInput) -> str:
     },
 )
 async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
-    """Search emails filtered by sender."""
-    retriever = get_retriever()
-    results = retriever.search_by_sender(params.query, params.sender, top_k=params.top_k)
-    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
     """Search emails filtered by a specific sender.
 
     Combines semantic search with sender filtering. The sender filter
@@ -280,7 +230,7 @@ async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
     """
     retriever = get_retriever()
     results = retriever.search_by_sender(params.query, params.sender, top_k=params.top_k)
-    return retriever.format_results_for_claude(results)
+    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 @mcp.tool(
@@ -294,7 +244,6 @@ async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
     },
 )
 async def email_search_by_date(params: EmailSearchByDateInput) -> str:
-    """Search emails filtered by date range."""
     """Search emails within a specific date range.
 
     Combines semantic search with date filtering. Provide one or both of
@@ -318,7 +267,6 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
         top_k=params.top_k,
     )
     return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
-    return retriever.format_results_for_claude(results)
 
 
 @mcp.tool(
@@ -332,7 +280,6 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
     },
 )
 async def email_list_senders(params: ListSendersInput) -> str:
-    """List unique senders sorted by frequency."""
     """List all unique senders in the email archive, sorted by frequency.
 
     Useful for discovering who is in the archive before searching for
@@ -357,9 +304,6 @@ async def email_list_senders(params: ListSendersInput) -> str:
         safe_email = _sanitize_untrusted_text(str(sender["email"]))
         name_part = f"{safe_name} " if safe_name else ""
         lines.append(f"  {sender['count']:>4} emails - {name_part}<{safe_email}>")
-    for s in senders:
-        name_part = f"{s['name']} " if s["name"] else ""
-        lines.append(f"  {s['count']:>4} emails — {name_part}<{s['email']}>")
 
     return "\n".join(lines)
 
@@ -375,7 +319,15 @@ async def email_list_senders(params: ListSendersInput) -> str:
     },
 )
 async def email_stats() -> str:
-    """Return JSON-formatted archive stats."""
+    """Get statistics about the email archive.
+
+    Returns total email count, date range, number of unique senders,
+    and folder distribution. Useful for understanding the scope of the
+    archive before searching.
+
+    Returns:
+        str: JSON-formatted statistics about the email archive.
+    """
     retriever = get_retriever()
     return json.dumps(retriever.stats(), indent=2)
 
@@ -427,19 +379,6 @@ def _sanitize_untrusted_text(value: str) -> str:
     no_ansi = ANSI_ESCAPE_RE.sub("", no_osc)
     no_esc = no_ansi.replace("\x1b", "")
     return "".join(ch for ch in no_esc if ch in "\n\t" or ord(ch) >= 0x20)
-
-    """Get statistics about the email archive.
-
-    Returns total email count, date range, number of unique senders,
-    and folder distribution. Useful for understanding the scope of the
-    archive before searching.
-
-    Returns:
-        str: JSON-formatted statistics about the email archive.
-    """
-    retriever = get_retriever()
-    stats = retriever.stats()
-    return json.dumps(stats, indent=2)
 
 
 # ── Entry Point ────────────────────────────────────────────────
