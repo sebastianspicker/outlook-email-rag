@@ -8,7 +8,6 @@ Usage:
 
 import argparse
 import time
-import sys
 
 from .parse_olm import parse_olm
 from .chunker import chunk_email

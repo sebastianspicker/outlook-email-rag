@@ -112,10 +112,6 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
         el = root.find(xpath, ns)
         return (el.text or default) if el is not None else default
 
-    def text_list(xpath: str) -> list[str]:
-        elements = root.findall(xpath, ns)
-        return [el.text for el in elements if el is not None and el.text]
-
     # Extract folder from path
     folder = _extract_folder(source_path)
 

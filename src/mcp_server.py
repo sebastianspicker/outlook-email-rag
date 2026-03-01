@@ -17,7 +17,7 @@ Configure in Claude Code's MCP settings:
 """
 
 import json
-import os
+import threading
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -29,15 +29,17 @@ load_dotenv()
 # Initialize MCP server
 mcp = FastMCP("email_mcp")
 
-# Lazy-load retriever (initialized on first tool call)
+# Lazy-load retriever with a lock to prevent races on concurrent tool calls
 _retriever = None
+_retriever_lock = threading.Lock()
 
 
 def get_retriever():
     global _retriever
-    if _retriever is None:
-        from .retriever import EmailRetriever
-        _retriever = EmailRetriever()
+    with _retriever_lock:
+        if _retriever is None:
+            from .retriever import EmailRetriever
+            _retriever = EmailRetriever()
     return _retriever
 
 

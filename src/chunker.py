@@ -66,8 +66,10 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         )]
 
     # For long emails, split body into overlapping chunks
+    # Clamp to avoid negative/zero max_len when headers are unusually long
     chunks = []
-    body_segments = _split_text(body, MAX_CHUNK_CHARS - len(header) - 50, OVERLAP_CHARS)
+    max_body_len = max(OVERLAP_CHARS + 100, MAX_CHUNK_CHARS - len(header) - 50)
+    body_segments = _split_text(body, max_body_len, OVERLAP_CHARS)
 
     for i, segment in enumerate(body_segments):
         text = f"{header}\n\n[Part {i+1}/{len(body_segments)}]\n{segment}"

@@ -51,12 +51,21 @@ class EmailEmbedder:
         return self._model
 
     def get_existing_ids(self) -> set[str]:
-        """Get all chunk IDs already in the database (for deduplication)."""
+        """Get all chunk IDs already in the database (for deduplication), paginated."""
+        existing: set[str] = set()
+        page_size = 1000
+        offset = 0
         try:
-            result = self.collection.get(include=[])
-            return set(result["ids"]) if result["ids"] else set()
+            while True:
+                result = self.collection.get(include=[], limit=page_size, offset=offset)
+                ids = result.get("ids") or []
+                if not ids:
+                    break
+                existing.update(ids)
+                offset += page_size
         except Exception:
-            return set()
+            pass
+        return existing
 
     def add_chunks(self, chunks: list[EmailChunk], show_progress: bool = True) -> int:
         """

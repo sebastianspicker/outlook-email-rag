@@ -104,7 +104,6 @@ ANTHROPIC_API_KEY=sk-ant-...
 # Optional
 CHROMADB_PATH=data/chromadb          # Where to store the vector DB
 EMBEDDING_MODEL=all-MiniLM-L6-v2    # Sentence-transformer model
-TOP_K=10                              # Number of results to retrieve
 ```
 
 ## Project Structure
@@ -132,4 +131,4 @@ email-rag/
 - **Privacy**: Everything runs locally. Your emails never leave your machine (except when sent to Claude API for answering).
 - **Embedding model**: `all-MiniLM-L6-v2` runs entirely on your Mac's CPU. No GPU needed.
 - **ChromaDB**: Persistent local storage. No server to run.
-- **Incremental ingestion**: Running ingest again will skip already-processed emails (deduplication by message ID).
+- **Incremental ingestion**: Running ingest again will skip already-processed chunks using the chunk ID (derived from `Email.uid`, which falls back to subject/date/sender when `message_id` is missing).

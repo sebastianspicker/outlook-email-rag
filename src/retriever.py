@@ -6,7 +6,6 @@ and metadata queries (list senders, stats).
 """
 
 import os
-import json
 from dataclasses import dataclass
 
 import chromadb
@@ -99,14 +98,15 @@ class EmailRetriever:
         Returns:
             List of SearchResult objects, sorted by relevance.
         """
-        if self.collection.count() == 0:
+        total = self.collection.count()
+        if total == 0:
             return []
 
         query_embedding = self.model.encode([query]).tolist()
 
         kwargs = {
             "query_embeddings": query_embedding,
-            "n_results": min(top_k, self.collection.count()),
+            "n_results": min(top_k, total),
             "include": ["documents", "metadatas", "distances"],
         }
         if where:
@@ -181,21 +181,27 @@ class EmailRetriever:
 
         Returns list of {"name": ..., "email": ..., "count": ...} dicts.
         """
-        # Get all metadata
-        all_data = self.collection.get(include=["metadatas"])
-        if not all_data["metadatas"]:
+        page_size = 1000
+        offset = 0
+        sender_counts: dict[str, dict] = {}
+
+        while True:
+            batch = self.collection.get(include=["metadatas"], limit=page_size, offset=offset)
+            metadatas = batch.get("metadatas") or []
+            if not metadatas:
+                break
+            for meta in metadatas:
+                email = meta.get("sender_email", "unknown")
+                name = meta.get("sender_name", "")
+                key = email.lower()
+                if key not in sender_counts:
+                    sender_counts[key] = {"name": name, "email": email, "count": 0}
+                sender_counts[key]["count"] += 1
+            offset += page_size
+
+        if not sender_counts:
             return []
 
-        sender_counts: dict[str, dict] = {}
-        for meta in all_data["metadatas"]:
-            email = meta.get("sender_email", "unknown")
-            name = meta.get("sender_name", "")
-            key = email.lower()
-            if key not in sender_counts:
-                sender_counts[key] = {"name": name, "email": email, "count": 0}
-            sender_counts[key]["count"] += 1
-
-        # Sort by count descending
         sorted_senders = sorted(sender_counts.values(), key=lambda x: x["count"], reverse=True)
         return sorted_senders[:limit]
 
@@ -205,30 +211,42 @@ class EmailRetriever:
         if total_chunks == 0:
             return {"total_chunks": 0, "total_emails": 0}
 
-        all_data = self.collection.get(include=["metadatas"])
-        metadatas = all_data["metadatas"]
-
-        # Count unique emails
-        unique_uids = set(m.get("uid", "") for m in metadatas)
-        unique_senders = set(m.get("sender_email", "").lower() for m in metadatas if m.get("sender_email"))
-
-        # Date range
-        dates = sorted(m.get("date", "")[:10] for m in metadatas if m.get("date"))
-
-        # Folder distribution
+        page_size = 1000
+        offset = 0
+        unique_uids: set[str] = set()
+        unique_senders: set[str] = set()
+        earliest: str | None = None
+        latest: str | None = None
         folders: dict[str, int] = {}
-        for m in metadatas:
-            folder = m.get("folder", "Unknown")
-            folders[folder] = folders.get(folder, 0) + 1
+
+        while True:
+            batch = self.collection.get(include=["metadatas"], limit=page_size, offset=offset)
+            metadatas = batch.get("metadatas") or []
+            if not metadatas:
+                break
+            for m in metadatas:
+                uid = m.get("uid", "")
+                if uid:
+                    unique_uids.add(uid)
+                sender_email = m.get("sender_email")
+                if sender_email:
+                    unique_senders.add(sender_email.lower())
+                raw_date = m.get("date")
+                if raw_date:
+                    d = raw_date[:10]
+                    if earliest is None or d < earliest:
+                        earliest = d
+                    if latest is None or d > latest:
+                        latest = d
+                folder = m.get("folder", "Unknown")
+                folders[folder] = folders.get(folder, 0) + 1
+            offset += page_size
 
         return {
             "total_chunks": total_chunks,
             "total_emails": len(unique_uids),
             "unique_senders": len(unique_senders),
-            "date_range": {
-                "earliest": dates[0] if dates else None,
-                "latest": dates[-1] if dates else None,
-            },
+            "date_range": {"earliest": earliest, "latest": latest},
             "folders": dict(sorted(folders.items(), key=lambda x: x[1], reverse=True)),
         }
 
