@@ -16,18 +16,10 @@ from dataclasses import dataclass
 
 from .formatting import build_email_header
 
-from dataclasses import dataclass
-
 
 @dataclass
 class EmailChunk:
     """A single chunk ready for embedding."""
-
-    uid: str
-    chunk_id: str
-    text: str
-    metadata: dict
-
 
     uid: str          # Parent email UID
     chunk_id: str     # uid__chunk_N
@@ -41,7 +33,6 @@ OVERLAP_CHARS = 200
 
 
 def chunk_email(email_dict: dict) -> list[EmailChunk]:
-    """Convert a parsed email dict into chunks ready for embedding."""
     """
     Convert a parsed email dict into one or more chunks for embedding.
 
@@ -80,6 +71,7 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
             )
         ]
 
+    # Clamp to avoid negative/zero max_len when headers are unusually long
     max_body_len = max(OVERLAP_CHARS + 100, MAX_CHUNK_CHARS - len(header) - 50)
     body_segments = _split_text(body, max_body_len, OVERLAP_CHARS)
 
@@ -98,34 +90,6 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
                 },
             )
         )
-    # For short/medium emails, one chunk is enough
-    if len(body) <= MAX_CHUNK_CHARS:
-        text = f"{header}\n\n{body}" if body else header
-        return [EmailChunk(
-            uid=uid,
-            chunk_id=f"{uid}__0",
-            text=text,
-            metadata={**base_metadata, "chunk_index": "0", "total_chunks": "1"},
-        )]
-
-    # For long emails, split body into overlapping chunks
-    # Clamp to avoid negative/zero max_len when headers are unusually long
-    chunks = []
-    max_body_len = max(OVERLAP_CHARS + 100, MAX_CHUNK_CHARS - len(header) - 50)
-    body_segments = _split_text(body, max_body_len, OVERLAP_CHARS)
-
-    for i, segment in enumerate(body_segments):
-        text = f"{header}\n\n[Part {i+1}/{len(body_segments)}]\n{segment}"
-        chunks.append(EmailChunk(
-            uid=uid,
-            chunk_id=f"{uid}__{i}",
-            text=text,
-            metadata={
-                **base_metadata,
-                "chunk_index": str(i),
-                "total_chunks": str(len(body_segments)),
-            },
-        ))
 
     return chunks
 
@@ -133,37 +97,6 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
 def _build_header(email_dict: dict) -> str:
     """Wrapper for consistent header formatting across the codebase."""
     return build_email_header(email_dict)
-
-
-def _split_text(text: str, max_len: int, overlap: int) -> list[str]:
-    """Split text into overlapping segments while preferring natural boundaries."""
-    if len(text) <= max_len:
-        return [text]
-
-    segments: list[str] = []
-    """Build a concise metadata header for embedding context."""
-    parts = []
-    if email_dict.get("date"):
-        parts.append(f"Date: {email_dict['date']}")
-    if email_dict.get("sender_name") or email_dict.get("sender_email"):
-        sender = email_dict.get("sender_name", "")
-        if email_dict.get("sender_email"):
-            sender = f"{sender} <{email_dict['sender_email']}>" if sender else email_dict["sender_email"]
-        parts.append(f"From: {sender}")
-    if email_dict.get("to"):
-        parts.append(f"To: {', '.join(email_dict['to'][:3])}")
-    if email_dict.get("subject"):
-        parts.append(f"Subject: {email_dict['subject']}")
-    if email_dict.get("folder"):
-        parts.append(f"Folder: {email_dict['folder']}")
-    if email_dict.get("has_attachments"):
-        att_names = email_dict.get("attachment_names", [])
-        if att_names:
-            parts.append(f"Attachments: {', '.join(att_names[:5])}")
-        else:
-            parts.append("Has attachments")
-
-    return "\n".join(parts)
 
 
 def _split_text(text: str, max_len: int, overlap: int) -> list[str]:
@@ -181,22 +114,6 @@ def _split_text(text: str, max_len: int, overlap: int) -> list[str]:
             segments.append(text[start:])
             break
 
-        break_point = text.rfind("\n\n", start + max_len // 2, end)
-        if break_point == -1:
-            break_point = text.rfind(". ", start + max_len // 2, end)
-            if break_point != -1:
-                break_point += 1
-        if break_point == -1:
-            break_point = text.rfind("\n", start + max_len // 2, end)
-        if break_point == -1:
-            break_point = end
-
-        # Guarantee forward progress even when boundary lands close to the overlap window.
-        if break_point <= start:
-            break_point = end
-
-        segments.append(text[start:break_point])
-        start = max(start + 1, break_point - overlap)
         # Try to break at paragraph boundary
         break_point = text.rfind("\n\n", start + max_len // 2, end)
         if break_point == -1:
@@ -211,7 +128,11 @@ def _split_text(text: str, max_len: int, overlap: int) -> list[str]:
             # Hard break at max_len
             break_point = end
 
+        # Guarantee forward progress even when boundary lands close to the overlap window.
+        if break_point <= start:
+            break_point = end
+
         segments.append(text[start:break_point])
-        start = break_point - overlap
+        start = max(start + 1, break_point - overlap)
 
     return segments
