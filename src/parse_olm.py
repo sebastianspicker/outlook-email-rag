@@ -22,6 +22,14 @@ logger = logging.getLogger(__name__)
 MAX_XML_BYTES = 10_000_000
 MAX_XML_FILES = 200_000
 MAX_TOTAL_XML_BYTES = 1_000_000_000
+import zipfile
+import os
+from dataclasses import dataclass, field
+from typing import Generator
+from lxml import etree
+from html import unescape
+import re
+import hashlib
 
 
 @dataclass
@@ -35,6 +43,7 @@ class Email:
     to: list[str]
     cc: list[str]
     date: str
+    date: str  # ISO format string
     body_text: str
     body_html: str
     folder: str
@@ -48,6 +57,10 @@ class Email:
             return hashlib.md5(self.message_id.encode(), usedforsecurity=False).hexdigest()
         key = f"{self.subject}|{self.date}|{self.sender_email}"
         return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
+            return hashlib.md5(self.message_id.encode()).hexdigest()
+        # Fallback: hash subject + date + sender
+        key = f"{self.subject}|{self.date}|{self.sender_email}"
+        return hashlib.md5(key.encode()).hexdigest()
 
     @property
     def clean_body(self) -> str:
@@ -77,6 +90,15 @@ class Email:
 
 def parse_olm(olm_path: str) -> Generator[Email, None, None]:
     """Parse an .olm file and yield Email objects."""
+    """
+    Parse an .olm file and yield Email objects.
+
+    Args:
+        olm_path: Path to the .olm file.
+
+    Yields:
+        Email objects for each message found.
+    """
     if not os.path.exists(olm_path):
         raise FileNotFoundError(f"OLM file not found: {olm_path}")
 
@@ -119,6 +141,22 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
                         yield email
             except Exception as exc:  # pragma: no cover - defensive branch
                 logger.warning("Failed to parse %s: %s", xml_path, exc)
+        # Find all XML files that look like email messages
+        xml_files = [
+            name for name in zf.namelist()
+            if name.endswith(".xml")
+            and "com.microsoft.__Messages" in name
+        ]
+
+        for xml_path in xml_files:
+            try:
+                with zf.open(xml_path) as f:
+                    email = _parse_email_xml(f.read(), xml_path)
+                    if email:
+                        yield email
+            except Exception as e:
+                # Log but don't crash on individual email parse failures
+                print(f"  Warning: Failed to parse {xml_path}: {e}")
 
 
 def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
@@ -149,6 +187,37 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     attachment_names: list[str] = []
     for attachment in attachment_els:
         name_el = attachment.find("o:OPFAttachmentName", ns)
+        root = etree.fromstring(xml_bytes)
+    except etree.XMLSyntaxError:
+        return None
+
+    # OLM XML namespace
+    ns = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
+
+    def text(xpath: str, default: str = "") -> str:
+        el = root.find(xpath, ns)
+        return (el.text or default) if el is not None else default
+
+    # Extract folder from path
+    folder = _extract_folder(source_path)
+
+    # Extract sender
+    sender_el = root.find(".//o:OPFMessageCopySenderAddress", ns)
+    sender_name_el = root.find(".//o:OPFMessageCopySenderName", ns)
+
+    # Extract recipients
+    to_addresses = _extract_addresses(root, ns, "OPFMessageCopyToAddresses")
+    cc_addresses = _extract_addresses(root, ns, "OPFMessageCopyCCAddresses")
+
+    # Extract body
+    body_text = text(".//o:OPFMessageCopyBody")
+    body_html = text(".//o:OPFMessageCopyHTMLBody")
+
+    # Extract attachments
+    attachment_els = root.findall(".//o:OPFMessageCopyAttachmentList/o:messageAttachment", ns)
+    attachment_names = []
+    for att in attachment_els:
+        name_el = att.find("o:OPFAttachmentName", ns)
         if name_el is not None and name_el.text:
             attachment_names.append(name_el.text)
 
@@ -164,6 +233,7 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
         body_html=body_html,
         folder=folder,
         has_attachments=bool(attachment_names),
+        has_attachments=len(attachment_names) > 0,
         attachment_names=attachment_names,
     )
 
@@ -175,6 +245,7 @@ def _extract_addresses(root, ns: dict, tag_name: str) -> list[str]:
         return []
 
     addresses: list[str] = []
+    addresses = []
     for addr_el in container.findall(".//o:emailAddress", ns):
         addr = addr_el.find("o:OPFContactEmailAddressAddress", ns)
         if addr is not None and addr.text:
@@ -189,6 +260,12 @@ def _extract_folder(path: str) -> str:
     for index, part in enumerate(parts):
         if "com.microsoft.__Messages" in part:
             msg_idx = index
+    # Path looks like: Accounts/.../com.microsoft.__Messages/Inbox/msg.xml
+    parts = path.split("/")
+    msg_idx = None
+    for i, part in enumerate(parts):
+        if "com.microsoft.__Messages" in part:
+            msg_idx = i
             break
     if msg_idx is not None and msg_idx + 1 < len(parts):
         return parts[msg_idx + 1]
@@ -202,6 +279,14 @@ def _html_to_text(html: str) -> str:
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
+    # Remove style and script blocks
+    text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Convert <br> and <p> to newlines
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
+    # Strip remaining tags
     text = re.sub(r"<[^>]+>", "", text)
     text = unescape(text)
     return _clean_text(text)
@@ -213,6 +298,10 @@ def _clean_text(text: str) -> str:
     cleaned: list[str] = []
     blank_count = 0
 
+    """Clean up text: normalize whitespace, remove excessive blank lines."""
+    lines = text.splitlines()
+    cleaned = []
+    blank_count = 0
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -229,3 +318,4 @@ def _clean_text(text: str) -> str:
 def _new_xml_parser() -> etree.XMLParser:
     """Create a parser with safe defaults for untrusted XML."""
     return etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
+    return "\n".join(cleaned).strip()

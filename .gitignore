@@ -27,6 +27,7 @@ htmlcov/
 tmp/
 
 # Data (do not commit private mail/indexes)
+# Data (don't commit your emails!)
 data/*.olm
 data/chromadb/
 
