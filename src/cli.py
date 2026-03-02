@@ -6,21 +6,20 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
-from datetime import date
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from dotenv import load_dotenv
 
 from .config import configure_logging, get_settings
+from .sanitization import sanitize_untrusted_text
+from .validation import parse_iso_date, validate_date_window
 
 if TYPE_CHECKING:
     from .retriever import EmailRetriever
 
 logger = logging.getLogger(__name__)
-ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
-OSC_ESCAPE_RE = re.compile(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)")
+OutputFormat = Literal["text", "json"]
 
 
 def ask_claude(query: str, context: str) -> str:
@@ -78,11 +77,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for both operational and query commands."""
     settings = get_settings()
 
-    parser = argparse.ArgumentParser(description="Search your email archive with Claude.")
+    parser = argparse.ArgumentParser(
+        description="Search your email archive with Claude.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python -m src.cli --query \"invoice from vendor\" --sender billing@vendor.com\n"
+            "  python -m src.cli --query \"security review\" --format json --no-claude\n"
+            "  python -m src.cli --stats\n"
+        ),
+    )
     parser.add_argument("--query", "-q", help="Single query (omit for interactive mode).")
     parser.add_argument("--raw", action="store_true", help="Show raw contextual results without Claude.")
     parser.add_argument("--no-claude", action="store_true", help="Disable Claude synthesis and only show retrieval results.")
-    parser.add_argument("--json", action="store_true", help="Output results as JSON for automation.")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results as JSON (legacy alias for --format json).",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default=None,
+        help="Output format for --query results (text or json).",
+    )
     parser.add_argument(
         "--top-k",
         type=_top_k_int,
@@ -90,8 +108,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Number of results to retrieve.",
     )
     parser.add_argument("--sender", default=None, help="Optional sender filter (partial name/email match).")
+    parser.add_argument("--subject", default=None, help="Optional subject filter (partial match).")
+    parser.add_argument("--folder", default=None, help="Optional folder filter (partial match).")
     parser.add_argument("--date-from", type=_parse_iso_date, default=None, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--date-to", type=_parse_iso_date, default=None, help="End date (YYYY-MM-DD).")
+    parser.add_argument(
+        "--min-score",
+        type=_score_float,
+        default=None,
+        help="Optional minimum relevance score threshold (0.0-1.0).",
+    )
     parser.add_argument("--chromadb-path", default=None, help="Custom ChromaDB path.")
 
     parser.add_argument("--stats", action="store_true", help="Print archive statistics and exit.")
@@ -127,17 +153,7 @@ def run_interactive(retriever: "EmailRetriever", use_claude: bool = True, top_k:
         return
 
     console = Console()
-    stats = retriever.stats()
-    console.print(
-        Panel(
-            f"Emails: {stats.get('total_emails', 0)} | "
-            f"Chunks: {stats.get('total_chunks', 0)} | "
-            f"Senders: {stats.get('unique_senders', 0)} | "
-            f"Range: {stats.get('date_range', {}).get('earliest', '?')} -> {stats.get('date_range', {}).get('latest', '?')}",
-            title="Email RAG",
-            subtitle="Type 'quit' to exit, 'stats' for details, 'senders' to list senders",
-        )
-    )
+    _render_interactive_intro(console, Panel, retriever)
 
     while True:
         try:
@@ -145,15 +161,16 @@ def run_interactive(retriever: "EmailRetriever", use_claude: bool = True, top_k:
         except (EOFError, KeyboardInterrupt):
             break
 
-        if not query:
+        action = _interactive_action(query)
+        if action == "empty":
             continue
-        if query.lower() in {"quit", "exit", "q"}:
+        if action == "quit":
             break
-        if query.lower() == "stats":
-            console.print_json(json.dumps(retriever.stats(), indent=2))
+        if action == "stats":
+            _render_stats(console, retriever)
             continue
-        if query.lower() == "senders":
-            _print_sender_lines(retriever.list_senders(30), print_fn=console.print)
+        if action == "senders":
+            _render_senders(console, retriever)
             continue
 
         results = retriever.search_filtered(query=query, top_k=top_k)
@@ -162,34 +179,10 @@ def run_interactive(retriever: "EmailRetriever", use_claude: bool = True, top_k:
             console.print("[dim]Try refining query terms, sender filter, or date window.[/]")
             continue
 
-        table = Table(title=f"Top {len(results)} results")
-        table.add_column("#", style="dim")
-        table.add_column("Score")
-        table.add_column("Subject")
-        table.add_column("Sender")
-        table.add_column("Date")
-
-        for index, result in enumerate(results[:10], 1):
-            metadata = result.metadata
-            subject = _sanitize_terminal_text(str(metadata.get("subject", "(no subject)")))
-            sender_value = metadata.get("sender_name") or metadata.get("sender_email", "?")
-            sender = _sanitize_terminal_text(str(sender_value))
-            date_value = _sanitize_terminal_text(str(metadata.get("date", "?"))[:10])
-            table.add_row(
-                str(index),
-                f"{result.score:.0%}",
-                subject,
-                sender,
-                date_value,
-            )
-
-        console.print(table)
+        _render_results_table(console, Table, results)
 
         if use_claude:
-            console.print("\n[dim]Asking Claude...[/]")
-            answer = ask_claude(query, retriever.format_results_for_claude(results))
-            safe_answer = _sanitize_terminal_text(answer)
-            console.print(Panel(Markdown(safe_answer), title="Claude's Answer", border_style="green"))
+            _render_claude_answer(console, Panel, Markdown, retriever, query, results)
 
 
 def run_single_query(
@@ -200,16 +193,22 @@ def run_single_query(
     as_json: bool = False,
     top_k: int = 10,
     sender: str | None = None,
+    subject: str | None = None,
+    folder: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    min_score: float | None = None,
 ) -> int:
     """Run a single query and print output. Returns process exit code."""
     results = retriever.search_filtered(
         query=query,
         top_k=top_k,
         sender=sender,
+        subject=subject,
+        folder=folder,
         date_from=date_from,
         date_to=date_to,
+        min_score=min_score,
     )
 
     if as_json:
@@ -271,16 +270,20 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     if args.query:
+        output_format = resolve_output_format(args)
         code = run_single_query(
             retriever,
             query=args.query,
             raw=args.raw,
             no_claude=args.no_claude,
-            as_json=args.json,
+            as_json=(output_format == "json"),
             top_k=args.top_k,
             sender=args.sender,
+            subject=args.subject,
+            folder=args.folder,
             date_from=args.date_from,
             date_to=args.date_to,
+            min_score=args.min_score,
         )
         sys.exit(code)
 
@@ -298,12 +301,78 @@ def _print_sender_lines(senders: list[dict[str, Any]], print_fn=print) -> None:
         print_fn(f"{sender['count']:>4}x  {safe_name} <{safe_email}>")
 
 
+def _interactive_action(query: str) -> Literal["empty", "quit", "stats", "senders", "search"]:
+    normalized = query.strip().lower()
+    if not normalized:
+        return "empty"
+    if normalized in {"quit", "exit", "q"}:
+        return "quit"
+    if normalized == "stats":
+        return "stats"
+    if normalized == "senders":
+        return "senders"
+    return "search"
+
+
+def _render_interactive_intro(console, panel_cls, retriever: "EmailRetriever") -> None:
+    stats = retriever.stats()
+    console.print(
+        panel_cls(
+            f"Emails: {stats.get('total_emails', 0)} | "
+            f"Chunks: {stats.get('total_chunks', 0)} | "
+            f"Senders: {stats.get('unique_senders', 0)} | "
+            f"Range: {stats.get('date_range', {}).get('earliest', '?')} -> {stats.get('date_range', {}).get('latest', '?')}",
+            title="Email RAG",
+            subtitle="Type 'quit' to exit, 'stats' for details, 'senders' to list senders",
+        )
+    )
+
+
+def _render_stats(console, retriever: "EmailRetriever") -> None:
+    console.print_json(json.dumps(retriever.stats(), indent=2))
+
+
+def _render_senders(console, retriever: "EmailRetriever") -> None:
+    _print_sender_lines(retriever.list_senders(30), print_fn=console.print)
+
+
+def _render_results_table(console, table_cls, results) -> None:
+    table = table_cls(title=f"Top {len(results)} results")
+    table.add_column("#", style="dim")
+    table.add_column("Score")
+    table.add_column("Subject")
+    table.add_column("Sender")
+    table.add_column("Date")
+
+    for index, result in enumerate(results[:10], 1):
+        metadata = result.metadata
+        subject = _sanitize_terminal_text(str(metadata.get("subject", "(no subject)")))
+        sender_value = metadata.get("sender_name") or metadata.get("sender_email", "?")
+        sender = _sanitize_terminal_text(str(sender_value))
+        date_value = _sanitize_terminal_text(str(metadata.get("date", "?"))[:10])
+        table.add_row(
+            str(index),
+            f"{result.score:.0%}",
+            subject,
+            sender,
+            date_value,
+        )
+
+    console.print(table)
+
+
+def _render_claude_answer(console, panel_cls, markdown_cls, retriever: "EmailRetriever", query: str, results) -> None:
+    console.print("\n[dim]Asking Claude...[/]")
+    answer = ask_claude(query, retriever.format_results_for_claude(results))
+    safe_answer = _sanitize_terminal_text(answer)
+    console.print(panel_cls(markdown_cls(safe_answer), title="Claude's Answer", border_style="green"))
+
+
 def _parse_iso_date(value: str) -> str:
     try:
-        date.fromisoformat(value)
+        return parse_iso_date(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"Invalid date '{value}'. Use YYYY-MM-DD.") from exc
-    return value
 
 
 def _positive_int(value: str) -> int:
@@ -320,12 +389,33 @@ def _top_k_int(value: str) -> int:
     return parsed
 
 
+def _score_float(value: str) -> float:
+    parsed = float(value)
+    if not (0.0 <= parsed <= 1.0):
+        raise argparse.ArgumentTypeError("Value must be between 0.0 and 1.0.")
+    return parsed
+
+
 def _validate_arg_combinations(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if args.date_from and args.date_to and args.date_from > args.date_to:
+    try:
+        validate_date_window(args.date_from, args.date_to)
+    except ValueError:
         parser.error("--date-from cannot be later than --date-to")
 
-    if args.query is None and (args.sender or args.date_from or args.date_to or args.json):
-        parser.error("--sender/--date-from/--date-to/--json require --query")
+    if args.json and args.format is not None:
+        parser.error("--json cannot be combined with --format; use only --format {text,json}")
+
+    if args.query is None and (
+        args.sender
+        or args.subject
+        or args.folder
+        or args.date_from
+        or args.date_to
+        or args.min_score is not None
+        or args.json
+        or args.format is not None
+    ):
+        parser.error("--sender/--subject/--folder/--date-from/--date-to/--min-score/--json/--format require --query")
 
     operational_modes = [bool(args.stats), bool(args.list_senders), bool(args.reset_index)]
     if sum(operational_modes) > 1:
@@ -337,10 +427,15 @@ def _validate_arg_combinations(args: argparse.Namespace, parser: argparse.Argume
 
 def _sanitize_terminal_text(value: str) -> str:
     """Strip ANSI escapes and unsafe control chars from terminal output."""
-    no_osc = OSC_ESCAPE_RE.sub("", value)
-    no_ansi = ANSI_ESCAPE_RE.sub("", no_osc)
-    no_esc = no_ansi.replace("\x1b", "")
-    return "".join(ch for ch in no_esc if ch in "\n\t" or ord(ch) >= 0x20)
+    return sanitize_untrusted_text(value)
+
+
+def resolve_output_format(args: argparse.Namespace) -> OutputFormat:
+    if args.format is not None:
+        return args.format
+    if args.json:
+        return "json"
+    return "text"
 
 
 if __name__ == "__main__":

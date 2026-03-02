@@ -8,7 +8,8 @@ from typing import Iterable
 from sentence_transformers import SentenceTransformer
 
 from .chunker import EmailChunk
-from .config import Settings, get_settings
+from .config import resolve_runtime_settings
+from .converters import to_builtin_list
 from .storage import get_chroma_client, get_collection, iter_collection_ids
 
 logger = logging.getLogger(__name__)
@@ -23,14 +24,10 @@ class EmailEmbedder:
         model_name: str | None = None,
         collection_name: str | None = None,
     ):
-        settings = get_settings()
-        self.settings = Settings(
-            chromadb_path=chromadb_path or settings.chromadb_path,
-            embedding_model=model_name or settings.embedding_model,
-            collection_name=collection_name or settings.collection_name,
-            top_k=settings.top_k,
-            claude_model=settings.claude_model,
-            log_level=settings.log_level,
+        self.settings = resolve_runtime_settings(
+            chromadb_path=chromadb_path,
+            embedding_model=model_name,
+            collection_name=collection_name,
         )
 
         self.chromadb_path = self.settings.chromadb_path
@@ -90,7 +87,7 @@ class EmailEmbedder:
             ids = [chunk.chunk_id for chunk in batch]
             metadatas = [chunk.metadata for chunk in batch]
 
-            embeddings = _to_list(self.model.encode(texts, show_progress_bar=False))
+            embeddings = to_builtin_list(self.model.encode(texts, show_progress_bar=False))
 
             self.collection.add(
                 ids=ids,
@@ -114,9 +111,3 @@ class EmailEmbedder:
 def _iter_batches(items: list[EmailChunk], batch_size: int) -> Iterable[list[EmailChunk]]:
     for idx in range(0, len(items), batch_size):
         yield items[idx : idx + batch_size]
-
-
-def _to_list(value):
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    return value

@@ -16,6 +16,11 @@ def test_extract_folder_from_path():
     assert _extract_folder(path) == "Inbox"
 
 
+def test_extract_folder_preserves_nested_path():
+    path = "Accounts/user/com.microsoft.__Messages/Inbox/Finance/Budgets/msg.xml"
+    assert _extract_folder(path) == "Inbox/Finance/Budgets"
+
+
 def test_parse_email_xml_falls_back_to_no_subject():
     xml = b'''<?xml version="1.0"?>
 <email xmlns="http://schemas.microsoft.com/outlook/mac/2011">

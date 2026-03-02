@@ -9,7 +9,8 @@ from typing import Any
 
 from sentence_transformers import SentenceTransformer
 
-from .config import Settings, get_settings
+from .config import resolve_runtime_settings
+from .converters import to_builtin_list
 from .formatting import format_context_block
 from .storage import get_chroma_client, get_collection, iter_collection_metadatas
 
@@ -29,7 +30,7 @@ class SearchResult:
     @property
     def score(self) -> float:
         """Similarity score 0-1 (higher = more similar)."""
-        return max(0.0, 1.0 - self.distance)
+        return min(1.0, max(0.0, 1.0 - self.distance))
 
     def to_context_string(self) -> str:
         return format_context_block(self.text, self.metadata, self.score)
@@ -53,14 +54,10 @@ class EmailRetriever:
         model_name: str | None = None,
         collection_name: str | None = None,
     ):
-        settings = get_settings()
-        self.settings = Settings(
-            chromadb_path=chromadb_path or settings.chromadb_path,
-            embedding_model=model_name or settings.embedding_model,
-            collection_name=collection_name or settings.collection_name,
-            top_k=settings.top_k,
-            claude_model=settings.claude_model,
-            log_level=settings.log_level,
+        self.settings = resolve_runtime_settings(
+            chromadb_path=chromadb_path,
+            embedding_model=model_name,
+            collection_name=collection_name,
         )
 
         self.chromadb_path = self.settings.chromadb_path
@@ -92,7 +89,7 @@ class EmailRetriever:
         if requested <= 0:
             requested = 10
 
-        query_embedding = _to_list(self.model.encode([query]))
+        query_embedding = to_builtin_list(self.model.encode([query]))
         return self._query_with_embedding(query_embedding, requested, where=where)
 
     def _query_with_embedding(
@@ -150,22 +147,31 @@ class EmailRetriever:
         sender: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
+        subject: str | None = None,
+        folder: str | None = None,
+        min_score: float | None = None,
     ) -> list[SearchResult]:
-        """Search with optional sender/date filters."""
+        """Search with optional sender/date/subject/folder/score filters."""
         sender = sender.strip() if isinstance(sender, str) else sender
         sender = sender or None
         date_from = date_from.strip() if isinstance(date_from, str) else date_from
         date_from = date_from or None
         date_to = date_to.strip() if isinstance(date_to, str) else date_to
         date_to = date_to or None
+        subject = subject.strip() if isinstance(subject, str) else subject
+        subject = subject or None
+        folder = folder.strip() if isinstance(folder, str) else folder
+        folder = folder or None
 
         if top_k <= 0:
             raise ValueError("top_k must be a positive integer.")
         if top_k > MAX_TOP_K:
             raise ValueError(f"top_k must be <= {MAX_TOP_K}.")
+        if min_score is not None and not (0.0 <= min_score <= 1.0):
+            raise ValueError("min_score must be between 0.0 and 1.0.")
 
-        multiplier = 8 if (sender or date_from or date_to) else 1
-        has_filters = bool(sender or date_from or date_to)
+        has_filters = bool(sender or date_from or date_to or subject or folder or min_score is not None)
+        multiplier = 8 if has_filters else 1
         fetch_size = max(top_k * multiplier, top_k)
         max_fetch_size = 10_000
         max_attempts = 6
@@ -176,7 +182,7 @@ class EmailRetriever:
                 candidates = self.search(query, top_k=fetch_size)
             else:
                 if query_embedding is None:
-                    query_embedding = _to_list(self.model.encode([query]))
+                    query_embedding = to_builtin_list(self.model.encode([query]))
                 candidates = self._query_with_embedding(query_embedding, fetch_size)
 
             if not has_filters:
@@ -188,6 +194,9 @@ class EmailRetriever:
                 if self._matches_sender(result, sender)
                 and self._matches_date_from(result, date_from)
                 and self._matches_date_to(result, date_to)
+                and self._matches_subject(result, subject)
+                and self._matches_folder(result, folder)
+                and self._matches_min_score(result, min_score)
             ]
 
             if len(filtered) >= top_k:
@@ -340,9 +349,9 @@ class EmailRetriever:
         if not sender:
             return True
         needle = sender.lower()
-        return needle in result.metadata.get("sender_email", "").lower() or needle in result.metadata.get(
-            "sender_name", ""
-        ).lower()
+        sender_email = str(result.metadata.get("sender_email", "") or "").lower()
+        sender_name = str(result.metadata.get("sender_name", "") or "").lower()
+        return needle in sender_email or needle in sender_name
 
     @staticmethod
     def _matches_date_from(result: SearchResult, date_from: str | None) -> bool:
@@ -363,6 +372,28 @@ class EmailRetriever:
         return date_prefix <= date_to
 
     @staticmethod
+    def _matches_subject(result: SearchResult, subject: str | None) -> bool:
+        if not subject:
+            return True
+        needle = subject.lower()
+        subject_value = str(result.metadata.get("subject", "") or "").lower()
+        return needle in subject_value
+
+    @staticmethod
+    def _matches_folder(result: SearchResult, folder: str | None) -> bool:
+        if not folder:
+            return True
+        needle = folder.lower()
+        folder_value = str(result.metadata.get("folder", "") or "").lower()
+        return needle in folder_value
+
+    @staticmethod
+    def _matches_min_score(result: SearchResult, min_score: float | None) -> bool:
+        if min_score is None:
+            return True
+        return result.score >= min_score
+
+    @staticmethod
     def _email_dedup_key(meta: dict[str, Any]) -> str | None:
         uid = str(meta.get("uid", "")).strip()
         if uid:
@@ -379,13 +410,6 @@ class EmailRetriever:
         if sender_email or date_value or subject:
             return f"fallback:{sender_email}|{date_value}|{subject}"
         return None
-
-
-def _to_list(value: Any) -> Any:
-    if hasattr(value, "tolist"):
-        return value.tolist()
-    return value
-
 
 def _safe_json_float(value: Any) -> float | None:
     try:

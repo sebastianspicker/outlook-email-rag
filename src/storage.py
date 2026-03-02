@@ -31,30 +31,41 @@ def get_collection(client, collection_name: str):
 
 def iter_collection_ids(collection, page_size: int = DEFAULT_PAGE_SIZE) -> Generator[str, None, None]:
     """Iterate all IDs in a collection using pagination."""
-    offset = 0
-    while True:
-        batch = collection.get(include=[], limit=page_size, offset=offset)
-        ids = batch.get("ids") or []
-        if not ids:
-            break
-
-        for value in ids:
-            yield value
-
-        offset += len(ids)
+    yield from _iter_collection_rows(
+        collection,
+        include=[],
+        field_name="ids",
+        page_size=page_size,
+    )
 
 
 def iter_collection_metadatas(collection, page_size: int = DEFAULT_PAGE_SIZE) -> Generator[dict[str, Any], None, None]:
     """Iterate all metadata rows in a collection using pagination."""
+    for metadata in _iter_collection_rows(
+        collection,
+        include=["metadatas"],
+        field_name="metadatas",
+        page_size=page_size,
+    ):
+        if metadata:
+            yield metadata
+
+
+def _iter_collection_rows(
+    collection,
+    include: list[str],
+    field_name: str,
+    page_size: int,
+) -> Generator[Any, None, None]:
+    """Internal paginated iterator for ChromaDB collection fields."""
     offset = 0
     while True:
-        batch = collection.get(include=["metadatas"], limit=page_size, offset=offset)
-        metadatas = batch.get("metadatas") or []
-        if not metadatas:
+        batch = collection.get(include=include, limit=page_size, offset=offset)
+        rows = batch.get(field_name) or []
+        if not rows:
             break
 
-        for metadata in metadatas:
-            if metadata:
-                yield metadata
+        for row in rows:
+            yield row
 
-        offset += len(metadatas)
+        offset += len(rows)

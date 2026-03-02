@@ -89,3 +89,132 @@ def test_search_filtered_treats_blank_sender_as_no_filter():
 
     assert len(results) == 1
     assert results[0].chunk_id == "r1"
+
+
+def test_search_filtered_applies_subject_folder_and_min_score():
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    def _search(query, top_k=10, where=None):
+        return [
+            SearchResult(
+                chunk_id="match",
+                text="hello",
+                metadata={
+                    "sender_email": "a@example.com",
+                    "subject": "Budget Approval Request",
+                    "folder": "Inbox/Finance",
+                    "date": "2024-01-01",
+                },
+                distance=0.15,  # score 0.85
+            ),
+            SearchResult(
+                chunk_id="low-score",
+                text="hello",
+                metadata={
+                    "sender_email": "a@example.com",
+                    "subject": "Budget Approval Request",
+                    "folder": "Inbox/Finance",
+                    "date": "2024-01-01",
+                },
+                distance=0.30,  # score 0.70
+            ),
+            SearchResult(
+                chunk_id="wrong-folder",
+                text="hello",
+                metadata={
+                    "sender_email": "a@example.com",
+                    "subject": "Budget Approval Request",
+                    "folder": "Archive",
+                    "date": "2024-01-01",
+                },
+                distance=0.10,  # score 0.90
+            ),
+            SearchResult(
+                chunk_id="wrong-subject",
+                text="hello",
+                metadata={
+                    "sender_email": "a@example.com",
+                    "subject": "Travel Itinerary",
+                    "folder": "Inbox/Finance",
+                    "date": "2024-01-01",
+                },
+                distance=0.10,  # score 0.90
+            ),
+        ]
+
+    retriever.search = _search
+
+    results = retriever.search_filtered(
+        query="budget",
+        subject="approval",
+        folder="finance",
+        min_score=0.8,
+        top_k=5,
+    )
+
+    assert len(results) == 1
+    assert results[0].chunk_id == "match"
+
+
+def test_search_filtered_rejects_invalid_min_score():
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    with pytest.raises(ValueError):
+        retriever.search_filtered(query="budget", min_score=1.5)
+
+
+def test_search_filtered_sender_filter_handles_non_string_metadata():
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    def _search(query, top_k=10, where=None):
+        return [
+            SearchResult(
+                chunk_id="r1",
+                text="hello",
+                metadata={"sender_email": None, "sender_name": 123, "date": "2024-01-01"},
+                distance=0.2,
+            )
+        ]
+
+    retriever.search = _search
+    results = retriever.search_filtered(query="budget", sender="alice", top_k=1)
+
+    assert results == []
+
+
+def test_search_filtered_subject_filter_handles_none_metadata():
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    def _search(query, top_k=10, where=None):
+        return [
+            SearchResult(
+                chunk_id="r1",
+                text="hello",
+                metadata={"subject": None, "folder": "Inbox", "date": "2024-01-01"},
+                distance=0.2,
+            )
+        ]
+
+    retriever.search = _search
+    results = retriever.search_filtered(query="budget", subject="none", top_k=1)
+
+    assert results == []
+
+
+def test_search_filtered_folder_filter_handles_none_metadata():
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    def _search(query, top_k=10, where=None):
+        return [
+            SearchResult(
+                chunk_id="r1",
+                text="hello",
+                metadata={"subject": "Budget", "folder": None, "date": "2024-01-01"},
+                distance=0.2,
+            )
+        ]
+
+    retriever.search = _search
+    results = retriever.search_filtered(query="budget", folder="none", top_k=1)
+
+    assert results == []

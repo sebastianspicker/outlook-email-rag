@@ -6,6 +6,7 @@ import argparse
 import logging
 import time
 import zipfile
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -53,6 +54,7 @@ def ingest(
     total_emails = 0
     total_chunks_created = 0
     total_chunks_added = 0
+    total_batches_written = 0
     pending_chunks = []
 
     for email in parse_olm(olm_path):
@@ -71,10 +73,12 @@ def ingest(
 
         if embedder and len(pending_chunks) >= batch_size:
             total_chunks_added += embedder.add_chunks(pending_chunks, batch_size=batch_size)
+            total_batches_written += 1
             pending_chunks = []
 
     if embedder and pending_chunks:
         total_chunks_added += embedder.add_chunks(pending_chunks, batch_size=batch_size)
+        total_batches_written += 1
 
     elapsed = time.time() - start_time
 
@@ -82,6 +86,8 @@ def ingest(
         "emails_parsed": total_emails,
         "chunks_created": total_chunks_created,
         "chunks_added": total_chunks_added,
+        "chunks_skipped": (total_chunks_created - total_chunks_added) if embedder else 0,
+        "batches_written": total_batches_written,
         "total_in_db": embedder.count() if embedder else None,
         "dry_run": dry_run,
         "elapsed_seconds": round(elapsed, 1),
@@ -146,13 +152,8 @@ def main(argv: list[str] | None = None) -> None:
         print(str(exc))
         raise SystemExit(2) from exc
 
-    print("\n=== Ingestion Summary ===")
-    print(f"Emails parsed: {stats['emails_parsed']}")
-    print(f"Chunks created: {stats['chunks_created']}")
-    if not stats["dry_run"]:
-        print(f"Chunks added: {stats['chunks_added']}")
-        print(f"Total in DB: {stats['total_in_db']}")
-    print(f"Elapsed: {stats['elapsed_seconds']}s")
+    summary_lines = format_ingestion_summary(stats)
+    print("\n" + "\n".join(summary_lines))
 
 
 def _positive_int(raw: str) -> int:
@@ -160,6 +161,29 @@ def _positive_int(raw: str) -> int:
     if value <= 0:
         raise argparse.ArgumentTypeError("Value must be a positive integer.")
     return value
+
+
+def format_ingestion_summary(stats: dict[str, Any]) -> list[str]:
+    lines = [
+        "=== Ingestion Summary ===",
+        f"Emails parsed: {stats['emails_parsed']}",
+        f"Chunks created: {stats['chunks_created']}",
+    ]
+
+    if stats["dry_run"]:
+        lines.append("Database write disabled (dry-run).")
+    else:
+        lines.extend(
+            [
+                f"Chunks added: {stats['chunks_added']}",
+                f"Chunks skipped: {stats['chunks_skipped']}",
+                f"Write batches: {stats['batches_written']}",
+                f"Total in DB: {stats['total_in_db']}",
+            ]
+        )
+
+    lines.append(f"Elapsed: {stats['elapsed_seconds']}s")
+    return lines
 
 
 if __name__ == "__main__":

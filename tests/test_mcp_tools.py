@@ -32,6 +32,37 @@ async def test_email_search_structured_tool_returns_json(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_email_search_structured_forwards_new_filters(monkeypatch):
+    from src import mcp_server
+
+    captured = {}
+
+    class DummyRetriever:
+        def search_filtered(self, **kwargs):
+            captured.update(kwargs)
+            return []
+
+    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
+
+    params = mcp_server.EmailSearchStructuredInput(
+        query="hello",
+        top_k=5,
+        subject="approval",
+        folder="inbox",
+        min_score=0.8,
+    )
+    payload = await mcp_server.email_search_structured(params)
+    data = json.loads(payload)
+
+    assert captured["subject"] == "approval"
+    assert captured["folder"] == "inbox"
+    assert captured["min_score"] == 0.8
+    assert data["filters"]["subject"] == "approval"
+    assert data["filters"]["folder"] == "inbox"
+    assert data["filters"]["min_score"] == 0.8
+
+
+@pytest.mark.asyncio
 async def test_email_search_structured_emits_strict_json(monkeypatch):
     from src import mcp_server
     from src.retriever import SearchResult
@@ -114,6 +145,16 @@ def test_structured_input_rejects_invalid_dates():
         )
 
 
+def test_by_date_input_rejects_invalid_dates():
+    from src import mcp_server
+
+    with pytest.raises(ValidationError):
+        mcp_server.EmailSearchByDateInput(
+            query="hello",
+            date_from="2024/01/01",
+        )
+
+
 def test_structured_input_rejects_invalid_date_order():
     from src import mcp_server
 
@@ -122,4 +163,25 @@ def test_structured_input_rejects_invalid_date_order():
             query="hello",
             date_from="2024-05-01",
             date_to="2024-01-01",
+        )
+
+
+def test_by_date_input_rejects_invalid_date_order():
+    from src import mcp_server
+
+    with pytest.raises(ValidationError):
+        mcp_server.EmailSearchByDateInput(
+            query="hello",
+            date_from="2024-05-01",
+            date_to="2024-01-01",
+        )
+
+
+def test_structured_input_rejects_invalid_min_score():
+    from src import mcp_server
+
+    with pytest.raises(ValidationError):
+        mcp_server.EmailSearchStructuredInput(
+            query="hello",
+            min_score=1.2,
         )

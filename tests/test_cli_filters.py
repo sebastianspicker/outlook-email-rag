@@ -10,6 +10,12 @@ def test_parse_args_supports_filter_flags():
             "budget",
             "--sender",
             "john",
+            "--subject",
+            "approval",
+            "--folder",
+            "inbox",
+            "--min-score",
+            "0.75",
             "--date-from",
             "2023-01-01",
             "--date-to",
@@ -23,6 +29,9 @@ def test_parse_args_supports_filter_flags():
 
     assert args.query == "budget"
     assert args.sender == "john"
+    assert args.subject == "approval"
+    assert args.folder == "inbox"
+    assert args.min_score == 0.75
     assert args.date_from == "2023-01-01"
     assert args.date_to == "2023-12-31"
     assert args.json is True
@@ -35,3 +44,37 @@ def test_parse_args_rejects_invalid_dates():
 
     with pytest.raises(SystemExit):
         parse_args(["--query", "test", "--date-from", "2023/01/01"])
+
+
+def test_parse_args_supports_format_json():
+    from src.cli import parse_args
+
+    args = parse_args(
+        [
+            "--query",
+            "security review",
+            "--format",
+            "json",
+            "--no-claude",
+        ]
+    )
+
+    assert args.query == "security review"
+    assert args.format == "json"
+    assert args.no_claude is True
+
+
+def test_resolve_output_format_prefers_explicit_format():
+    from src.cli import parse_args, resolve_output_format
+
+    args = parse_args(["--query", "security review", "--format", "text", "--no-claude"])
+
+    assert resolve_output_format(args) == "text"
+
+
+def test_resolve_output_format_supports_legacy_json_flag():
+    from src.cli import parse_args, resolve_output_format
+
+    args = parse_args(["--query", "security review", "--json", "--no-claude"])
+
+    assert resolve_output_format(args) == "json"
