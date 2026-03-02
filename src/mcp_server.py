@@ -19,16 +19,18 @@ Configure in Claude Code's MCP settings:
 from __future__ import annotations
 
 import json
-import re
 import threading
-from datetime import date
 from typing import Optional
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .config import get_settings
+from .sanitization import sanitize_untrusted_text
+from .validation import parse_iso_date
+from .validation import validate_date_window as ensure_valid_date_window
 
 load_dotenv()
 
@@ -36,8 +38,17 @@ mcp = FastMCP("email_mcp")
 
 _retriever = None
 _retriever_lock = threading.Lock()
-ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
-OSC_ESCAPE_RE = re.compile(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)")
+
+
+def _tool_annotations(title: str) -> ToolAnnotations:
+    """Standardized non-destructive MCP tool annotations."""
+    return ToolAnnotations(
+        title=title,
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
 
 
 def get_retriever():
@@ -60,7 +71,10 @@ class EmailSearchInput(BaseModel):
 
     query: str = Field(
         ...,
-        description="Natural language search query. Be specific — e.g., 'budget approval from finance team in Q3 2023' works better than 'budget'.",
+        description=(
+            "Natural language search query. Be specific — e.g., "
+            "'budget approval from finance team in Q3 2023' works better than 'budget'."
+        ),
         min_length=1,
         max_length=500,
     )
@@ -85,13 +99,41 @@ class EmailSearchBySenderInput(BaseModel):
     )
     sender: str = Field(
         ...,
-        description="Sender name or email to filter by (partial match supported). E.g., 'john' matches 'john.doe@company.com' and 'John Smith'.",
+        description=(
+            "Sender name or email to filter by (partial match supported). "
+            "E.g., 'john' matches 'john.doe@company.com' and 'John Smith'."
+        ),
         min_length=1,
     )
     top_k: int = Field(default=10, ge=1, le=30)
 
 
-class EmailSearchByDateInput(BaseModel):
+class DateRangeInput(BaseModel):
+    """Reusable date-range validation model for MCP inputs."""
+
+    date_from: Optional[str] = Field(
+        default=None,
+        description="Start date in YYYY-MM-DD format (inclusive). E.g., '2023-01-01'.",
+    )
+    date_to: Optional[str] = Field(
+        default=None,
+        description="End date in YYYY-MM-DD format (inclusive). E.g., '2023-12-31'.",
+    )
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def validate_iso_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        return parse_iso_date(value)
+
+    @model_validator(mode="after")
+    def validate_date_window(self):
+        ensure_valid_date_window(self.date_from, self.date_to)
+        return self
+
+
+class EmailSearchByDateInput(DateRangeInput):
     """Input for date-filtered email search."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
@@ -102,29 +144,7 @@ class EmailSearchByDateInput(BaseModel):
         min_length=1,
         max_length=500,
     )
-    date_from: Optional[str] = Field(
-        default=None,
-        description="Start date in YYYY-MM-DD format (inclusive). E.g., '2023-01-01'.",
-    )
-    date_to: Optional[str] = Field(
-        default=None,
-        description="End date in YYYY-MM-DD format (inclusive). E.g., '2023-12-31'.",
-    )
     top_k: int = Field(default=10, ge=1, le=30)
-
-    @field_validator("date_from", "date_to")
-    @classmethod
-    def validate_iso_date(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        date.fromisoformat(value)
-        return value
-
-    @model_validator(mode="after")
-    def validate_date_window(self):
-        if self.date_from and self.date_to and self.date_from > self.date_to:
-            raise ValueError("date_from cannot be later than date_to")
-        return self
 
 
 class ListSendersInput(BaseModel):
@@ -140,30 +160,25 @@ class ListSendersInput(BaseModel):
     )
 
 
-class EmailSearchStructuredInput(BaseModel):
+class EmailSearchStructuredInput(DateRangeInput):
     """Structured JSON search input for automation clients."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     query: str = Field(..., min_length=1, max_length=500)
+    date_from: Optional[str] = Field(
+        default=None,
+        description="Start date in YYYY-MM-DD format (inclusive).",
+    )
+    date_to: Optional[str] = Field(
+        default=None,
+        description="End date in YYYY-MM-DD format (inclusive).",
+    )
     top_k: int = Field(default=10, ge=1, le=30)
     sender: Optional[str] = Field(default=None)
-    date_from: Optional[str] = Field(default=None)
-    date_to: Optional[str] = Field(default=None)
-
-    @field_validator("date_from", "date_to")
-    @classmethod
-    def validate_iso_date(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        date.fromisoformat(value)
-        return value
-
-    @model_validator(mode="after")
-    def validate_date_window(self):
-        if self.date_from and self.date_to and self.date_from > self.date_to:
-            raise ValueError("date_from cannot be later than date_to")
-        return self
+    subject: Optional[str] = Field(default=None)
+    folder: Optional[str] = Field(default=None)
+    min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
 # ── Tools ──────────────────────────────────────────────────────
@@ -171,13 +186,7 @@ class EmailSearchStructuredInput(BaseModel):
 
 @mcp.tool(
     name="email_search",
-    annotations={
-        "title": "Search Emails",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
+    annotations=_tool_annotations("Search Emails"),
 )
 async def email_search(params: EmailSearchInput) -> str:
     """Search through the email archive using natural language.
@@ -205,13 +214,7 @@ async def email_search(params: EmailSearchInput) -> str:
 
 @mcp.tool(
     name="email_search_by_sender",
-    annotations={
-        "title": "Search Emails by Sender",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
+    annotations=_tool_annotations("Search Emails by Sender"),
 )
 async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
     """Search emails filtered by a specific sender.
@@ -235,13 +238,7 @@ async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
 
 @mcp.tool(
     name="email_search_by_date",
-    annotations={
-        "title": "Search Emails by Date Range",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
+    annotations=_tool_annotations("Search Emails by Date Range"),
 )
 async def email_search_by_date(params: EmailSearchByDateInput) -> str:
     """Search emails within a specific date range.
@@ -271,13 +268,7 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
 
 @mcp.tool(
     name="email_list_senders",
-    annotations={
-        "title": "List Email Senders",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
+    annotations=_tool_annotations("List Email Senders"),
 )
 async def email_list_senders(params: ListSendersInput) -> str:
     """List all unique senders in the email archive, sorted by frequency.
@@ -310,13 +301,7 @@ async def email_list_senders(params: ListSendersInput) -> str:
 
 @mcp.tool(
     name="email_stats",
-    annotations={
-        "title": "Email Archive Statistics",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
+    annotations=_tool_annotations("Email Archive Statistics"),
 )
 async def email_stats() -> str:
     """Get statistics about the email archive.
@@ -334,30 +319,38 @@ async def email_stats() -> str:
 
 @mcp.tool(
     name="email_search_structured",
-    annotations={
-        "title": "Search Emails (Structured JSON)",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    },
+    annotations=_tool_annotations("Search Emails (Structured JSON)"),
 )
 async def email_search_structured(params: EmailSearchStructuredInput) -> str:
     """Search emails and return stable JSON output for automation clients."""
     retriever = get_retriever()
-    results = retriever.search_filtered(
-        query=params.query,
-        top_k=params.top_k,
-        sender=params.sender,
-        date_from=params.date_from,
-        date_to=params.date_to,
-    )
+    search_kwargs = {
+        "query": params.query,
+        "top_k": params.top_k,
+    }
+    if params.sender is not None:
+        search_kwargs["sender"] = params.sender
+    if params.subject is not None:
+        search_kwargs["subject"] = params.subject
+    if params.folder is not None:
+        search_kwargs["folder"] = params.folder
+    if params.date_from is not None:
+        search_kwargs["date_from"] = params.date_from
+    if params.date_to is not None:
+        search_kwargs["date_to"] = params.date_to
+    if params.min_score is not None:
+        search_kwargs["min_score"] = params.min_score
+
+    results = retriever.search_filtered(**search_kwargs)
     payload = _serialize_results(retriever, params.query, results)
     payload["top_k"] = params.top_k
     payload["filters"] = {
         "sender": params.sender,
+        "subject": params.subject,
+        "folder": params.folder,
         "date_from": params.date_from,
         "date_to": params.date_to,
+        "min_score": params.min_score,
     }
     payload["model"] = get_settings().embedding_model
     return json.dumps(payload, indent=2)
@@ -375,10 +368,7 @@ def _serialize_results(retriever, query: str, results) -> dict:
 
 
 def _sanitize_untrusted_text(value: str) -> str:
-    no_osc = OSC_ESCAPE_RE.sub("", value)
-    no_ansi = ANSI_ESCAPE_RE.sub("", no_osc)
-    no_esc = no_ansi.replace("\x1b", "")
-    return "".join(ch for ch in no_esc if ch in "\n\t" or ord(ch) >= 0x20)
+    return sanitize_untrusted_text(value)
 
 
 # ── Entry Point ────────────────────────────────────────────────

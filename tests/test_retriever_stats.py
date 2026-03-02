@@ -273,3 +273,14 @@ def test_stats_unique_senders_ignores_blank_and_trims():
     stats = retriever.stats()
 
     assert stats["unique_senders"] == 1
+
+
+def test_search_result_score_is_clamped_to_one():
+    result = SearchResult(
+        chunk_id="id",
+        text="body",
+        metadata={},
+        distance=-0.25,
+    )
+
+    assert result.score == 1.0

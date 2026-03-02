@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,5 +18,11 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Lint
         run: ruff check .
+      - name: Type Check
+        run: mypy src
       - name: Test
         run: pytest -q
+      - name: Security Scan
+        run: bandit -r src -q
+      - name: Dependency Audit
+        run: python -m pip_audit -r requirements.txt

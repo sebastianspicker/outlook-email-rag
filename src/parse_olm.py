@@ -14,7 +14,7 @@ import re
 import zipfile
 from dataclasses import dataclass, field
 from html import unescape
-from typing import Generator
+from typing import IO, Generator
 
 from lxml import etree
 
@@ -94,7 +94,8 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
 
         for info in zf.infolist():
             xml_path = info.filename
-            if not xml_path.endswith(".xml") or "com.microsoft.__Messages" not in xml_path:
+            normalized_path = xml_path.lower()
+            if not normalized_path.endswith(".xml") or "com.microsoft.__messages" not in normalized_path:
                 continue
 
             if processed_xml_files >= MAX_XML_FILES:
@@ -120,9 +121,16 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
                     )
                     continue
                 processed_xml_files += 1
-                processed_xml_bytes += info.file_size
                 with zf.open(xml_path) as file_obj:
-                    email = _parse_email_xml(file_obj.read(), xml_path)
+                    xml_bytes = _read_limited_bytes(file_obj, byte_limit=MAX_XML_BYTES)
+                    if processed_xml_bytes + len(xml_bytes) > MAX_TOTAL_XML_BYTES:
+                        logger.warning(
+                            "Stopping parse due to MAX_TOTAL_XML_BYTES limit (%s).",
+                            MAX_TOTAL_XML_BYTES,
+                        )
+                        break
+                    processed_xml_bytes += len(xml_bytes)
+                    email = _parse_email_xml(xml_bytes, xml_path)
                     if email:
                         yield email
             except Exception as exc:  # pragma: no cover - defensive branch
@@ -196,11 +204,13 @@ def _extract_folder(path: str) -> str:
     parts = path.split("/")
     msg_idx = None
     for i, part in enumerate(parts):
-        if "com.microsoft.__Messages" in part:
+        if "com.microsoft.__messages" in part.lower():
             msg_idx = i
             break
     if msg_idx is not None and msg_idx + 1 < len(parts):
-        return parts[msg_idx + 1]
+        folder_parts = parts[msg_idx + 1 : -1]
+        if folder_parts:
+            return "/".join(folder_parts)
     return "Unknown"
 
 
@@ -241,3 +251,20 @@ def _clean_text(text: str) -> str:
 def _new_xml_parser() -> etree.XMLParser:
     """Create a parser with safe defaults for untrusted XML."""
     return etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
+
+
+def _read_limited_bytes(stream: IO[bytes], byte_limit: int, chunk_size: int = 64 * 1024) -> bytes:
+    """Read bytes from stream while enforcing a hard byte limit."""
+    chunks: list[bytes] = []
+    total = 0
+
+    while True:
+        chunk = stream.read(chunk_size)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > byte_limit:
+            raise ValueError(f"XML payload exceeds limit of {byte_limit} bytes.")
+        chunks.append(chunk)
+
+    return b"".join(chunks)

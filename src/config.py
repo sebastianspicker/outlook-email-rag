@@ -38,6 +38,23 @@ def get_settings() -> Settings:
     return Settings.from_env()
 
 
+def resolve_runtime_settings(
+    chromadb_path: str | None = None,
+    embedding_model: str | None = None,
+    collection_name: str | None = None,
+) -> Settings:
+    """Derive runtime settings from env defaults with optional overrides."""
+    base = get_settings()
+    return Settings(
+        chromadb_path=chromadb_path or base.chromadb_path,
+        embedding_model=embedding_model or base.embedding_model,
+        collection_name=collection_name or base.collection_name,
+        top_k=base.top_k,
+        claude_model=base.claude_model,
+        log_level=base.log_level,
+    )
+
+
 def configure_logging(level: str | None = None) -> None:
     """Configure root logging once for CLI-style entrypoints."""
     settings = get_settings()

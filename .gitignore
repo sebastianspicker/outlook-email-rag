@@ -23,11 +23,11 @@ htmlcov/
 *.sqlite3
 *.bak
 *.orig
+RELEASE_NOTES.md
 .tmp/
 tmp/
 
-# Data (do not commit private mail/indexes)
-# Data (don't commit your emails!)
+# Local/private email data and vector indexes
 data/*.olm
 data/chromadb/
 
