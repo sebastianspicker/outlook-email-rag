@@ -3,6 +3,13 @@ Parse .olm (Outlook for Mac) archive files.
 
 OLM files are ZIP archives containing XML-formatted email messages.
 Structure: Accounts/<email>/com.microsoft.__Messages/<folder>/<message>.xml
+
+Supports two OLM variants:
+- Namespaced XML (older Outlook for Mac, namespace: http://schemas.microsoft.com/outlook/mac/2011)
+- Non-namespaced XML (newer Outlook for Mac, plain element names)
+
+When structured XML elements are missing (e.g. Inbox emails with only
+OPFMessageCopySource), fields are extracted from the raw RFC 2822 headers.
 """
 
 from __future__ import annotations
@@ -22,6 +29,8 @@ logger = logging.getLogger(__name__)
 MAX_XML_BYTES = 10_000_000
 MAX_XML_FILES = 200_000
 MAX_TOTAL_XML_BYTES = 1_000_000_000
+
+_NS_OUTLOOK = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
 
 
 @dataclass
@@ -137,6 +146,36 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
                 logger.warning("Failed to parse %s: %s", xml_path, exc)
 
 
+# ── XML Element Lookup ────────────────────────────────────────
+
+
+def _detect_namespace(root: etree._Element) -> dict[str, str]:
+    """Detect whether the OLM XML uses the Outlook namespace or plain tags."""
+    # Try namespaced first (older OLM format)
+    if root.find(".//o:OPFMessageCopySentTime", _NS_OUTLOOK) is not None:
+        return _NS_OUTLOOK
+    if root.find(".//o:OPFMessageCopySubject", _NS_OUTLOOK) is not None:
+        return _NS_OUTLOOK
+    # No namespace (newer OLM format)
+    return {}
+
+
+def _find(root: etree._Element, tag: str, ns: dict[str, str]) -> etree._Element | None:
+    """Find an element by tag name, using the detected namespace."""
+    if ns:
+        return root.find(f".//o:{tag}", ns)
+    return root.find(f".//{tag}")
+
+
+def _find_text(root: etree._Element, tag: str, ns: dict[str, str], default: str = "") -> str:
+    """Find an element and return its text, or the default."""
+    el = _find(root, tag, ns)
+    return (el.text or default) if el is not None else default
+
+
+# ── Email XML Parsing ─────────────────────────────────────────
+
+
 def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     """Parse a single email XML file from the OLM archive."""
     try:
@@ -144,38 +183,73 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     except etree.XMLSyntaxError:
         return None
 
-    ns = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
-
-    def text(xpath: str, default: str = "") -> str:
-        element = root.find(xpath, ns)
-        return (element.text or default) if element is not None else default
-
+    ns = _detect_namespace(root)
     folder = _extract_folder(source_path)
 
-    sender_el = root.find(".//o:OPFMessageCopySenderAddress", ns)
-    sender_name_el = root.find(".//o:OPFMessageCopySenderName", ns)
+    # ── Direct XML fields ──────────────────────────────────
+    message_id = _find_text(root, "OPFMessageCopyMessageID", ns)
+    subject = _find_text(root, "OPFMessageCopySubject", ns)
+    date = _find_text(root, "OPFMessageCopySentTime", ns)
+    body_text = _find_text(root, "OPFMessageCopyBody", ns)
+    body_html = _find_text(root, "OPFMessageCopyHTMLBody", ns)
+
+    sender_el = _find(root, "OPFMessageCopySenderAddress", ns)
+    sender_name_el = _find(root, "OPFMessageCopySenderName", ns)
+    sender_email = sender_el.text if sender_el is not None and sender_el.text else ""
+    sender_name = sender_name_el.text if sender_name_el is not None and sender_name_el.text else ""
 
     to_addresses = _extract_addresses(root, ns, "OPFMessageCopyToAddresses")
     cc_addresses = _extract_addresses(root, ns, "OPFMessageCopyCCAddresses")
 
-    body_text = text(".//o:OPFMessageCopyBody")
-    body_html = text(".//o:OPFMessageCopyHTMLBody")
+    # Also try OPFMessageCopyFromAddresses (non-namespaced format)
+    if not sender_email:
+        from_addresses = _extract_addresses(root, ns, "OPFMessageCopyFromAddresses")
+        if from_addresses:
+            sender_email = from_addresses[0]
 
-    attachment_els = root.findall(".//o:OPFMessageCopyAttachmentList/o:messageAttachment", ns)
-    attachment_names: list[str] = []
-    for attachment in attachment_els:
-        name_el = attachment.find("o:OPFAttachmentName", ns)
-        if name_el is not None and name_el.text:
-            attachment_names.append(name_el.text)
+    # ── Fallback: parse OPFMessageCopySource headers ───────
+    raw_source = _find_text(root, "OPFMessageCopySource", ns)
+    if raw_source:
+        if not message_id:
+            message_id = _extract_header(raw_source, "Message-ID").strip("<>")
+        if not subject:
+            subject = _extract_header(raw_source, "Subject")
+        if not sender_email:
+            sender_email = _extract_email_from_header(raw_source, "From")
+        if not sender_name:
+            sender_name = _extract_name_from_header(raw_source, "From")
+        if not date:
+            date = _extract_header(raw_source, "Date")
+        if not to_addresses:
+            to_raw = _extract_header(raw_source, "To")
+            if to_raw:
+                to_addresses = _parse_address_list(to_raw)
+        if not cc_addresses:
+            cc_raw = _extract_header(raw_source, "CC")
+            if cc_raw:
+                cc_addresses = _parse_address_list(cc_raw)
+
+    # ── Fallback: OPFMessageCopyPreview for body ───────────
+    if not body_text and not body_html:
+        preview = _find_text(root, "OPFMessageCopyPreview", ns)
+        if preview:
+            body_text = preview
+
+    # ── Attachments ────────────────────────────────────────
+    attachment_names = _extract_attachments(root, ns)
+
+    # Default subject
+    if not subject:
+        subject = "(no subject)"
 
     return Email(
-        message_id=text(".//o:OPFMessageCopyMessageID"),
-        subject=text(".//o:OPFMessageCopySubject", "(no subject)"),
-        sender_name=sender_name_el.text if sender_name_el is not None and sender_name_el.text else "",
-        sender_email=sender_el.text if sender_el is not None and sender_el.text else "",
+        message_id=message_id,
+        subject=subject,
+        sender_name=sender_name,
+        sender_email=sender_email,
         to=to_addresses,
         cc=cc_addresses,
-        date=text(".//o:OPFMessageCopySentTime"),
+        date=date,
         body_text=body_text,
         body_html=body_html,
         folder=folder,
@@ -184,18 +258,120 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     )
 
 
-def _extract_addresses(root, ns: dict, tag_name: str) -> list[str]:
+# ── Address Extraction ────────────────────────────────────────
+
+
+def _extract_addresses(root: etree._Element, ns: dict[str, str], tag_name: str) -> list[str]:
     """Extract email addresses from an address list element."""
-    container = root.find(f".//o:{tag_name}", ns)
+    container = _find(root, tag_name, ns)
     if container is None:
         return []
 
     addresses: list[str] = []
-    for addr_el in container.findall(".//o:emailAddress", ns):
-        addr = addr_el.find("o:OPFContactEmailAddressAddress", ns)
-        if addr is not None and addr.text:
-            addresses.append(addr.text)
+    # Try namespaced child elements
+    if ns:
+        for addr_el in container.findall(".//o:emailAddress", ns):
+            addr = addr_el.find("o:OPFContactEmailAddressAddress", ns)
+            if addr is not None and addr.text:
+                addresses.append(addr.text)
+    else:
+        for addr_el in container.findall(".//emailAddress"):
+            addr = addr_el.find("OPFContactEmailAddressAddress")
+            if addr is not None and addr.text:
+                addresses.append(addr.text)
+
     return addresses
+
+
+def _extract_attachments(root: etree._Element, ns: dict[str, str]) -> list[str]:
+    """Extract attachment filenames from the email XML."""
+    names: list[str] = []
+    if ns:
+        attachment_els = root.findall(".//o:OPFMessageCopyAttachmentList/o:messageAttachment", ns)
+        for att in attachment_els:
+            name_el = att.find("o:OPFAttachmentName", ns)
+            if name_el is not None and name_el.text:
+                names.append(name_el.text)
+    else:
+        attachment_els = root.findall(".//OPFMessageCopyAttachmentList/messageAttachment")
+        for att in attachment_els:
+            name_el = att.find("OPFAttachmentName")
+            if name_el is not None and name_el.text:
+                names.append(name_el.text)
+    return names
+
+
+# ── RFC 2822 Header Extraction ────────────────────────────────
+
+
+def _extract_header(source: str, header_name: str) -> str:
+    """Extract a single header value from raw RFC 2822 source.
+
+    Handles continuation lines (lines starting with whitespace).
+    Stops at the blank line separating headers from body.
+    """
+    pattern = re.compile(
+        rf"^{re.escape(header_name)}:\s*(.+?)(?=\n\S|\n\n|\Z)",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(source)
+    if not match:
+        return ""
+    value = match.group(1).strip()
+    # Collapse continuation whitespace
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
+def _extract_email_from_header(source: str, header_name: str) -> str:
+    """Extract the email address from a From/To header like 'Name <email>'."""
+    raw = _extract_header(source, header_name)
+    if not raw:
+        return ""
+    # HTML-encoded angle brackets from OLM: &lt; and &gt;
+    raw = raw.replace("&lt;", "<").replace("&gt;", ">")
+    match = re.search(r"<([^>]+@[^>]+)>", raw)
+    if match:
+        return match.group(1)
+    # Bare email
+    match = re.search(r"[\w.+-]+@[\w.-]+", raw)
+    return match.group(0) if match else raw
+
+
+def _extract_name_from_header(source: str, header_name: str) -> str:
+    """Extract the display name from a header like '"Name" <email>'."""
+    raw = _extract_header(source, header_name)
+    if not raw:
+        return ""
+    raw = raw.replace("&lt;", "<").replace("&gt;", ">")
+    # "Quoted Name" <email>
+    match = re.search(r'"([^"]+)"', raw)
+    if match:
+        return match.group(1)
+    # Unquoted Name <email>
+    match = re.search(r"^([^<]+)<", raw)
+    if match:
+        return match.group(1).strip().strip('"')
+    return ""
+
+
+def _parse_address_list(raw: str) -> list[str]:
+    """Parse a comma-separated list of addresses into email strings."""
+    raw = raw.replace("&lt;", "<").replace("&gt;", ">")
+    addresses: list[str] = []
+    for part in raw.split(","):
+        part = part.strip()
+        match = re.search(r"<([^>]+@[^>]+)>", part)
+        if match:
+            addresses.append(match.group(1))
+        else:
+            match = re.search(r"[\w.+-]+@[\w.-]+", part)
+            if match:
+                addresses.append(match.group(0))
+    return addresses
+
+
+# ── Folder / Text / XML Utilities ─────────────────────────────
 
 
 def _extract_folder(path: str) -> str:
