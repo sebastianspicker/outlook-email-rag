@@ -9,6 +9,9 @@ and this project adheres to semantic versioning principles for public interfaces
 
 ### Added
 
+- `src/__main__.py`: `python -m src` now starts the MCP server directly.
+- `.claude/settings.json`: project-level MCP server registration — Claude Code auto-discovers tools when the project is opened.
+- `pyproject.toml`: added `[project]` and `[build-system]` sections; `pip install -e .[dev]` now works.
 - New MCP tool `email_list_folders`: lists archive folders with email counts.
 - New MCP tool `email_ingest`: triggers `.olm` ingestion directly from Claude Code.
 - `--cc` filter flag for CLI search.
