@@ -21,7 +21,7 @@ Some setup details still depend on the current local workflow and may change aga
 - Earlier scratch notes were compressed into the current guidance.
 
 ## Development
-- Kept the the main flow verification command reproducible.
+- Reduced surprise in the the main flow release checks.
 
 - Earlier scratch notes were compressed into the current guidance.
 
