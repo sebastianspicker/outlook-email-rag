@@ -8,7 +8,7 @@ Interfaces:
 - MCP server tools for agent integrations
 - Optional local Streamlit UI
 
-Everything runs locally, except optional Claude answer synthesis when `ANTHROPIC_API_KEY` is set.
+Everything runs locally. The MCP server exposes tools that Claude Code calls directly — no separate API key needed.
 
 ## Architecture
 
@@ -125,7 +125,7 @@ python -m src.cli --query "contract renewal" --sender legal --date-from 2024-01-
 python -m src.cli --query "budget" --subject approval --folder finance --min-score 0.75
 
 # JSON output for automation
-python -m src.cli --query "security review" --json --no-claude
+python -m src.cli --query "security review" --format json
 ```
 
 Additional operational commands:
@@ -148,12 +148,14 @@ python -m src.mcp_server
 
 Available tools:
 
-- `email_search`
-- `email_search_by_sender`
-- `email_search_by_date`
-- `email_list_senders`
-- `email_stats`
-- `email_search_structured`
+- `email_search` — semantic search across all emails
+- `email_search_by_sender` — sender-filtered semantic search
+- `email_search_by_date` — date-range-filtered semantic search
+- `email_search_structured` — full-filter search with JSON output (query, sender, subject, folder, cc, date range, min_score)
+- `email_list_senders` — list unique senders by frequency
+- `email_list_folders` — list archive folders with email counts
+- `email_stats` — archive statistics (emails, senders, date range, folders)
+- `email_ingest` — ingest an `.olm` archive directly from Claude Code
 
 See the compatibility contract in [docs/API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md).
 
@@ -179,23 +181,22 @@ streamlit run src/web_app.py
 
 Features:
 
-- query form with advanced sender/subject/folder/date filters
+- query form with sender, subject, folder, CC, and date range filters (date picker widgets)
 - adjustable relevance threshold (`min_score`) and result sorting modes
-- richer result browser with relevance bars, preview length control, and full-chunk expansion
+- paginated result browser (20 per page) with relevance bars, preview length control, and full-chunk expansion
 - sidebar archive stats with top-sender activity bars
+- improved empty-state guidance when no emails are indexed
 - JSON download for current result set including filters/sort metadata
 
 ## Configuration
 
-Use `.env` (see `.env.example`):
+Use `.env` (see `.env.example`). All settings are optional — sensible defaults are used when unset:
 
 ```bash
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
 CHROMADB_PATH=data/chromadb
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 COLLECTION_NAME=emails
 TOP_K=10
-CLAUDE_MODEL=claude-sonnet-4-20250514
 LOG_LEVEL=INFO
 ```
 
@@ -242,10 +243,6 @@ bash scripts/clean_workspace.sh --dry-run
 bash scripts/clean_workspace.sh
 ```
 
-References:
-
-- acceptance matrix: `docs/TEST_ACCEPTANCE_MATRIX.md`
-- release checklist: `docs/RELEASE_CHECKLIST.md`
 
 ## Project Structure
 
@@ -253,20 +250,11 @@ References:
 outlook-email-rag/
 ├── README.md
 ├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── SECURITY.md
-├── CODE_OF_CONDUCT.md
 ├── docs/
-│   ├── API_COMPATIBILITY.md
-│   ├── RELEASE_CHECKLIST.md
-│   ├── RELEASE_FILE_MANIFEST.md
-│   └── TEST_ACCEPTANCE_MATRIX.md
+│   └── API_COMPATIBILITY.md
 ├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   ├── pull_request_template.md
 │   └── workflows/
-│       ├── ci.yml
-│       └── release.yml
+│       └── ci.yml
 ├── scripts/
 │   ├── clean_workspace.sh
 │   └── run_acceptance_matrix.sh
@@ -279,6 +267,6 @@ outlook-email-rag/
 
 ## Notes
 
-- Privacy: email data stays local unless you explicitly use Claude synthesis.
-- Embedding model: `all-MiniLM-L6-v2` runs on CPU.
+- Privacy: all email data stays local; nothing is sent to external services.
+- Embedding model: `all-MiniLM-L6-v2` runs on CPU, no GPU required.
 - ChromaDB is persistent local storage; no separate DB server is required.

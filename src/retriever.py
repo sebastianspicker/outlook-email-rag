@@ -10,9 +10,8 @@ from typing import Any
 from sentence_transformers import SentenceTransformer
 
 from .config import resolve_runtime_settings
-from .converters import to_builtin_list
 from .formatting import format_context_block
-from .storage import get_chroma_client, get_collection, iter_collection_metadatas
+from .storage import get_chroma_client, get_collection, iter_collection_metadatas, to_builtin_list
 
 logger = logging.getLogger(__name__)
 MAX_TOP_K = 1000
@@ -149,9 +148,10 @@ class EmailRetriever:
         date_to: str | None = None,
         subject: str | None = None,
         folder: str | None = None,
+        cc: str | None = None,
         min_score: float | None = None,
     ) -> list[SearchResult]:
-        """Search with optional sender/date/subject/folder/score filters."""
+        """Search with optional sender/date/subject/folder/cc/score filters."""
         sender = sender.strip() if isinstance(sender, str) else sender
         sender = sender or None
         date_from = date_from.strip() if isinstance(date_from, str) else date_from
@@ -162,6 +162,8 @@ class EmailRetriever:
         subject = subject or None
         folder = folder.strip() if isinstance(folder, str) else folder
         folder = folder or None
+        cc = cc.strip() if isinstance(cc, str) else cc
+        cc = cc or None
 
         if top_k <= 0:
             raise ValueError("top_k must be a positive integer.")
@@ -170,7 +172,7 @@ class EmailRetriever:
         if min_score is not None and not (0.0 <= min_score <= 1.0):
             raise ValueError("min_score must be between 0.0 and 1.0.")
 
-        has_filters = bool(sender or date_from or date_to or subject or folder or min_score is not None)
+        has_filters = bool(sender or date_from or date_to or subject or folder or cc or min_score is not None)
         multiplier = 8 if has_filters else 1
         fetch_size = max(top_k * multiplier, top_k)
         max_fetch_size = 10_000
@@ -196,6 +198,7 @@ class EmailRetriever:
                 and self._matches_date_to(result, date_to)
                 and self._matches_subject(result, subject)
                 and self._matches_folder(result, folder)
+                and self._matches_cc(result, cc)
                 and self._matches_min_score(result, min_score)
             ]
 
@@ -212,25 +215,6 @@ class EmailRetriever:
             fetch_size = min(fetch_size * 2, max_fetch_size)
 
         return filtered[:top_k] if has_filters else []
-
-    def search_by_sender(self, query: str, sender: str, top_k: int = 10) -> list[SearchResult]:
-        """Backward-compatible sender-filtered search."""
-        return self.search_filtered(query=query, sender=sender, top_k=top_k)
-
-    def search_by_date(
-        self,
-        query: str,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        top_k: int = 10,
-    ) -> list[SearchResult]:
-        """Backward-compatible date-filtered search."""
-        return self.search_filtered(
-            query=query,
-            date_from=date_from,
-            date_to=date_to,
-            top_k=top_k,
-        )
 
     def list_senders(self, limit: int = 50) -> list[dict[str, Any]]:
         """List unique senders sorted by message count."""
@@ -264,6 +248,11 @@ class EmailRetriever:
             entry["count"] = unique_uid_count + unknown_uid_count
 
         return sorted(sender_counts.values(), key=lambda item: item["count"], reverse=True)[:limit]
+
+    def list_folders(self) -> list[dict[str, Any]]:
+        """List all folders with email counts, sorted by count descending."""
+        stats = self.stats()
+        return [{"folder": name, "count": count} for name, count in stats.get("folders", {}).items()]
 
     def stats(self) -> dict[str, Any]:
         """Get summary statistics about the indexed archive."""
@@ -386,6 +375,14 @@ class EmailRetriever:
         needle = folder.lower()
         folder_value = str(result.metadata.get("folder", "") or "").lower()
         return needle in folder_value
+
+    @staticmethod
+    def _matches_cc(result: SearchResult, cc: str | None) -> bool:
+        if not cc:
+            return True
+        needle = cc.lower()
+        cc_value = str(result.metadata.get("cc", "") or "").lower()
+        return needle in cc_value
 
     @staticmethod
     def _matches_min_score(result: SearchResult, min_score: float | None) -> bool:

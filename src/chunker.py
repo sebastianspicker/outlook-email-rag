@@ -44,7 +44,7 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     """
     uid = email_dict["uid"]
     body = email_dict.get("body", "")
-    header = _build_header(email_dict)
+    header = build_email_header(email_dict)
 
     # Metadata stored in ChromaDB (not embedded, but returned with results)
     base_metadata = {
@@ -92,11 +92,6 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         )
 
     return chunks
-
-
-def _build_header(email_dict: dict) -> str:
-    """Wrapper for consistent header formatting across the codebase."""
-    return build_email_header(email_dict)
 
 
 def _split_text(text: str, max_len: int, overlap: int) -> list[str]:

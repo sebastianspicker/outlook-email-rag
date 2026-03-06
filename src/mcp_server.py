@@ -178,6 +178,7 @@ class EmailSearchStructuredInput(DateRangeInput):
     sender: Optional[str] = Field(default=None)
     subject: Optional[str] = Field(default=None)
     folder: Optional[str] = Field(default=None)
+    cc: Optional[str] = Field(default=None, description="CC recipient filter (partial match).")
     min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
@@ -209,7 +210,7 @@ async def email_search(params: EmailSearchInput) -> str:
     """
     retriever = get_retriever()
     results = retriever.search(params.query, top_k=params.top_k)
-    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 @mcp.tool(
@@ -232,8 +233,8 @@ async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
         str: Formatted email results from the specified sender.
     """
     retriever = get_retriever()
-    results = retriever.search_by_sender(params.query, params.sender, top_k=params.top_k)
-    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    results = retriever.search_filtered(query=params.query, sender=params.sender, top_k=params.top_k)
+    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 @mcp.tool(
@@ -257,13 +258,13 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
         str: Formatted email results within the date range.
     """
     retriever = get_retriever()
-    results = retriever.search_by_date(
-        params.query,
+    results = retriever.search_filtered(
+        query=params.query,
         date_from=params.date_from,
         date_to=params.date_to,
         top_k=params.top_k,
     )
-    return _sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 @mcp.tool(
@@ -291,8 +292,8 @@ async def email_list_senders(params: ListSendersInput) -> str:
 
     lines = [f"Top {len(senders)} senders in the email archive:\n"]
     for sender in senders:
-        safe_name = _sanitize_untrusted_text(str(sender["name"]))
-        safe_email = _sanitize_untrusted_text(str(sender["email"]))
+        safe_name = sanitize_untrusted_text(str(sender["name"]))
+        safe_email = sanitize_untrusted_text(str(sender["email"]))
         name_part = f"{safe_name} " if safe_name else ""
         lines.append(f"  {sender['count']:>4} emails - {name_part}<{safe_email}>")
 
@@ -334,6 +335,8 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         search_kwargs["subject"] = params.subject
     if params.folder is not None:
         search_kwargs["folder"] = params.folder
+    if params.cc is not None:
+        search_kwargs["cc"] = params.cc
     if params.date_from is not None:
         search_kwargs["date_from"] = params.date_from
     if params.date_to is not None:
@@ -342,12 +345,13 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         search_kwargs["min_score"] = params.min_score
 
     results = retriever.search_filtered(**search_kwargs)
-    payload = _serialize_results(retriever, params.query, results)
+    payload = retriever.serialize_results(params.query, results)
     payload["top_k"] = params.top_k
     payload["filters"] = {
         "sender": params.sender,
         "subject": params.subject,
         "folder": params.folder,
+        "cc": params.cc,
         "date_from": params.date_from,
         "date_to": params.date_to,
         "min_score": params.min_score,
@@ -356,19 +360,94 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
     return json.dumps(payload, indent=2)
 
 
-def _serialize_results(retriever, query: str, results) -> dict:
-    if hasattr(retriever, "serialize_results"):
-        return retriever.serialize_results(query, results)
-
-    return {
-        "query": query,
-        "count": len(results),
-        "results": [result.to_dict() for result in results],
-    }
+# ── New Tools ──────────────────────────────────────────────────
 
 
-def _sanitize_untrusted_text(value: str) -> str:
-    return sanitize_untrusted_text(value)
+@mcp.tool(
+    name="email_list_folders",
+    annotations=_tool_annotations("List Email Folders"),
+)
+async def email_list_folders() -> str:
+    """List all folders in the email archive with email counts.
+
+    Returns a sorted list of folder names and the number of emails in each.
+    Useful for understanding archive structure before scoping a search.
+
+    Returns:
+        str: Formatted list of folders with email counts.
+    """
+    retriever = get_retriever()
+    folders = retriever.list_folders()
+
+    if not folders:
+        return "No folders found in the archive."
+
+    lines = [f"Folders in the email archive ({len(folders)} total):\n"]
+    for entry in folders:
+        lines.append(f"  {entry['count']:>5} emails - {entry['folder']}")
+    return "\n".join(lines)
+
+
+class EmailIngestInput(BaseModel):
+    """Input for ingesting an OLM email archive."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    olm_path: str = Field(
+        ...,
+        description="Absolute path to the .olm file to ingest.",
+        min_length=1,
+    )
+    max_emails: Optional[int] = Field(
+        default=None,
+        description="Optional cap on number of emails to parse.",
+        ge=1,
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="If true, parse and chunk without writing to the database.",
+    )
+
+
+@mcp.tool(
+    name="email_ingest",
+    annotations=ToolAnnotations(
+        title="Ingest Email Archive",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+async def email_ingest(params: EmailIngestInput) -> str:
+    """Ingest an Outlook .olm export into the email vector database.
+
+    Parses the archive, chunks each email, embeds the chunks, and stores
+    them in ChromaDB. Already-indexed emails are skipped automatically.
+
+    Args:
+        params (EmailIngestInput): Ingestion parameters containing:
+            - olm_path (str): Absolute path to the .olm file
+            - max_emails (int, optional): Cap on emails to parse
+            - dry_run (bool): If true, parse without writing (default: False)
+
+    Returns:
+        str: JSON summary of the ingestion run.
+    """
+    from .ingest import ingest
+
+    try:
+        stats = ingest(
+            olm_path=params.olm_path,
+            max_emails=params.max_emails,
+            dry_run=params.dry_run,
+        )
+    except FileNotFoundError as exc:
+        return json.dumps({"error": str(exc)})
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"error": str(exc)})
+
+    return json.dumps(stats, indent=2)
 
 
 # ── Entry Point ────────────────────────────────────────────────

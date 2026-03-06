@@ -9,8 +9,7 @@ from sentence_transformers import SentenceTransformer
 
 from .chunker import EmailChunk
 from .config import resolve_runtime_settings
-from .converters import to_builtin_list
-from .storage import get_chroma_client, get_collection, iter_collection_ids
+from .storage import get_chroma_client, get_collection, iter_collection_ids, to_builtin_list
 
 logger = logging.getLogger(__name__)
 

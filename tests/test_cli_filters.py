@@ -14,6 +14,8 @@ def test_parse_args_supports_filter_flags():
             "approval",
             "--folder",
             "inbox",
+            "--cc",
+            "finance-team",
             "--min-score",
             "0.75",
             "--date-from",
@@ -21,7 +23,6 @@ def test_parse_args_supports_filter_flags():
             "--date-to",
             "2023-12-31",
             "--json",
-            "--no-claude",
             "--top-k",
             "5",
         ]
@@ -31,11 +32,11 @@ def test_parse_args_supports_filter_flags():
     assert args.sender == "john"
     assert args.subject == "approval"
     assert args.folder == "inbox"
+    assert args.cc == "finance-team"
     assert args.min_score == 0.75
     assert args.date_from == "2023-01-01"
     assert args.date_to == "2023-12-31"
     assert args.json is True
-    assert args.no_claude is True
     assert args.top_k == 5
 
 
@@ -55,19 +56,17 @@ def test_parse_args_supports_format_json():
             "security review",
             "--format",
             "json",
-            "--no-claude",
         ]
     )
 
     assert args.query == "security review"
     assert args.format == "json"
-    assert args.no_claude is True
 
 
 def test_resolve_output_format_prefers_explicit_format():
     from src.cli import parse_args, resolve_output_format
 
-    args = parse_args(["--query", "security review", "--format", "text", "--no-claude"])
+    args = parse_args(["--query", "security review", "--format", "text"])
 
     assert resolve_output_format(args) == "text"
 
@@ -75,6 +74,13 @@ def test_resolve_output_format_prefers_explicit_format():
 def test_resolve_output_format_supports_legacy_json_flag():
     from src.cli import parse_args, resolve_output_format
 
-    args = parse_args(["--query", "security review", "--json", "--no-claude"])
+    args = parse_args(["--query", "security review", "--json"])
 
     assert resolve_output_format(args) == "json"
+
+
+def test_parse_args_cc_requires_query():
+    from src.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["--cc", "finance-team"])

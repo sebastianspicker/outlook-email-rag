@@ -12,6 +12,13 @@ from chromadb.config import Settings as ChromaSettings
 DEFAULT_PAGE_SIZE = 1000
 
 
+def to_builtin_list(value: Any) -> Any:
+    """Convert tensor/ndarray-like values to Python lists when needed."""
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    return value
+
+
 def get_chroma_client(chromadb_path: str):
     """Create a persistent Chroma client at the given path."""
     os.makedirs(chromadb_path, exist_ok=True)

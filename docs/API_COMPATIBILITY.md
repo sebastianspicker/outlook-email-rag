@@ -19,12 +19,12 @@ The following CLI capabilities are stable for `0.1.x`:
    3. `--sender`
    4. `--subject`
    5. `--folder`
-   6. `--date-from`
-   7. `--date-to`
-   8. `--min-score`
-   9. `--json` and `--format {text,json}`
-   10. `--raw`
-   11. `--no-claude`
+   6. `--cc`
+   7. `--date-from`
+   8. `--date-to`
+   9. `--min-score`
+   10. `--json` and `--format {text,json}`
+   11. `--version`
 2. Operational path:
    1. `--stats`
    2. `--list-senders N`
@@ -42,37 +42,46 @@ The following tool names are stable for `0.1.x`:
 1. `email_search`
 2. `email_search_by_sender`
 3. `email_search_by_date`
-4. `email_list_senders`
-5. `email_stats`
-6. `email_search_structured`
+4. `email_search_structured`
+5. `email_list_senders`
+6. `email_list_folders`
+7. `email_stats`
+8. `email_ingest`
 
 Stable MCP input schema summary:
 
 1. `email_search`
    1. `query: str` (required)
-   2. `top_k: int` (optional, bounded)
+   2. `top_k: int` (optional, bounded 1-30)
 2. `email_search_by_sender`
    1. `query: str` (required)
    2. `sender: str` (required)
-   3. `top_k: int` (optional, bounded)
+   3. `top_k: int` (optional, bounded 1-30)
 3. `email_search_by_date`
    1. `query: str` (required)
    2. `date_from: str | null` (optional, ISO date)
    3. `date_to: str | null` (optional, ISO date)
-   4. `top_k: int` (optional, bounded)
-4. `email_list_senders`
-   1. `limit: int` (optional, bounded)
-5. `email_stats`
-   1. no parameters
-6. `email_search_structured`
+   4. `top_k: int` (optional, bounded 1-30)
+4. `email_search_structured`
    1. `query: str` (required)
-   2. `date_from: str | null` (optional, ISO date)
-   3. `date_to: str | null` (optional, ISO date)
-   4. `top_k: int` (optional, bounded)
-   5. `sender: str | null` (optional)
-   6. `subject: str | null` (optional)
-   7. `folder: str | null` (optional)
-   8. `min_score: float | null` (optional, bounded)
+   2. `top_k: int` (optional, bounded 1-30)
+   3. `sender: str | null` (optional)
+   4. `subject: str | null` (optional)
+   5. `folder: str | null` (optional)
+   6. `cc: str | null` (optional)
+   7. `date_from: str | null` (optional, ISO date)
+   8. `date_to: str | null` (optional, ISO date)
+   9. `min_score: float | null` (optional, bounded 0.0-1.0)
+5. `email_list_senders`
+   1. `limit: int` (optional, bounded 1-200)
+6. `email_list_folders`
+   1. no parameters
+7. `email_stats`
+   1. no parameters
+8. `email_ingest`
+   1. `olm_path: str` (required) — absolute path to `.olm` file
+   2. `max_emails: int | null` (optional, ge=1)
+   3. `dry_run: bool` (optional, default `false`)
 
 ## Breaking Change Rule
 

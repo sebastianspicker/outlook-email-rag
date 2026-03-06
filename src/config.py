@@ -16,7 +16,6 @@ class Settings:
     embedding_model: str = "all-MiniLM-L6-v2"
     collection_name: str = "emails"
     top_k: int = 10
-    claude_model: str = "claude-sonnet-4-20250514"
     log_level: str = "INFO"
 
     @classmethod
@@ -27,7 +26,6 @@ class Settings:
             embedding_model=os.getenv("EMBEDDING_MODEL", cls.embedding_model),
             collection_name=os.getenv("COLLECTION_NAME", cls.collection_name),
             top_k=_int_from_env("TOP_K", cls.top_k, min_value=1, max_value=1000),
-            claude_model=os.getenv("CLAUDE_MODEL", cls.claude_model),
             log_level=os.getenv("LOG_LEVEL", cls.log_level).upper(),
         )
 
@@ -50,7 +48,6 @@ def resolve_runtime_settings(
         embedding_model=embedding_model or base.embedding_model,
         collection_name=collection_name or base.collection_name,
         top_k=base.top_k,
-        claude_model=base.claude_model,
         log_level=base.log_level,
     )
 

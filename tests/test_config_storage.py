@@ -5,7 +5,6 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
     monkeypatch.delenv("COLLECTION_NAME", raising=False)
     monkeypatch.delenv("TOP_K", raising=False)
-    monkeypatch.delenv("CLAUDE_MODEL", raising=False)
 
     from src.config import Settings
 
@@ -14,7 +13,6 @@ def test_settings_defaults(monkeypatch):
     assert settings.embedding_model == "all-MiniLM-L6-v2"
     assert settings.collection_name == "emails"
     assert settings.top_k == 10
-    assert settings.claude_model
 
 
 def test_settings_top_k_rejects_invalid_env(monkeypatch):

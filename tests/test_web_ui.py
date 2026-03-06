@@ -48,6 +48,20 @@ def test_build_active_filter_labels_includes_selected_filters():
     ]
 
 
+def test_build_active_filter_labels_includes_cc():
+    labels = build_active_filter_labels(
+        sender=None,
+        subject=None,
+        folder=None,
+        date_from=None,
+        date_to=None,
+        min_score=None,
+        cc="finance-team",
+    )
+
+    assert labels == ["CC: finance-team"]
+
+
 def test_sort_search_results_supports_relevance_and_date():
     results = [
         _result("older", 0.2, "2024-01-01T00:00:00Z"),  # score 0.8

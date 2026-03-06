@@ -14,12 +14,14 @@ def build_active_filter_labels(
     date_from: str | None,
     date_to: str | None,
     min_score: float | None,
+    cc: str | None = None,
 ) -> list[str]:
     labels: list[str] = []
 
     sender_value = _normalize_optional_text(sender)
     subject_value = _normalize_optional_text(subject)
     folder_value = _normalize_optional_text(folder)
+    cc_value = _normalize_optional_text(cc)
 
     if sender_value:
         labels.append(f"Sender: {sender_value}")
@@ -27,6 +29,8 @@ def build_active_filter_labels(
         labels.append(f"Subject: {subject_value}")
     if folder_value:
         labels.append(f"Folder: {folder_value}")
+    if cc_value:
+        labels.append(f"CC: {cc_value}")
     if date_from:
         labels.append(f"From: {date_from}")
     if date_to:

@@ -9,11 +9,11 @@ import streamlit as st
 
 try:
     from .retriever import EmailRetriever
-    from .validation import normalize_optional_iso_date, validate_date_window
+    from .validation import validate_date_window
     from .web_ui import build_active_filter_labels, build_export_payload, build_filter_chip_html, sort_search_results
 except ImportError:  # pragma: no cover - allows `streamlit run src/web_app.py`
     from src.retriever import EmailRetriever
-    from src.validation import normalize_optional_iso_date, validate_date_window
+    from src.validation import validate_date_window
     from src.web_ui import build_active_filter_labels, build_export_payload, build_filter_chip_html, sort_search_results
 
 st.set_page_config(page_title="Email RAG", page_icon="📬", layout="wide", initial_sidebar_state="expanded")
@@ -24,6 +24,8 @@ SORT_OPTIONS = {
     "Oldest first": "date_asc",
     "Sender A-Z": "sender_asc",
 }
+
+PAGE_SIZE = 20
 
 
 @st.cache_resource
@@ -155,10 +157,20 @@ def main() -> None:
     retriever = get_retriever(chromadb_path)
     render_sidebar(retriever)
 
+    if retriever.collection.count() == 0:
+        st.warning("No emails indexed yet.")
+        st.info(
+            "To index your Outlook archive, run the ingestion script:\n\n"
+            "```\npython -m src.ingest path/to/export.olm\n```\n\n"
+            "Or use the **`email_ingest`** MCP tool directly from Claude Code."
+        )
+        return
+
     st.session_state.setdefault("web_results", [])
     st.session_state.setdefault("web_query", "")
     st.session_state.setdefault("web_filters", {})
     st.session_state.setdefault("web_sort", "relevance")
+    st.session_state.setdefault("web_page", 0)
 
     with st.form("search_form", clear_on_submit=False):
         query = st.text_input("Query", placeholder="Find contract renewal emails from legal")
@@ -170,19 +182,21 @@ def main() -> None:
         with control_col3:
             min_score = st.slider("Min Relevance", min_value=0.0, max_value=1.0, value=0.0, step=0.05)
 
-        filter_col1, filter_col2, filter_col3 = st.columns(3)
+        filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
         with filter_col1:
             sender = st.text_input("Sender (optional)")
         with filter_col2:
             subject = st.text_input("Subject (optional)")
         with filter_col3:
             folder = st.text_input("Folder (optional)")
+        with filter_col4:
+            cc = st.text_input("CC (optional)")
 
         date_col1, date_col2 = st.columns(2)
         with date_col1:
-            date_from = st.text_input("Date From (YYYY-MM-DD)")
+            date_from_val = st.date_input("Date From", value=None)
         with date_col2:
-            date_to = st.text_input("Date To (YYYY-MM-DD)")
+            date_to_val = st.date_input("Date To", value=None)
 
         search_clicked = st.form_submit_button("Search", type="primary")
 
@@ -190,45 +204,43 @@ def main() -> None:
         if not query.strip():
             st.warning("Please enter a query.")
         else:
-            valid_date_from = _validate_iso_date(date_from, "Date From")
-            valid_date_to = _validate_iso_date(date_to, "Date To")
-            if valid_date_from is None and date_from:
-                return
-            if valid_date_to is None and date_to:
-                return
+            valid_date_from = str(date_from_val) if date_from_val else None
+            valid_date_to = str(date_to_val) if date_to_val else None
             try:
                 validate_date_window(valid_date_from, valid_date_to)
             except ValueError:
                 st.error("Date From cannot be later than Date To.")
-                return
+            else:
+                min_score_value = round(float(min_score), 2) if min_score > 0.0 else None
+                filters = {
+                    "sender": sender or None,
+                    "subject": subject or None,
+                    "folder": folder or None,
+                    "cc": cc or None,
+                    "date_from": valid_date_from,
+                    "date_to": valid_date_to,
+                    "min_score": min_score_value,
+                }
 
-            min_score_value = round(float(min_score), 2) if min_score > 0.0 else None
-            filters = {
-                "sender": sender or None,
-                "subject": subject or None,
-                "folder": folder or None,
-                "date_from": valid_date_from,
-                "date_to": valid_date_to,
-                "min_score": min_score_value,
-            }
+                results = retriever.search_filtered(
+                    query=query,
+                    top_k=int(top_k),
+                    sender=filters["sender"],
+                    subject=filters["subject"],
+                    folder=filters["folder"],
+                    cc=filters["cc"],
+                    date_from=filters["date_from"],
+                    date_to=filters["date_to"],
+                    min_score=filters["min_score"],
+                )
+                sort_value = SORT_OPTIONS[sort_label]
+                sorted_results = sort_search_results(results, sort_value)
 
-            results = retriever.search_filtered(
-                query=query,
-                top_k=int(top_k),
-                sender=filters["sender"],
-                subject=filters["subject"],
-                folder=filters["folder"],
-                date_from=filters["date_from"],
-                date_to=filters["date_to"],
-                min_score=filters["min_score"],
-            )
-            sort_value = SORT_OPTIONS[sort_label]
-            sorted_results = sort_search_results(results, sort_value)
-
-            st.session_state["web_results"] = sorted_results
-            st.session_state["web_query"] = query
-            st.session_state["web_filters"] = filters
-            st.session_state["web_sort"] = sort_value
+                st.session_state["web_results"] = sorted_results
+                st.session_state["web_query"] = query
+                st.session_state["web_filters"] = filters
+                st.session_state["web_sort"] = sort_value
+                st.session_state["web_page"] = 0
 
     results = st.session_state.get("web_results", [])
     if not results:
@@ -241,6 +253,7 @@ def main() -> None:
     sender_filter = _as_optional_str(filters.get("sender"))
     subject_filter = _as_optional_str(filters.get("subject"))
     folder_filter = _as_optional_str(filters.get("folder"))
+    cc_filter = _as_optional_str(filters.get("cc"))
     date_from_filter = _as_optional_str(filters.get("date_from"))
     date_to_filter = _as_optional_str(filters.get("date_to"))
     min_score_filter = _as_optional_float(filters.get("min_score"))
@@ -248,14 +261,32 @@ def main() -> None:
         sender=sender_filter,
         subject=subject_filter,
         folder=folder_filter,
+        cc=cc_filter,
         date_from=date_from_filter,
         date_to=date_to_filter,
         min_score=min_score_filter,
     )
     render_results_summary(results, active_filter_labels, sort_label)
 
+    total_pages = max(1, (len(results) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(0, min(st.session_state.get("web_page", 0), total_pages - 1))
+    page_results = results[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+
     preview_chars = st.slider("Preview Length", min_value=200, max_value=4000, value=1200, step=100)
-    render_results(results, preview_chars=preview_chars)
+    render_results(page_results, preview_chars=preview_chars)
+
+    if total_pages > 1:
+        nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
+        with nav_col1:
+            if st.button("◀ Prev", disabled=page == 0):
+                st.session_state["web_page"] = page - 1
+                st.rerun()
+        with nav_col2:
+            st.caption(f"Page {page + 1} of {total_pages} ({len(results)} results total)")
+        with nav_col3:
+            if st.button("Next ▶", disabled=page >= total_pages - 1):
+                st.session_state["web_page"] = page + 1
+                st.rerun()
 
     payload = build_export_payload(
         query=st.session_state.get("web_query", ""),
@@ -269,14 +300,6 @@ def main() -> None:
         file_name="email-search-results.json",
         mime="application/json",
     )
-
-
-def _validate_iso_date(value: str, label: str) -> str | None:
-    try:
-        return normalize_optional_iso_date(value)
-    except ValueError:
-        st.error(f"{label} must use YYYY-MM-DD format.")
-        return None
 
 
 def _as_optional_str(value: Any) -> str | None:

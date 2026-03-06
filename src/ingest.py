@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from .chunker import chunk_email
 from .config import configure_logging, get_settings
 from .parse_olm import parse_olm
+from .validation import positive_int as _shared_positive_int
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def ingest(
         if embedder:
             pending_chunks.extend(chunks)
 
-        if total_emails % 500 == 0:
+        if total_emails % 100 == 0:
             logger.info("Parsed %s emails (%s chunks).", total_emails, total_chunks_created)
 
         if max_emails is not None and total_emails >= max_emails:
@@ -157,10 +158,10 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _positive_int(raw: str) -> int:
-    value = int(raw)
-    if value <= 0:
-        raise argparse.ArgumentTypeError("Value must be a positive integer.")
-    return value
+    try:
+        return _shared_positive_int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def format_ingestion_summary(stats: dict[str, Any]) -> list[str]:

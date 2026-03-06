@@ -201,6 +201,32 @@ def test_search_filtered_subject_filter_handles_none_metadata():
     assert results == []
 
 
+def test_search_filtered_applies_cc_filter():
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    def _search(query, top_k=10, where=None):
+        return [
+            SearchResult(
+                chunk_id="match",
+                text="hello",
+                metadata={"cc": "finance-team@example.com, legal@example.com", "date": "2024-01-01"},
+                distance=0.1,
+            ),
+            SearchResult(
+                chunk_id="no-cc",
+                text="hello",
+                metadata={"cc": "", "date": "2024-01-01"},
+                distance=0.2,
+            ),
+        ]
+
+    retriever.search = _search
+    results = retriever.search_filtered(query="budget", cc="finance-team", top_k=5)
+
+    assert len(results) == 1
+    assert results[0].chunk_id == "match"
+
+
 def test_search_filtered_folder_filter_handles_none_metadata():
     retriever = EmailRetriever.__new__(EmailRetriever)
 
