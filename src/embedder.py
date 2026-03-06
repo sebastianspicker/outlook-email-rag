@@ -66,7 +66,16 @@ class EmailEmbedder:
             return 0
 
         existing = self.get_existing_ids(refresh=False)
-        new_chunks = [chunk for chunk in chunks if chunk.chunk_id not in existing]
+
+        # Deduplicate: skip chunks already in DB *and* duplicates within this batch
+        # (two emails can share a uid when they have the same message_id or
+        # the same subject|date|sender fallback hash).
+        seen: set[str] = set()
+        new_chunks: list[EmailChunk] = []
+        for chunk in chunks:
+            if chunk.chunk_id not in existing and chunk.chunk_id not in seen:
+                seen.add(chunk.chunk_id)
+                new_chunks.append(chunk)
 
         if not new_chunks:
             if show_progress:
