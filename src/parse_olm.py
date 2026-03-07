@@ -28,7 +28,7 @@ from lxml import etree
 logger = logging.getLogger(__name__)
 MAX_XML_BYTES = 10_000_000
 MAX_XML_FILES = 200_000
-MAX_TOTAL_XML_BYTES = 1_000_000_000
+MAX_TOTAL_XML_BYTES = 20_000_000_000  # 20 GB — safe because parse_olm is a generator
 
 _NS_OUTLOOK = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
 
