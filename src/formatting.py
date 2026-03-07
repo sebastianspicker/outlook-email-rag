@@ -33,6 +33,10 @@ def build_email_header(email_dict: Mapping[str, Any]) -> str:
     if to_values:
         parts.append(f"To: {', '.join(to_values[:3])}")
 
+    cc_values = _as_list(email_dict.get("cc"))
+    if cc_values:
+        parts.append(f"CC: {', '.join(cc_values[:3])}")
+
     subject = email_dict.get("subject")
     if subject:
         parts.append(f"Subject: {subject}")
@@ -52,12 +56,17 @@ def build_email_header(email_dict: Mapping[str, Any]) -> str:
 
 
 def build_result_header(metadata: Mapping[str, Any]) -> str:
-    """Build result header used in Claude context formatting."""
+    """Build result header used in Claude context formatting.
+
+    Compact format: date truncated to date-only, ``Folder: Inbox`` omitted
+    (most common folder, low information value).
+    """
     parts: list[str] = []
 
     date_value = metadata.get("date")
     if date_value:
-        parts.append(f"Date: {date_value}")
+        # Truncate to date-only (drop time) for compactness
+        parts.append(f"Date: {str(date_value)[:10]}")
 
     sender = format_sender(metadata.get("sender_name"), metadata.get("sender_email"))
     if sender:
@@ -73,9 +82,21 @@ def build_result_header(metadata: Mapping[str, Any]) -> str:
     if subject:
         parts.append(f"Subject: {subject}")
 
+    email_type = metadata.get("email_type")
+    if email_type and email_type != "original":
+        parts.append(f"Type: {email_type}")
+
     folder = metadata.get("folder")
-    if folder:
+    if folder and folder != "Inbox":
         parts.append(f"Folder: {folder}")
+
+    priority = metadata.get("priority")
+    if priority and str(priority) not in ("0", ""):
+        parts.append(f"Priority: {priority}")
+
+    attachment_names = metadata.get("attachment_names")
+    if attachment_names and str(attachment_names).strip():
+        parts.append(f"Attachments: {attachment_names}")
 
     return "\n".join(parts)
 
@@ -84,6 +105,11 @@ def format_context_block(text: str, metadata: Mapping[str, Any], score: float) -
     """Format a single result block for Claude context."""
     header = build_result_header(metadata)
     return f"---\n{header}\nRelevance: {score:.2f}\n---\n{text}\n"
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate for Claude context budgeting (~4 chars per token)."""
+    return max(1, len(text) // 4)
 
 
 def _as_list(value: Any) -> list[str]:

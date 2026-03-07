@@ -43,7 +43,7 @@ def test_build_active_filter_labels_includes_selected_filters():
         "Subject: renewal",
         "Folder: finance",
         "From: 2024-01-01",
-        "To: 2024-12-31",
+        "To date: 2024-12-31",
         "Min score: 0.80",
     ]
 
@@ -101,6 +101,33 @@ def test_build_export_payload_includes_filters_and_sort():
     assert payload["generated_at"] == "2026-03-02T10:00:00Z"
     assert payload["filters"]["subject"] == "renewal"
     assert payload["results"][0]["chunk_id"] == "best"
+
+
+def test_build_active_filter_labels_includes_to():
+    labels = build_active_filter_labels(
+        sender=None, subject=None, folder=None,
+        date_from=None, date_to=None, min_score=None,
+        to="alice@example.com",
+    )
+    assert labels == ["To: alice@example.com"]
+
+
+def test_build_active_filter_labels_includes_has_attachments():
+    labels = build_active_filter_labels(
+        sender=None, subject=None, folder=None,
+        date_from=None, date_to=None, min_score=None,
+        has_attachments=True,
+    )
+    assert labels == ["Has attachments"]
+
+
+def test_build_active_filter_labels_has_attachments_false_not_shown():
+    labels = build_active_filter_labels(
+        sender=None, subject=None, folder=None,
+        date_from=None, date_to=None, min_score=None,
+        has_attachments=False,
+    )
+    assert labels == []
 
 
 def test_build_filter_chip_html_escapes_untrusted_labels():

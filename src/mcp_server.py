@@ -179,6 +179,12 @@ class EmailSearchStructuredInput(DateRangeInput):
     subject: Optional[str] = Field(default=None)
     folder: Optional[str] = Field(default=None)
     cc: Optional[str] = Field(default=None, description="CC recipient filter (partial match).")
+    to: Optional[str] = Field(default=None, description="To recipient filter (partial match).")
+    bcc: Optional[str] = Field(default=None, description="BCC recipient filter (partial match).")
+    has_attachments: Optional[bool] = Field(default=None, description="Filter by attachment presence.")
+    priority: Optional[int] = Field(
+        default=None, ge=0, description="Minimum priority level (emails with priority >= this value)."
+    )
     min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
 
@@ -337,6 +343,14 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         search_kwargs["folder"] = params.folder
     if params.cc is not None:
         search_kwargs["cc"] = params.cc
+    if params.to is not None:
+        search_kwargs["to"] = params.to
+    if params.bcc is not None:
+        search_kwargs["bcc"] = params.bcc
+    if params.has_attachments is not None:
+        search_kwargs["has_attachments"] = params.has_attachments
+    if params.priority is not None:
+        search_kwargs["priority"] = params.priority
     if params.date_from is not None:
         search_kwargs["date_from"] = params.date_from
     if params.date_to is not None:
@@ -352,12 +366,62 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         "subject": params.subject,
         "folder": params.folder,
         "cc": params.cc,
+        "to": params.to,
+        "bcc": params.bcc,
+        "has_attachments": params.has_attachments,
+        "priority": params.priority,
         "date_from": params.date_from,
         "date_to": params.date_to,
         "min_score": params.min_score,
     }
     payload["model"] = get_settings().embedding_model
     return json.dumps(payload, indent=2)
+
+
+class EmailSearchByRecipientInput(BaseModel):
+    """Input for recipient-filtered email search."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    query: str = Field(
+        ...,
+        description="Natural language search query for the content you're looking for.",
+        min_length=1,
+        max_length=500,
+    )
+    recipient: str = Field(
+        ...,
+        description=(
+            "Recipient name or email to filter by (partial match on To field). "
+            "E.g., 'alice' matches 'alice@company.com' in the To field."
+        ),
+        min_length=1,
+    )
+    top_k: int = Field(default=10, ge=1, le=30)
+
+
+@mcp.tool(
+    name="email_search_by_recipient",
+    annotations=_tool_annotations("Search Emails by Recipient"),
+)
+async def email_search_by_recipient(params: EmailSearchByRecipientInput) -> str:
+    """Search emails where a specific person is in the To field.
+
+    Combines semantic search with recipient filtering. The recipient filter
+    supports partial matching on the To address field.
+
+    Args:
+        params (EmailSearchByRecipientInput): Search parameters containing:
+            - query (str): Natural language search query
+            - recipient (str): Recipient name or email (partial match on To)
+            - top_k (int): Number of results to return (default: 10)
+
+    Returns:
+        str: Formatted email results sent to the specified recipient.
+    """
+    retriever = get_retriever()
+    results = retriever.search_filtered(query=params.query, to=params.recipient, top_k=params.top_k)
+    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 # ── New Tools ──────────────────────────────────────────────────
@@ -448,6 +512,56 @@ async def email_ingest(params: EmailIngestInput) -> str:
         return json.dumps({"error": str(exc)})
 
     return json.dumps(stats, indent=2)
+
+
+class EmailSearchThreadInput(BaseModel):
+    """Input for thread search."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    conversation_id: str = Field(
+        ...,
+        description=(
+            "The conversation_id from a previous search result's metadata. "
+            "Returns all emails in that conversation thread, sorted by date."
+        ),
+        min_length=1,
+    )
+    top_k: int = Field(
+        default=50,
+        description="Maximum number of emails to return from the thread.",
+        ge=1,
+        le=100,
+    )
+
+
+@mcp.tool(
+    name="email_search_thread",
+    annotations=_tool_annotations("Search Email Thread"),
+)
+async def email_search_thread(params: EmailSearchThreadInput) -> str:
+    """Retrieve all emails in a conversation thread.
+
+    Given a ``conversation_id`` (from a previous search result), returns all
+    emails in that thread sorted by date.  Use this to explore the full
+    context of a conversation after finding a relevant email via search.
+
+    Args:
+        params (EmailSearchThreadInput): Parameters containing:
+            - conversation_id (str): Thread identifier from prior search metadata
+            - top_k (int): Max results (default: 50)
+
+    Returns:
+        str: Formatted thread of emails sorted chronologically.
+    """
+    retriever = get_retriever()
+    results = retriever.search_by_thread(
+        conversation_id=params.conversation_id,
+        top_k=params.top_k,
+    )
+    if not results:
+        return "No emails found for this conversation thread."
+    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
 # ── Entry Point ────────────────────────────────────────────────

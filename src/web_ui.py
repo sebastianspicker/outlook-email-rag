@@ -15,6 +15,8 @@ def build_active_filter_labels(
     date_to: str | None,
     min_score: float | None,
     cc: str | None = None,
+    to: str | None = None,
+    has_attachments: bool | None = None,
 ) -> list[str]:
     labels: list[str] = []
 
@@ -22,19 +24,24 @@ def build_active_filter_labels(
     subject_value = _normalize_optional_text(subject)
     folder_value = _normalize_optional_text(folder)
     cc_value = _normalize_optional_text(cc)
+    to_value = _normalize_optional_text(to)
 
     if sender_value:
         labels.append(f"Sender: {sender_value}")
+    if to_value:
+        labels.append(f"To: {to_value}")
     if subject_value:
         labels.append(f"Subject: {subject_value}")
     if folder_value:
         labels.append(f"Folder: {folder_value}")
     if cc_value:
         labels.append(f"CC: {cc_value}")
+    if has_attachments is True:
+        labels.append("Has attachments")
     if date_from:
         labels.append(f"From: {date_from}")
     if date_to:
-        labels.append(f"To: {date_to}")
+        labels.append(f"To date: {date_to}")
     if min_score is not None:
         labels.append(f"Min score: {min_score:.2f}")
 

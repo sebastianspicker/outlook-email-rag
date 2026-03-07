@@ -33,6 +33,12 @@ MAX_TOTAL_XML_BYTES = 1_000_000_000
 _NS_OUTLOOK = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
 
 
+_RE_FW_PREFIX = re.compile(
+    r"^(RE|AW|FW|WG|SV|VS|Antw|Doorst)\s*:\s*",
+    re.IGNORECASE,
+)
+
+
 @dataclass
 class Email:
     """Represents a single parsed email."""
@@ -43,12 +49,20 @@ class Email:
     sender_email: str
     to: list[str]
     cc: list[str]
+    bcc: list[str]
     date: str  # ISO format string
     body_text: str
     body_html: str
     folder: str
     has_attachments: bool
     attachment_names: list[str] = field(default_factory=list)
+    attachments: list[dict] = field(default_factory=list)
+    conversation_id: str = ""
+    in_reply_to: str = ""
+    references: list[str] = field(default_factory=list)
+    priority: int = 0  # 0 = normal
+    is_read: bool = True
+    attachment_contents: list[tuple[str, bytes]] = field(default_factory=list)
 
     @property
     def uid(self) -> str:
@@ -57,6 +71,36 @@ class Email:
             return hashlib.md5(self.message_id.encode(), usedforsecurity=False).hexdigest()
         key = f"{self.subject}|{self.date}|{self.sender_email}"
         return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
+
+    @property
+    def email_type(self) -> str:
+        """Classify email as 'reply', 'forward', or 'original'.
+
+        Uses subject prefix first, then falls back to ``in_reply_to``
+        for implicit replies that lack a RE:/AW: prefix.
+        """
+        subj = (self.subject or "").strip()
+        prefix_match = _RE_FW_PREFIX.match(subj)
+        if prefix_match:
+            prefix = prefix_match.group(1).upper()
+            if prefix in ("FW", "WG", "DOORST", "VS"):
+                return "forward"
+            return "reply"
+        # No subject prefix — check in_reply_to as secondary signal
+        if self.in_reply_to:
+            return "reply"
+        return "original"
+
+    @property
+    def base_subject(self) -> str:
+        """Subject with RE:/FW:/AW:/WG: prefixes stripped for thread grouping."""
+        subj = (self.subject or "").strip()
+        while True:
+            match = _RE_FW_PREFIX.match(subj)
+            if not match:
+                break
+            subj = subj[match.end():].strip()
+        return subj
 
     @property
     def clean_body(self) -> str:
@@ -76,20 +120,36 @@ class Email:
             "sender_email": self.sender_email,
             "to": self.to,
             "cc": self.cc,
+            "bcc": self.bcc,
             "date": self.date,
             "body": self.clean_body,
             "folder": self.folder,
             "has_attachments": self.has_attachments,
             "attachment_names": self.attachment_names,
+            "attachments": self.attachments,
+            "attachment_count": len(self.attachment_names),
+            "conversation_id": self.conversation_id,
+            "in_reply_to": self.in_reply_to,
+            "references": self.references,
+            "priority": self.priority,
+            "is_read": self.is_read,
+            "email_type": self.email_type,
+            "base_subject": self.base_subject,
         }
 
 
-def parse_olm(olm_path: str) -> Generator[Email, None, None]:
+def parse_olm(
+    olm_path: str,
+    extract_attachments: bool = False,
+) -> Generator[Email, None, None]:
     """
     Parse an .olm file and yield Email objects.
 
     Args:
         olm_path: Path to the .olm file.
+        extract_attachments: If True, extract binary attachment content
+            and populate ``Email.attachment_contents``. Default False
+            to avoid memory bloat.
 
     Yields:
         Email objects for each message found.
@@ -140,6 +200,10 @@ def parse_olm(olm_path: str) -> Generator[Email, None, None]:
                         break
                     processed_xml_bytes += len(xml_bytes)
                     email = _parse_email_xml(xml_bytes, xml_path)
+                    if email and extract_attachments:
+                        email.attachment_contents = _extract_attachment_contents(
+                            xml_bytes, xml_path, zf,
+                        )
                     if email:
                         yield email
             except Exception as exc:  # pragma: no cover - defensive branch
@@ -200,12 +264,30 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
 
     to_addresses = _extract_addresses(root, ns, "OPFMessageCopyToAddresses")
     cc_addresses = _extract_addresses(root, ns, "OPFMessageCopyCCAddresses")
+    bcc_addresses = _extract_addresses(root, ns, "OPFMessageCopyBCCAddresses")
 
-    # Also try OPFMessageCopyFromAddresses (non-namespaced format)
-    if not sender_email:
-        from_addresses = _extract_addresses(root, ns, "OPFMessageCopyFromAddresses")
-        if from_addresses:
-            sender_email = from_addresses[0]
+    # Fallback: OPFMessageCopyDisplayTo (display name only, no email)
+    if not to_addresses:
+        display_to = _find_text(root, "OPFMessageCopyDisplayTo", ns)
+        if display_to:
+            to_addresses = [name.strip() for name in display_to.split(";") if name.strip()]
+
+    # Also try OPFMessageCopyFromAddresses (provides both name and email)
+    if not sender_email or not sender_name:
+        from_pairs = _extract_address_details(root, ns, "OPFMessageCopyFromAddresses")
+        if from_pairs:
+            if not sender_name and from_pairs[0][0]:
+                sender_name = from_pairs[0][0]
+            if not sender_email and from_pairs[0][1]:
+                sender_email = from_pairs[0][1]
+
+    # ── Threading / metadata fields ────────────────────────
+    conversation_id = _find_text(root, "OPFMessageCopyExchangeConversationId", ns)
+    in_reply_to = _find_text(root, "OPFMessageCopyInReplyTo", ns)
+    references_raw = _find_text(root, "OPFMessageCopyReferences", ns)
+    references = _parse_references(references_raw)
+    priority = _parse_int(_find_text(root, "OPFMessageGetPriority", ns), default=0)
+    is_read = _find_text(root, "OPFMessageGetIsRead", ns).lower() != "false"
 
     # ── Fallback: parse OPFMessageCopySource headers ───────
     raw_source = _find_text(root, "OPFMessageCopySource", ns)
@@ -228,6 +310,17 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
             cc_raw = _extract_header(raw_source, "CC")
             if cc_raw:
                 cc_addresses = _parse_address_list(cc_raw)
+        if not bcc_addresses:
+            bcc_raw = _extract_header(raw_source, "BCC")
+            if bcc_raw:
+                bcc_addresses = _parse_address_list(bcc_raw)
+        # Threading fallbacks from RFC 2822 headers
+        if not in_reply_to:
+            in_reply_to = _extract_header(raw_source, "In-Reply-To").strip("<>")
+        if not references:
+            refs_raw = _extract_header(raw_source, "References")
+            if refs_raw:
+                references = _parse_references(refs_raw)
 
     # ── Fallback: OPFMessageCopyPreview for body ───────────
     if not body_text and not body_html:
@@ -236,7 +329,7 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
             body_text = preview
 
     # ── Attachments ────────────────────────────────────────
-    attachment_names = _extract_attachments(root, ns)
+    attachment_names, attachments = _extract_attachments(root, ns)
 
     # Default subject
     if not subject:
@@ -249,56 +342,237 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
         sender_email=sender_email,
         to=to_addresses,
         cc=cc_addresses,
+        bcc=bcc_addresses,
         date=date,
         body_text=body_text,
         body_html=body_html,
         folder=folder,
         has_attachments=bool(attachment_names),
         attachment_names=attachment_names,
+        attachments=attachments,
+        conversation_id=conversation_id,
+        in_reply_to=in_reply_to,
+        references=references,
+        priority=priority,
+        is_read=is_read,
     )
 
 
 # ── Address Extraction ────────────────────────────────────────
 
 
-def _extract_addresses(root: etree._Element, ns: dict[str, str], tag_name: str) -> list[str]:
-    """Extract email addresses from an address list element."""
+def _parse_address_element(element: etree._Element) -> tuple[str, str]:
+    """Parse a single address element, returning (name, email).
+
+    Supports two OLM variants:
+    - **Attribute format** (common in newer OLM exports)::
+
+        <emailAddress OPFContactEmailAddressAddress="a@b.com"
+                      OPFContactEmailAddressName="Alice" />
+
+    - **Child-element format** (older OLM exports)::
+
+        <emailAddress>
+          <OPFContactEmailAddressAddress>a@b.com</OPFContactEmailAddressAddress>
+          <OPFContactEmailAddressName>Alice</OPFContactEmailAddressName>
+        </emailAddress>
+
+    Uses fuzzy matching: any attribute or child tag containing ``'name'`` is
+    treated as the display name; ``'address'`` as the email address.
+    """
+    name = ""
+    email_addr = ""
+
+    # Strategy 1: check XML attributes (newer OLM format)
+    for attr_name, attr_value in element.attrib.items():
+        attr_lower = attr_name.lower()
+        if "address" in attr_lower and "@" in attr_value:
+            email_addr = attr_value.strip()
+        elif "name" in attr_lower and attr_value.strip():
+            name = attr_value.strip()
+
+    # Strategy 2: check child elements (older OLM format / fallback)
+    if not email_addr:
+        for child in element:
+            child_tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            child_tag_lower = child_tag.lower()
+            if "name" in child_tag_lower and child.text and not name:
+                name = child.text.strip()
+            elif "address" in child_tag_lower and child.text and not email_addr:
+                email_addr = child.text.strip()
+
+    return name, email_addr
+
+
+def _extract_address_details(
+    root: etree._Element, ns: dict[str, str], tag_name: str,
+) -> list[tuple[str, str]]:
+    """Extract (name, email) pairs from an address list element."""
     container = _find(root, tag_name, ns)
     if container is None:
         return []
+    return [_parse_address_element(addr_el) for addr_el in container]
 
+
+def _extract_addresses(root: etree._Element, ns: dict[str, str], tag_name: str) -> list[str]:
+    """Extract addresses from an address list element.
+
+    Returns addresses in ``"Name <email>"`` format when a display name is
+    available, otherwise just the bare email address.
+    """
+    pairs = _extract_address_details(root, ns, tag_name)
     addresses: list[str] = []
-    # Try namespaced child elements
-    if ns:
-        for addr_el in container.findall(".//o:emailAddress", ns):
-            addr = addr_el.find("o:OPFContactEmailAddressAddress", ns)
-            if addr is not None and addr.text:
-                addresses.append(addr.text)
-    else:
-        for addr_el in container.findall(".//emailAddress"):
-            addr = addr_el.find("OPFContactEmailAddressAddress")
-            if addr is not None and addr.text:
-                addresses.append(addr.text)
-
+    for name, email_addr in pairs:
+        if name and email_addr:
+            addresses.append(f"{name} <{email_addr}>")
+        elif email_addr:
+            addresses.append(email_addr)
+        elif name:
+            addresses.append(name)
     return addresses
 
 
-def _extract_attachments(root: etree._Element, ns: dict[str, str]) -> list[str]:
-    """Extract attachment filenames from the email XML."""
+def _extract_attachments(root: etree._Element, ns: dict[str, str]) -> tuple[list[str], list[dict]]:
+    """Extract attachment info from the email XML.
+
+    Returns:
+        (names, attachments) — list of filenames and list of metadata dicts
+        with keys ``name``, ``mime_type``, ``size``.
+    """
     names: list[str] = []
+    attachments: list[dict] = []
     if ns:
         attachment_els = root.findall(".//o:OPFMessageCopyAttachmentList/o:messageAttachment", ns)
-        for att in attachment_els:
-            name_el = att.find("o:OPFAttachmentName", ns)
-            if name_el is not None and name_el.text:
-                names.append(name_el.text)
     else:
         attachment_els = root.findall(".//OPFMessageCopyAttachmentList/messageAttachment")
-        for att in attachment_els:
-            name_el = att.find("OPFAttachmentName")
-            if name_el is not None and name_el.text:
-                names.append(name_el.text)
-    return names
+
+    for att in attachment_els:
+        info = _extract_attachment_info(att, ns)
+        if info["name"]:
+            names.append(info["name"])
+            attachments.append(info)
+    return names, attachments
+
+
+def _extract_attachment_info(att: etree._Element, ns: dict[str, str]) -> dict:
+    """Extract attachment name, MIME type and size from a messageAttachment element."""
+    name = _extract_attachment_field(att, ns, "OPFAttachmentName", attr_hint="name")
+    mime_type = _extract_attachment_field(att, ns, "OPFAttachmentContentType", attr_hint="contenttype")
+    size_str = _extract_attachment_field(att, ns, "OPFAttachmentContentFileSize", attr_hint="filesize")
+    size = _parse_int(size_str) if size_str else 0
+    return {"name": name, "mime_type": mime_type, "size": size}
+
+
+def _extract_attachment_field(
+    att: etree._Element, ns: dict[str, str], tag: str, attr_hint: str,
+) -> str:
+    """Extract a field from an attachment element (child element or attribute)."""
+    # Strategy 1: child element
+    if ns:
+        el = att.find(f"o:{tag}", ns)
+    else:
+        el = att.find(tag)
+    if el is not None and el.text:
+        return el.text.strip()
+
+    # Strategy 2: XML attributes (fuzzy matching)
+    hint_lower = attr_hint.lower()
+    for attr_name, attr_value in att.attrib.items():
+        if hint_lower in attr_name.lower() and attr_value.strip():
+            return attr_value.strip()
+
+    return ""
+
+
+MAX_ATTACHMENT_BYTES = 20_000_000  # 20MB per attachment
+
+
+def _extract_attachment_contents(
+    xml_bytes: bytes,
+    xml_path: str,
+    zf: zipfile.ZipFile,
+) -> list[tuple[str, bytes]]:
+    """Extract binary content of attachments from OLM.
+
+    OLM stores attachment content in two ways:
+    1. Inline base64 in ``OPFAttachmentContentData`` element
+    2. Relative file path in ``OPFAttachmentURL`` (within the ZIP)
+
+    Returns:
+        List of (filename, content_bytes) tuples.
+    """
+    import base64
+
+    try:
+        root = etree.fromstring(xml_bytes, parser=_new_xml_parser())
+    except etree.XMLSyntaxError:
+        return []
+
+    ns = _detect_namespace(root)
+    contents: list[tuple[str, bytes]] = []
+
+    if ns:
+        attachment_els = root.findall(".//o:OPFMessageCopyAttachmentList/o:messageAttachment", ns)
+    else:
+        attachment_els = root.findall(".//OPFMessageCopyAttachmentList/messageAttachment")
+
+    for att in attachment_els:
+        name = _extract_attachment_field(att, ns, "OPFAttachmentName", attr_hint="name")
+        if not name:
+            continue
+
+        # Strategy 1: inline base64 content
+        content_data = _extract_attachment_field(
+            att, ns, "OPFAttachmentContentData", attr_hint="contentdata",
+        )
+        if content_data:
+            try:
+                decoded = base64.b64decode(content_data)
+                if len(decoded) <= MAX_ATTACHMENT_BYTES:
+                    contents.append((name, decoded))
+                continue
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Strategy 2: relative file path within the ZIP
+        url = _extract_attachment_field(att, ns, "OPFAttachmentURL", attr_hint="url")
+        if url:
+            # URL can be relative to the XML file's directory
+            xml_dir = "/".join(xml_path.split("/")[:-1])
+            candidates = [url, f"{xml_dir}/{url}"]
+            for candidate in candidates:
+                try:
+                    with zf.open(candidate) as att_file:
+                        data = att_file.read(MAX_ATTACHMENT_BYTES + 1)
+                        if len(data) <= MAX_ATTACHMENT_BYTES:
+                            contents.append((name, data))
+                    break
+                except KeyError:
+                    continue
+
+    return contents
+
+
+def _parse_references(raw: str) -> list[str]:
+    """Parse a References header value into a list of message IDs."""
+    if not raw or not raw.strip():
+        return []
+    # References are space-separated message IDs in angle brackets: <id1> <id2>
+    ids = re.findall(r"<([^>]+)>", raw)
+    if ids:
+        return ids
+    # Fallback: try splitting on whitespace for bare IDs
+    return [ref.strip("<>").strip() for ref in raw.split() if ref.strip()]
+
+
+def _parse_int(value: str, default: int = 0) -> int:
+    """Safely parse an integer from a string."""
+    if not value or not value.strip():
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        return default
 
 
 # ── RFC 2822 Header Extraction ────────────────────────────────
@@ -391,14 +665,54 @@ def _extract_folder(path: str) -> str:
 
 
 def _html_to_text(html: str) -> str:
-    """Simple HTML to text conversion."""
+    """Convert HTML to readable plain text, preserving semantic structure."""
     # Remove style and script blocks
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # Convert <br> and <p> to newlines
+
+    # Headings → markdown-style
+    for level in range(1, 7):
+        prefix = "#" * level + " "
+        text = re.sub(
+            rf"<h{level}[^>]*>(.*?)</h{level}>",
+            lambda m, p=prefix: f"\n{p}{m.group(1).strip()}\n",
+            text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+    # Blockquote
+    text = re.sub(
+        r"<blockquote[^>]*>(.*?)</blockquote>",
+        lambda m: "\n" + "\n".join(f"> {line}" for line in m.group(1).strip().splitlines()) + "\n",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # Lists: <li> → bullet
+    text = re.sub(r"<li[^>]*>", "\n- ", text, flags=re.IGNORECASE)
+    text = re.sub(r"</li>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?[ou]l[^>]*>", "\n", text, flags=re.IGNORECASE)
+
+    # Tables: <tr> → newline, <td>/<th> → tab-separated
+    text = re.sub(r"<tr[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</tr>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"<t[dh][^>]*>", "\t", text, flags=re.IGNORECASE)
+    text = re.sub(r"</t[dh]>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?table[^>]*>", "\n", text, flags=re.IGNORECASE)
+
+    # Links: <a href="url">text</a> → text (url)
+    text = re.sub(
+        r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        lambda m: f"{m.group(2).strip()} ({m.group(1)})" if m.group(1).strip() else m.group(2).strip(),
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # <br> and block-level elements → newlines
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
     text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
+
     # Strip remaining tags
     text = re.sub(r"<[^>]+>", "", text)
     text = unescape(text)

@@ -10,7 +10,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from .chunker import chunk_email
+from .chunker import chunk_attachment, chunk_email
 from .config import configure_logging, get_settings
 from .parse_olm import parse_olm
 from .validation import positive_int as _shared_positive_int
@@ -24,6 +24,7 @@ def ingest(
     batch_size: int = 500,
     max_emails: int | None = None,
     dry_run: bool = False,
+    extract_attachments: bool = False,
 ) -> dict:
     """Parse an OLM file and ingest all emails into the vector database."""
     settings = get_settings()
@@ -52,18 +53,49 @@ def ingest(
         logger.info("Database write disabled (dry-run)")
         logger.info("Configured default DB path: %s", chromadb_path or settings.chromadb_path)
 
+    attachment_extractor = None
+    if extract_attachments:
+        from .attachment_extractor import extract_text
+
+        attachment_extractor = extract_text
+
     total_emails = 0
     total_chunks_created = 0
     total_chunks_added = 0
     total_batches_written = 0
+    total_attachment_chunks = 0
     pending_chunks = []
 
-    for email in parse_olm(olm_path):
+    for email in parse_olm(olm_path, extract_attachments=extract_attachments):
         total_emails += 1
-        chunks = chunk_email(email.to_dict())
+        email_dict = email.to_dict()
+        chunks = chunk_email(email_dict)
         total_chunks_created += len(chunks)
         if embedder:
             pending_chunks.extend(chunks)
+
+        # Process attachment contents if enabled
+        if attachment_extractor and email.attachment_contents:
+            for att_name, att_bytes in email.attachment_contents:
+                att_text = attachment_extractor(att_name, att_bytes)
+                if att_text:
+                    att_chunks = chunk_attachment(
+                        email_uid=email.uid,
+                        filename=att_name,
+                        text=att_text,
+                        parent_metadata={
+                            "uid": email.uid,
+                            "subject": email_dict.get("subject", ""),
+                            "sender_name": email_dict.get("sender_name", ""),
+                            "sender_email": email_dict.get("sender_email", ""),
+                            "date": email_dict.get("date", ""),
+                            "folder": email_dict.get("folder", ""),
+                        },
+                    )
+                    total_chunks_created += len(att_chunks)
+                    total_attachment_chunks += len(att_chunks)
+                    if embedder:
+                        pending_chunks.extend(att_chunks)
 
         if total_emails % 100 == 0:
             logger.info("Parsed %s emails (%s chunks).", total_emails, total_chunks_created)
@@ -86,11 +118,13 @@ def ingest(
     stats = {
         "emails_parsed": total_emails,
         "chunks_created": total_chunks_created,
+        "attachment_chunks": total_attachment_chunks,
         "chunks_added": total_chunks_added,
         "chunks_skipped": (total_chunks_created - total_chunks_added) if embedder else 0,
         "batches_written": total_batches_written,
         "total_in_db": embedder.count() if embedder else None,
         "dry_run": dry_run,
+        "extract_attachments": extract_attachments,
         "elapsed_seconds": round(elapsed, 1),
     }
 
@@ -120,6 +154,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Parse and chunk emails without writing embeddings to ChromaDB.",
     )
     parser.add_argument(
+        "--extract-attachments",
+        action="store_true",
+        help="Extract and index text content from attachments (PDF, DOCX, XLSX, text).",
+    )
+    parser.add_argument(
         "--log-level",
         default=None,
         help="Logging level override (DEBUG, INFO, WARNING, ERROR).",
@@ -139,6 +178,7 @@ def main(argv: list[str] | None = None) -> None:
             batch_size=args.batch_size,
             max_emails=args.max_emails,
             dry_run=args.dry_run,
+            extract_attachments=args.extract_attachments,
         )
     except FileNotFoundError as exc:
         print(str(exc))

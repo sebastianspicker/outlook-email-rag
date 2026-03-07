@@ -58,6 +58,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--subject", default=None, help="Optional subject filter (partial match).")
     parser.add_argument("--folder", default=None, help="Optional folder filter (partial match).")
     parser.add_argument("--cc", default=None, help="Optional CC recipient filter (partial match).")
+    parser.add_argument("--to", default=None, help="Optional To recipient filter (partial match).")
+    parser.add_argument("--has-attachments", action="store_true", default=None, help="Filter to emails with attachments.")
     parser.add_argument("--date-from", type=_parse_iso_date, default=None, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--date-to", type=_parse_iso_date, default=None, help="End date (YYYY-MM-DD).")
     parser.add_argument(
@@ -138,6 +140,8 @@ def run_single_query(
     subject: str | None = None,
     folder: str | None = None,
     cc: str | None = None,
+    to: str | None = None,
+    has_attachments: bool | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     min_score: float | None = None,
@@ -150,6 +154,8 @@ def run_single_query(
         subject=subject,
         folder=folder,
         cc=cc,
+        to=to,
+        has_attachments=has_attachments,
         date_from=date_from,
         date_to=date_to,
         min_score=min_score,
@@ -219,6 +225,8 @@ def main(argv: list[str] | None = None) -> None:
             subject=args.subject,
             folder=args.folder,
             cc=args.cc,
+            to=args.to,
+            has_attachments=True if args.has_attachments else None,
             date_from=args.date_from,
             date_to=args.date_to,
             min_score=args.min_score,
@@ -341,13 +349,18 @@ def _validate_arg_combinations(args: argparse.Namespace, parser: argparse.Argume
         or args.subject
         or args.folder
         or args.cc
+        or args.to
+        or args.has_attachments
         or args.date_from
         or args.date_to
         or args.min_score is not None
         or args.json
         or args.format is not None
     ):
-        parser.error("--sender/--subject/--folder/--cc/--date-from/--date-to/--min-score/--json/--format require --query")
+        parser.error(
+            "--sender/--subject/--folder/--cc/--to/--has-attachments/"
+            "--date-from/--date-to/--min-score/--json/--format require --query"
+        )
 
     operational_modes = [bool(args.stats), bool(args.list_senders), bool(args.reset_index)]
     if sum(operational_modes) > 1:

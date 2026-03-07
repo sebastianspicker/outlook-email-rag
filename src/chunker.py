@@ -2,16 +2,17 @@
 Chunk emails for embedding.
 
 Strategy:
-- Short emails (< 500 chars): single chunk with full metadata header
-- Medium emails (500-2000 chars): single chunk with metadata header
-- Long emails (> 2000 chars): split into overlapping chunks, each with metadata header
-
-Each chunk gets a metadata header so the embedding captures WHO/WHEN/WHAT context,
-not just the body text. This dramatically improves retrieval quality.
+- Quoted text in replies/forwards is stripped to avoid double-indexing.
+- Short emails (< MAX_CHUNK_CHARS): single chunk with full metadata header.
+- Long emails: split into overlapping chunks. Only chunk 0 gets the full header;
+  continuation chunks get a minimal "[Subject - Part N/M]" reference.
+- Each chunk's embedding text captures WHO/WHEN/WHAT context for retrieval quality.
 """
 
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass
 
 from .formatting import build_email_header
@@ -31,6 +32,123 @@ class EmailChunk:
 MAX_CHUNK_CHARS = 1500
 OVERLAP_CHARS = 200
 
+# Quoted-content separators (English + German)
+_QUOTED_SEPARATORS = [
+    re.compile(r"^-{3,}\s*Original Message\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Urspr[uü]ngliche Nachricht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Forwarded message\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Weitergeleitete Nachricht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+]
+
+# "On ... wrote:" / "Am ... schrieb:" markers
+_WROTE_PATTERN = re.compile(
+    r"^(On .+ wrote|Am .+ schrieb[^:]*)\s*:\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+# Signature markers
+_SIGNATURE_SEPARATOR = re.compile(r"^-- ?\s*$", re.MULTILINE)  # RFC standard: "-- " or "--"
+_SENT_FROM = re.compile(
+    r"^Sent from my (iPhone|iPad|Samsung|Outlook|Galaxy|Pixel|Android|Huawei|BlackBerry)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+_CLOSING_PHRASES = re.compile(
+    r"^(Best regards|Kind regards|Regards|Mit freundlichen Gr[uü][ßs]en|"
+    r"Cheers|Thanks|Thank you|Viele Gr[uü][ßs]e|Liebe Gr[uü][ßs]e|Sincerely|"
+    r"Best wishes|Warm regards),?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def strip_signature(body: str) -> tuple[str, bool]:
+    """Detect and strip email signature from body text.
+
+    Args:
+        body: The email body text.
+
+    Returns:
+        (body_without_signature, had_signature)
+    """
+    if not body:
+        return body, False
+
+    # Try "-- " / "--" separator (RFC standard)
+    match = _SIGNATURE_SEPARATOR.search(body)
+    if match:
+        before = body[:match.start()].rstrip()
+        after = body[match.end():]
+        # Only strip if remaining content after separator is short (< 15 lines)
+        if before and after.strip().count("\n") < 15:
+            return before, True
+
+    # Try "Sent from my ..."
+    match = _SENT_FROM.search(body)
+    if match:
+        before = body[:match.start()].rstrip()
+        if before:
+            return before, True
+
+    # Try closing phrase followed by name (short tail: <= 8 lines after phrase)
+    match = _CLOSING_PHRASES.search(body)
+    if match:
+        remaining = body[match.end():]
+        remaining_lines = [ln for ln in remaining.splitlines() if ln.strip()]
+        if len(remaining_lines) <= 8:
+            before = body[:match.start()].rstrip()
+            if before:
+                return before, True
+
+    return body, False
+
+
+def strip_quoted_content(body: str, email_type: str = "original") -> tuple[str, int]:
+    """Strip quoted content from reply/forward bodies.
+
+    Args:
+        body: The email body text.
+        email_type: One of "reply", "forward", "original".
+
+    Returns:
+        (original_content, quoted_line_count) — the original part and how many
+        lines of quoted text were stripped.
+    """
+    if not body or email_type == "original":
+        return body, 0
+
+    # Try separator patterns first (most reliable)
+    for pattern in _QUOTED_SEPARATORS:
+        match = pattern.search(body)
+        if match:
+            original = body[:match.start()].rstrip()
+            quoted_lines = body[match.start():].count("\n") + 1
+            if original:
+                return original, quoted_lines
+
+    # Try "On ... wrote:" / "Am ... schrieb:" pattern
+    match = _WROTE_PATTERN.search(body)
+    if match:
+        original = body[:match.start()].rstrip()
+        quoted_lines = body[match.start():].count("\n") + 1
+        if original:
+            return original, quoted_lines
+
+    # Try trailing ">" quoted blocks (only if they make up the tail)
+    lines = body.split("\n")
+    last_non_quoted = len(lines) - 1
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip() and not lines[i].lstrip().startswith(">"):
+            last_non_quoted = i
+            break
+
+    quoted_count = len(lines) - 1 - last_non_quoted
+    if quoted_count >= 3:  # Only strip if there's a meaningful quoted block
+        original = "\n".join(lines[:last_non_quoted + 1]).rstrip()
+        if original:
+            return original, quoted_count
+
+    return body, 0
+
 
 def chunk_email(email_dict: dict) -> list[EmailChunk]:
     """
@@ -44,13 +162,23 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     """
     uid = email_dict["uid"]
     body = email_dict.get("body", "")
+    email_type = email_dict.get("email_type", "original")
     header = build_email_header(email_dict)
+    subject = email_dict.get("subject", "")
+
+    # Strip quoted content from replies/forwards
+    body, quoted_lines = strip_quoted_content(body, email_type)
+    quoted_note = f"\n[Quoted: ~{quoted_lines} lines omitted]" if quoted_lines > 0 else ""
+
+    # Strip signature
+    body, had_signature = strip_signature(body)
+    sig_note = "\n[Signature stripped]" if had_signature else ""
 
     # Metadata stored in ChromaDB (not embedded, but returned with results)
     base_metadata = {
         "uid": uid,
         "message_id": email_dict.get("message_id", ""),
-        "subject": email_dict.get("subject", ""),
+        "subject": subject,
         "sender_name": email_dict.get("sender_name", ""),
         "sender_email": email_dict.get("sender_email", ""),
         "to": ", ".join(email_dict.get("to", [])),
@@ -58,10 +186,23 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         "date": email_dict.get("date", ""),
         "folder": email_dict.get("folder", ""),
         "has_attachments": str(email_dict.get("has_attachments", False)),
+        "conversation_id": email_dict.get("conversation_id", ""),
+        "in_reply_to": email_dict.get("in_reply_to", ""),
+        "email_type": email_type,
+        "base_subject": email_dict.get("base_subject", ""),
+        "priority": str(email_dict.get("priority", 0)),
+        "bcc": ", ".join(email_dict.get("bcc", [])),
+        "attachment_names": ", ".join(email_dict.get("attachment_names", [])),
+        "attachment_count": str(len(email_dict.get("attachment_names", []))),
+        "has_signature": str(had_signature),
     }
 
+    # Embed attachment names in search text for semantic retrieval
+    attachment_names = email_dict.get("attachment_names", [])
+    attachment_line = f"\nAttachments: {', '.join(attachment_names)}" if attachment_names else ""
+
     if len(body) <= MAX_CHUNK_CHARS:
-        text = f"{header}\n\n{body}" if body else header
+        text = f"{header}{attachment_line}\n\n{body}{quoted_note}{sig_note}" if body else f"{header}{attachment_line}"
         return [
             EmailChunk(
                 uid=uid,
@@ -77,7 +218,17 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
 
     chunks: list[EmailChunk] = []
     for i, segment in enumerate(body_segments):
-        text = f"{header}\n\n[Part {i + 1}/{len(body_segments)}]\n{segment}"
+        if i == 0:
+            # First chunk gets full header + attachment names
+            text = f"{header}{attachment_line}\n\n[Part 1/{len(body_segments)}]\n{segment}"
+        else:
+            # Continuation chunks get minimal reference (saves ~150-300 tokens)
+            text = f"[{subject} - Part {i + 1}/{len(body_segments)}]\n{segment}"
+
+        # Append notes to last chunk only
+        if i == len(body_segments) - 1:
+            text += quoted_note + sig_note
+
         chunks.append(
             EmailChunk(
                 uid=uid,
@@ -131,3 +282,73 @@ def _split_text(text: str, max_len: int, overlap: int) -> list[str]:
         start = max(start + 1, break_point - overlap)
 
     return segments
+
+
+def chunk_attachment(
+    email_uid: str,
+    filename: str,
+    text: str,
+    parent_metadata: dict,
+) -> list[EmailChunk]:
+    """Chunk extracted attachment text for embedding.
+
+    Args:
+        email_uid: The parent email's UID.
+        filename: The attachment filename.
+        text: Extracted text content from the attachment.
+        parent_metadata: Metadata from the parent email (subject, date, sender, etc.).
+
+    Returns:
+        List of EmailChunk objects for the attachment content.
+    """
+    if not text or not text.strip():
+        return []
+
+    subject = parent_metadata.get("subject", "")
+    date = parent_metadata.get("date", "")
+    filename_hash = hashlib.md5(filename.encode(), usedforsecurity=False).hexdigest()[:8]
+    header = f"[Attachment: {filename} from email \"{subject}\" ({date})]"
+
+    base_metadata = {
+        **parent_metadata,
+        "is_attachment": "True",
+        "parent_uid": email_uid,
+        "attachment_filename": filename,
+    }
+
+    if len(text) <= MAX_CHUNK_CHARS:
+        chunk_id = f"{email_uid}__att_{filename_hash}__0"
+        return [
+            EmailChunk(
+                uid=email_uid,
+                chunk_id=chunk_id,
+                text=f"{header}\n\n{text}",
+                metadata={**base_metadata, "chunk_index": "0", "total_chunks": "1"},
+            )
+        ]
+
+    max_body_len = max(OVERLAP_CHARS + 100, MAX_CHUNK_CHARS - len(header) - 50)
+    segments = _split_text(text, max_body_len, OVERLAP_CHARS)
+
+    chunks: list[EmailChunk] = []
+    for i, segment in enumerate(segments):
+        chunk_id = f"{email_uid}__att_{filename_hash}__{i}"
+        if i == 0:
+            chunk_text = f"{header}\n\n[Part 1/{len(segments)}]\n{segment}"
+        else:
+            chunk_text = f"[{filename} - Part {i + 1}/{len(segments)}]\n{segment}"
+
+        chunks.append(
+            EmailChunk(
+                uid=email_uid,
+                chunk_id=chunk_id,
+                text=chunk_text,
+                metadata={
+                    **base_metadata,
+                    "chunk_index": str(i),
+                    "total_chunks": str(len(segments)),
+                },
+            )
+        )
+
+    return chunks

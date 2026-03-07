@@ -60,7 +60,7 @@ def test_ingest_dry_run_reports_qol_stats(monkeypatch):
         def to_dict(self):
             return {"id": self.idx}
 
-    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path: [_Email(1), _Email(2), _Email(3)])
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: [_Email(1), _Email(2), _Email(3)])
     monkeypatch.setattr(
         ingest_mod,
         "chunk_email",
