@@ -18,6 +18,9 @@ class Settings:
     collection_name: str = "emails"
     top_k: int = 10
     log_level: str = "INFO"
+    rerank_enabled: bool = False
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    hybrid_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -29,6 +32,9 @@ class Settings:
             collection_name=os.getenv("COLLECTION_NAME", cls.collection_name),
             top_k=_int_from_env("TOP_K", cls.top_k, min_value=1, max_value=1000),
             log_level=os.getenv("LOG_LEVEL", cls.log_level).upper(),
+            rerank_enabled=os.getenv("RERANK_ENABLED", "").lower() in ("1", "true", "yes"),
+            rerank_model=os.getenv("RERANK_MODEL", cls.rerank_model),
+            hybrid_enabled=os.getenv("HYBRID_ENABLED", "").lower() in ("1", "true", "yes"),
         )
 
 
@@ -53,6 +59,9 @@ def resolve_runtime_settings(
         collection_name=collection_name or base.collection_name,
         top_k=base.top_k,
         log_level=base.log_level,
+        rerank_enabled=base.rerank_enabled,
+        rerank_model=base.rerank_model,
+        hybrid_enabled=base.hybrid_enabled,
     )
 
 

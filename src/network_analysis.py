@@ -82,3 +82,36 @@ class CommunicationNetwork:
                 {"email": email, "betweenness": round(score, 4)} for email, score in bridge_nodes
             ],
         }
+
+    def export_graphml(self, output_path: str) -> dict[str, Any]:
+        """Export the communication graph as GraphML for external tools.
+
+        The GraphML format is supported by Gephi, Cytoscape, and other
+        network visualization tools.
+
+        Args:
+            output_path: File path to write the .graphml file.
+
+        Returns:
+            Dict with node/edge counts and the output path.
+        """
+        try:
+            import networkx as nx
+        except ImportError:
+            return {"error": "networkx not installed. Run: pip install networkx"}
+
+        if self._graph is None:
+            self._graph = nx.DiGraph()
+            for sender, recipient, count in self._db.all_edges():
+                self._graph.add_edge(sender, recipient, weight=count)
+
+        from pathlib import Path
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        nx.write_graphml(self._graph, output_path)
+
+        return {
+            "output_path": output_path,
+            "total_nodes": self._graph.number_of_nodes(),
+            "total_edges": self._graph.number_of_edges(),
+        }

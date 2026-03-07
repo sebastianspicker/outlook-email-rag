@@ -13,6 +13,12 @@ You export your mailbox from Outlook for Mac once, run a one-time indexing step,
 - *"Find emails about the Q3 budget from finance@company.com"*
 - *"What did legal say about the contract renewal in January?"*
 - *"Show me everything from Sarah about the product launch"*
+- *"Who are my top 10 email contacts?"*
+- *"Summarize the thread about the server migration"*
+- *"What action items came out of last week's emails?"*
+- *"What topics dominate my inbox?"*
+- *"Find emails similar to this one about the contract"*
+- *"Analyze the writing style of emails from marketing"*
 
 Claude reads the indexed emails and gives you precise, sourced answers — without touching Outlook again.
 
@@ -22,40 +28,47 @@ Claude reads the indexed emails and gives you precise, sourced answers — witho
 
 ```mermaid
 flowchart LR
-    A["📁 Outlook .olm\nexport file"] --> B["Parse XML\nsafely"]
+    A["Outlook .olm\nexport file"] --> B["Parse XML\nsafely"]
     B --> C["Split into\nchunks"]
     C --> D{"Already\nindexed?"}
     D -- yes --> E["Skip"]
     D -- no --> F["Embed with\nSentenceTransformer"]
-    F --> G[("💾 Local\nChromaDB")]
+    F --> G[("ChromaDB\nvector store")]
+    F --> H[("SQLite\nmetadata")]
 
-    H["💬 You ask\nClaude"] --> I["MCP tools\ncalled by Claude"]
-    I --> G
-    G --> J["Ranked\nresults"]
-    J --> I
-    I --> K["Claude's\nanswer"]
+    I["You ask\nClaude"] --> J["38 MCP tools\ncalled by Claude"]
+    J --> G
+    J --> H
+    G --> K["Ranked\nresults"]
+    H --> K
+    K --> J
+    J --> L["Claude's\nanswer"]
 ```
 
 ```mermaid
 sequenceDiagram
     participant You
     participant Claude as Claude Code
-    participant MCP as MCP Server
-    participant DB as ChromaDB (local)
+    participant MCP as MCP Server (38 tools)
+    participant VDB as ChromaDB (vectors)
+    participant SQL as SQLite (metadata)
 
-    You->>Claude: "Find emails about Q3 budget"
-    Claude->>MCP: email_search_structured(query, filters)
-    MCP->>DB: vector similarity search
-    DB-->>MCP: ranked email chunks
+    You->>Claude: "Summarize the thread about Q3 budget"
+    Claude->>MCP: email_thread_summary(query, ...)
+    MCP->>VDB: vector similarity search
+    MCP->>SQL: metadata + analytics queries
+    VDB-->>MCP: ranked email chunks
+    SQL-->>MCP: thread context + stats
     MCP-->>Claude: formatted results + metadata
     Claude-->>You: answer with sources
 ```
 
 **Key properties:**
 - All processing runs on your Mac — CPU only, no GPU needed
-- Emails are stored in a local database (`data/chromadb/`) that only you can access
+- Emails are stored in local databases (`data/chromadb/`, `data/email_metadata.db`) that only you can access
 - Re-indexing is safe and idempotent — already-indexed emails are skipped automatically
 - Semantic search finds relevant emails even when you don't remember the exact words
+- NLP pipeline provides topic modeling, clustering, entity extraction, and thread intelligence
 
 ---
 
@@ -103,7 +116,7 @@ You should see packages being installed. This takes a few minutes the first time
 ### Step 3 — Export your mailbox from Outlook
 
 1. Open **Outlook for Mac**
-2. Go to **File → Export…** (or **Tools → Export** depending on your version)
+2. Go to **File > Export...** (or **Tools > Export** depending on your version)
 3. Choose **Outlook for Mac Data File (.olm)**
 4. Select the folders you want to export (or all folders)
 5. Save the `.olm` file into the `data/` folder inside the project
@@ -111,7 +124,7 @@ You should see packages being installed. This takes a few minutes the first time
 ```
 outlook-email-rag/
 └── data/
-    └── my-export.olm   ← put it here
+    └── my-export.olm   <- put it here
 ```
 
 ### Step 4 — Index your emails
@@ -120,7 +133,7 @@ outlook-email-rag/
 python -m src.ingest data/my-export.olm
 ```
 
-This reads every email, splits them into searchable chunks, and stores them in a local database. You'll see progress output like:
+This reads every email, splits them into searchable chunks, and stores them in local databases. You'll see progress output like:
 
 ```
 [INFO] Parsing: data/my-export.olm
@@ -153,77 +166,507 @@ The project includes a `.claude/settings.json` that automatically registers the 
 
 ---
 
-## Using the MCP Tools in Claude Code
+## Using with Claude Code (MCP Server)
 
-Once set up, just talk to Claude naturally. Examples:
+This is the primary way to use Email RAG. Claude Code talks to your email index through 38 MCP tools — you just ask questions in plain English.
+
+### How it connects
+
+The project includes a `.claude/settings.json` file that tells Claude Code how to start the MCP server:
+
+```json
+{
+  "mcpServers": {
+    "email_search": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "."
+    }
+  }
+}
+```
+
+When you run `claude .` from the project directory, Claude Code reads this file and starts the MCP server automatically. You don't need to configure anything manually.
+
+### Verifying the connection
+
+After opening the project in Claude Code, you can check that the tools loaded:
+
+1. Type `/mcp` in the Claude Code prompt
+2. Look for `email_search` in the server list — it should show as **connected**
+3. You should see all 38 tools listed beneath it
+
+If it shows as disconnected:
+- Make sure the virtual environment exists: `ls .venv/bin/python`
+- Make sure dependencies are installed: `.venv/bin/python -c "from src.mcp_server import mcp; print('OK')"`
+- Restart Claude Code with `claude .` from the project root
+
+### Asking questions
+
+Just talk to Claude naturally. It picks the right MCP tool automatically based on your question. Here are examples organized by what you can do:
+
+**Searching emails:**
 
 ```
 Search my emails for anything about the annual budget review from Q1 2024.
 ```
-
 ```
 Find emails from legal@company.com about the NDA we signed last year.
 ```
+```
+Show me emails about the product launch that were sent to marketing@company.com.
+```
+```
+Find emails similar to this: "We need to reschedule the board meeting due to travel conflicts."
+```
+
+**Understanding your archive:**
 
 ```
 What folders do I have in my archive? How many emails are in each?
 ```
+```
+Show me my archive statistics — how many emails, date range, top senders.
+```
+```
+Who are my top 10 email contacts? Show communication stats for each.
+```
+```
+Show me the communication patterns between me and john@company.com.
+```
+
+**Thread analysis:**
 
 ```
-Index my updated mailbox — the file is at /Users/me/Downloads/archive.olm
+Summarize the thread about the server migration.
+```
+```
+What action items came out of recent emails about the product launch?
+```
+```
+What decisions were made in the thread about the Q4 hiring plan?
 ```
 
-### Available MCP tools
+**Analytics and insights:**
 
-Claude picks the right tool automatically, but here's what's available:
+```
+Show me my email volume by month for the past year.
+```
+```
+What's my activity pattern? When do I send the most emails?
+```
+```
+What topics are most common in my inbox?
+```
+```
+Show me the most frequently mentioned organizations in my emails.
+```
+```
+Analyze the writing style of emails from marketing@company.com.
+```
+```
+Are there duplicate emails in my archive?
+```
+
+**Reporting:**
+
+```
+Generate an HTML report of my email archive.
+```
+```
+Export my communication network as a graph file I can open in Gephi.
+```
+
+**Re-ingesting from within Claude:**
+
+```
+Ingest my new export at data/latest-export.olm
+```
+
+### What happens under the hood
+
+When you ask a question like *"Find emails about the Q3 budget from finance"*, Claude:
+
+1. Picks the `email_search_by_sender` tool (or `email_search_structured` for complex queries)
+2. Sends parameters like `query="Q3 budget"`, `sender="finance"` to the MCP server
+3. The server runs a semantic vector search in ChromaDB, filters by sender, deduplicates, and formats results
+4. Claude reads the results and gives you a sourced answer
+
+You never need to remember tool names or parameters — Claude handles that automatically.
+
+### Available MCP Tools (38)
+
+Claude picks the right tool automatically, but here's the full reference:
+
+#### Core Search (8)
 
 | Tool | What it does |
 |------|-------------|
 | `email_search` | Semantic search across all emails |
-| `email_search_structured` | Search with filters: sender, subject, folder, CC, date range, relevance threshold |
 | `email_search_by_sender` | Search scoped to a specific sender |
 | `email_search_by_date` | Search within a date range |
+| `email_search_by_recipient` | Search by To recipient |
+| `email_search_structured` | Search with all filters: sender, subject, folder, CC, To, BCC, dates, attachments, priority, topic, cluster, reranking, hybrid search |
+| `email_search_thread` | Retrieve all emails in a conversation thread |
+| `email_smart_search` | Intelligent search that auto-routes based on query analysis |
+| `email_find_similar` | Find emails most similar to a given email or text |
+
+#### Archive Info (4)
+
+| Tool | What it does |
+|------|-------------|
 | `email_list_senders` | List the most frequent senders in your archive |
 | `email_list_folders` | List all folders with email counts |
 | `email_stats` | Archive statistics (total emails, date range, senders, folders) |
+| `email_query_suggestions` | Get search suggestions based on indexed data |
+
+#### Ingestion (1)
+
+| Tool | What it does |
+|------|-------------|
 | `email_ingest` | Trigger ingestion of an `.olm` file from within Claude |
+
+#### Network Analysis (3)
+
+| Tool | What it does |
+|------|-------------|
+| `email_top_contacts` | Find top communication partners for an email address |
+| `email_communication_between` | Get bidirectional stats between two email addresses |
+| `email_network_analysis` | Centrality, communities, and bridge nodes in your network |
+
+#### Temporal Analysis (3)
+
+| Tool | What it does |
+|------|-------------|
+| `email_volume_over_time` | Email volume grouped by day, week, or month |
+| `email_activity_pattern` | Activity heatmap: hour-of-day vs day-of-week |
+| `email_response_times` | Average response times per sender (in hours) |
+
+#### Entity & NLP (5)
+
+| Tool | What it does |
+|------|-------------|
+| `email_search_by_entity` | Find emails mentioning a specific entity |
+| `email_list_entities` | List most frequently mentioned entities |
+| `email_entity_network` | Find entities that co-occur in the same emails |
+| `email_find_people` | Search emails by person name mentioned in body |
+| `email_entity_timeline` | Show how often an entity appears over time |
+
+#### Thread Intelligence (3)
+
+| Tool | What it does |
+|------|-------------|
+| `email_thread_summary` | Summarize a conversation thread (extractive) |
+| `email_action_items` | Extract action items from threads or recent emails |
+| `email_decisions` | Extract decisions from email threads |
+
+#### Topics & Clusters (5)
+
+| Tool | What it does |
+|------|-------------|
+| `email_topics` | List discovered topics with labels and email counts |
+| `email_search_by_topic` | Find emails assigned to a specific topic |
+| `email_keywords` | Top keywords across archive or filtered by sender/folder |
+| `email_clusters` | List email clusters with sizes and representative subjects |
+| `email_cluster_emails` | Get emails in a specific cluster |
+
+#### Data Quality (3)
+
+| Tool | What it does |
+|------|-------------|
+| `email_find_duplicates` | Find near-duplicate emails using n-gram similarity |
+| `email_language_stats` | Language distribution across all indexed emails |
+| `email_sentiment_overview` | Sentiment distribution across indexed emails |
+
+#### Reporting & Export (3)
+
+| Tool | What it does |
+|------|-------------|
+| `email_generate_report` | Generate a self-contained HTML report of the archive |
+| `email_export_network` | Export communication network as GraphML |
+| `email_writing_analysis` | Analyze writing style and readability across senders |
+
+### Registering in other Claude environments
+
+If you want to use the MCP server outside the project directory (for example, from a global Claude Code config or the Claude desktop app), you need to use **absolute paths**:
+
+```json
+{
+  "mcpServers": {
+    "email_search": {
+      "command": "/Users/yourname/outlook-email-rag/.venv/bin/python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "/Users/yourname/outlook-email-rag"
+    }
+  }
+}
+```
+
+For **Claude Code** global config, add this to `~/.claude/settings.json`.
+
+For the **Claude desktop app**, add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
 
 ---
 
-## Alternative Interfaces
+## Using the CLI
 
-### Command-line search
+The command-line interface is a standalone way to search and analyze your email archive directly from Terminal. It doesn't require Claude Code — it works entirely on its own.
 
-If you prefer working in Terminal directly:
+### Starting the CLI
+
+Make sure the virtual environment is active first:
 
 ```bash
-# Interactive mode (type queries, press Enter)
-python -m src.cli
-
-# Single query
-python -m src.cli --query "Q3 budget approval"
-
-# Filtered search
-python -m src.cli --query "contract renewal" \
-    --sender legal \
-    --date-from 2024-01-01 \
-    --date-to 2024-12-31
-
-# Archive statistics
-python -m src.cli --stats
+source .venv/bin/activate
 ```
 
-### Streamlit web UI (optional)
+### Interactive mode
 
-A visual search interface you can run in your browser:
+Run without arguments to enter an interactive search loop:
 
 ```bash
+python -m src.cli
+```
+
+You'll see a summary of your archive and a search prompt:
+
+```
++-------------- Email RAG ---------------+
+| Emails: 1842 | Chunks: 4210 |          |
+| Senders: 312 | Range: 2023-01 -> 2024  |
+| Type 'quit' to exit, 'stats', ...      |
++-----------------------------------------+
+
+Search: _
+```
+
+Type a query, press Enter, and you get a table of results. Type `stats` for archive statistics, `senders` for the top sender list, or `quit` to exit.
+
+### Single query mode
+
+For one-off searches, use `--query` (or `-q`):
+
+```bash
+python -m src.cli --query "Q3 budget approval"
+```
+
+Output shows each result with relevance score, sender, date, subject, and the matching text:
+
+```
+============================================================
+Result 1 (relevance: 0.87)
+Subject: Re: Q3 Budget Approval
+Sender:  finance@company.com
+Date:    2024-07-15
+Folder:  Inbox
+
+The Q3 budget has been approved with the following allocations...
+(~180 tokens)
+```
+
+### Filtering results
+
+Combine `--query` with any filter flag to narrow results:
+
+```bash
+# By sender (partial match on name or email)
+python -m src.cli --query "contract renewal" --sender legal
+
+# By date range (ISO format)
+python -m src.cli --query "invoice" \
+    --date-from 2024-01-01 \
+    --date-to 2024-06-30
+
+# By recipient
+python -m src.cli --query "proposal" --to john@example.com
+
+# Only emails with attachments
+python -m src.cli --query "report" --has-attachments
+
+# By folder (partial match)
+python -m src.cli --query "update" --folder "Sent Items"
+
+# By CC recipient
+python -m src.cli --query "review" --cc manager@company.com
+
+# By BCC recipient
+python -m src.cli --query "announcement" --bcc board@company.com
+
+# By email type (reply, forward, or original)
+python -m src.cli --query "meeting notes" --email-type reply
+
+# By minimum priority level
+python -m src.cli --query "urgent" --priority 3
+
+# Combine multiple filters
+python -m src.cli --query "contract" \
+    --sender legal \
+    --date-from 2024-01-01 \
+    --has-attachments \
+    --min-score 0.5
+```
+
+### Search modes
+
+Three search modes provide different trade-offs between speed and accuracy:
+
+```bash
+# Standard semantic search (default — fast)
+python -m src.cli --query "budget discussion"
+
+# Hybrid: semantic + BM25 keyword search (better for exact terms)
+python -m src.cli --query "invoice #INV-2024-0847" --hybrid
+
+# With cross-encoder reranking (slower but most precise)
+python -m src.cli --query "budget discussion" --rerank
+
+# Query expansion: auto-adds related terms
+python -m src.cli --query "security" --expand-query
+
+# Combine all three
+python -m src.cli --query "infrastructure costs" --hybrid --rerank --expand-query
+
+# Filter by discovered topic or cluster
+python -m src.cli --query "migration" --topic 5
+python -m src.cli --query "hiring" --cluster-id 3
+```
+
+### Output format
+
+```bash
+# Human-readable text (default)
+python -m src.cli --query "budget" --format text
+
+# Machine-readable JSON
+python -m src.cli --query "budget" --format json
+
+# Legacy JSON shorthand
+python -m src.cli --query "budget" --json
+
+# Control number of results (default: 10, max: 1000)
+python -m src.cli --query "budget" --top-k 20
+```
+
+### Analytics commands
+
+These don't require a query — they analyze your entire archive:
+
+```bash
+# Archive statistics (total emails, chunks, senders, date range)
+python -m src.cli --stats
+
+# Top senders (show top 20)
+python -m src.cli --list-senders 20
+
+# Top contacts for a specific email address
+python -m src.cli --top-contacts user@company.com
+
+# Email volume over time
+python -m src.cli --volume day     # daily
+python -m src.cli --volume week    # weekly
+python -m src.cli --volume month   # monthly
+
+# Activity heatmap (hour x day-of-week)
+python -m src.cli --heatmap
+
+# Average response times per sender
+python -m src.cli --response-times
+
+# Most frequently mentioned entities (organizations, URLs, etc.)
+python -m src.cli --entities
+python -m src.cli --entities organization   # filter by type
+
+# Search suggestions based on your data
+python -m src.cli --suggest
+```
+
+### Reporting commands
+
+```bash
+# Generate an HTML report (default: report.html)
+python -m src.cli --generate-report
+python -m src.cli --generate-report my_report.html
+
+# Export communication network as GraphML
+python -m src.cli --export-network
+python -m src.cli --export-network my_network.graphml
+```
+
+### Index management
+
+```bash
+# Delete and recreate the index (requires --yes)
+python -m src.cli --reset-index --yes
+```
+
+### Complete flag reference
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--query`, `-q` | string | Search query (required for search mode) |
+| `--top-k` | int | Number of results (default: 10, max: 1000) |
+| `--sender` | string | Filter by sender (partial match on name or email) |
+| `--subject` | string | Filter by subject (partial match) |
+| `--folder` | string | Filter by folder (partial match) |
+| `--cc` | string | Filter by CC recipient (partial match) |
+| `--to` | string | Filter by To recipient (partial match) |
+| `--bcc` | string | Filter by BCC recipient (partial match) |
+| `--has-attachments` | flag | Only emails with attachments |
+| `--priority` | int | Minimum priority level |
+| `--email-type` | choice | `reply`, `forward`, or `original` |
+| `--date-from` | YYYY-MM-DD | Start date (inclusive) |
+| `--date-to` | YYYY-MM-DD | End date (inclusive) |
+| `--min-score` | float | Minimum relevance score (0.0–1.0) |
+| `--rerank` | flag | Re-rank with cross-encoder |
+| `--hybrid` | flag | Hybrid semantic + BM25 search |
+| `--expand-query` | flag | Expand query with related terms |
+| `--topic` | int | Filter by discovered topic ID |
+| `--cluster-id` | int | Filter by email cluster ID |
+| `--format` | choice | Output format: `text` or `json` |
+| `--json` | flag | Shorthand for `--format json` |
+| `--stats` | flag | Print archive statistics |
+| `--list-senders` | int | List top N senders |
+| `--top-contacts` | string | Top contacts for an email address |
+| `--volume` | choice | Email volume: `day`, `week`, or `month` |
+| `--entities` | string? | List top entities (optionally by type) |
+| `--heatmap` | flag | Activity heatmap |
+| `--response-times` | flag | Response time statistics |
+| `--suggest` | flag | Search suggestions |
+| `--generate-report` | string? | Generate HTML report (default: `report.html`) |
+| `--export-network` | string? | Export GraphML network (default: `network.graphml`) |
+| `--reset-index` | flag | Delete and recreate the index (requires `--yes`) |
+| `--yes` | flag | Confirm destructive operations |
+| `--chromadb-path` | string | Override ChromaDB path |
+| `--log-level` | string | Logging level (`DEBUG`, `INFO`, etc.) |
+| `--version` | flag | Print version and exit |
+
+---
+
+## Streamlit Web UI
+
+A visual search interface that runs in your browser. This is a good option if you want a GUI but don't use Claude Code.
+
+### Starting the UI
+
+```bash
+source .venv/bin/activate
 streamlit run src/web_app.py
 ```
 
-Then open [http://localhost:8501](http://localhost:8501).
+Then open [http://localhost:8501](http://localhost:8501) in your browser.
 
-Features: query form, sender/subject/folder/CC/date filters, relevance threshold slider, paginated results, JSON export.
+### Features
+
+- **Search form** with fields for query, sender, subject, folder, CC, and To
+- **Has-attachments** checkbox filter
+- **Date pickers** for start and end dates
+- **Relevance threshold** slider (0.0–1.0)
+- **Sort options**: by relevance, newest/oldest, or sender A-Z
+- **Paginated results** (20 per page) with email type and attachment badges
+- **Thread view** button to explore full conversation threads
+- **CSV export** of search results
+- **Folder sidebar** showing all folders with email counts
+- **Empty-state guidance** when no emails are indexed yet
 
 ---
 
@@ -233,11 +676,14 @@ Create a `.env` file in the project root to override defaults (all settings are 
 
 ```bash
 # .env
-CHROMADB_PATH=data/chromadb      # where the vector database lives
-EMBEDDING_MODEL=all-MiniLM-L6-v2 # local embedding model (CPU)
-COLLECTION_NAME=emails            # ChromaDB collection name
-TOP_K=10                          # default number of results
-LOG_LEVEL=INFO                    # INFO or DEBUG
+CHROMADB_PATH=data/chromadb       # where the vector database lives
+EMBEDDING_MODEL=all-MiniLM-L6-v2  # local embedding model (CPU)
+COLLECTION_NAME=emails             # ChromaDB collection name
+TOP_K=10                           # default number of results
+LOG_LEVEL=INFO                     # INFO or DEBUG
+RERANK_ENABLED=false               # cross-encoder reranking (slower, more precise)
+RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2  # reranking model
+HYBRID_ENABLED=false               # hybrid semantic + BM25 keyword search
 ```
 
 Copy `.env.example` as a starting point: `cp .env.example .env`
@@ -278,7 +724,7 @@ python -m src.ingest --help
 
 ### Ingest is slow
 
-This is normal on first run — the embedding model needs to process every email. A mailbox with 5 000 emails typically takes 3–10 minutes on a modern Mac.
+This is normal on first run — the embedding model needs to process every email. A mailbox with 5 000 emails typically takes 3-10 minutes on a modern Mac.
 
 ### "command not found: claude"
 
@@ -290,42 +736,87 @@ Install Claude Code: follow the [official quickstart](https://docs.anthropic.com
 
 ```mermaid
 block-beta
-    columns 3
+    columns 4
 
     block:ingestion["Ingestion"]:1
-        parse["parse_olm.py\nXML → Email objects"]
+        parse["parse_olm.py\nXML -> Email objects"]
         chunk["chunker.py\n1 500-char chunks\n200-char overlap"]
         embed["embedder.py\nSentenceTransformer\n(CPU)"]
     end
 
-    db[("ChromaDB\nlocal persistent\ncosine similarity")]:1
+    block:storage["Storage"]:1
+        chromadb[("ChromaDB\nvector store\ncosine similarity")]
+        sqlite[("SQLite\nemail_metadata.db\nanalytics")]
+    end
+
+    block:nlp["NLP Pipeline"]:1
+        entities["nlp_entity_extractor.py\nspaCy NER"]
+        topics["topic_modeler.py\nNMF topics"]
+        clusters["email_clusterer.py\nKMeans"]
+        threads["thread_intelligence.py\nsummarization"]
+        keywords["keyword_extractor.py\nTF-IDF"]
+    end
 
     block:interfaces["Interfaces"]:1
-        mcp["mcp_server.py\n8 MCP tools\n(primary)"]
+        mcp["mcp_server.py\n38 MCP tools\n(primary)"]
         cli["cli.py\nTerminal search"]
         ui["web_app.py\nStreamlit UI"]
     end
 
     parse --> chunk
     chunk --> embed
-    embed --> db
-    db --> mcp
-    db --> cli
-    db --> ui
+    embed --> chromadb
+    embed --> sqlite
+    chromadb --> mcp
+    sqlite --> mcp
+    chromadb --> cli
+    sqlite --> cli
+    chromadb --> ui
+    sqlite --> ui
 ```
 
 **Component responsibilities:**
 
 | File | Role |
 |------|------|
-| `src/parse_olm.py` | Reads `.olm` ZIP archives, parses XML email messages safely |
-| `src/chunker.py` | Splits emails into 1 500-char chunks with 200-char overlap |
+| `src/parse_olm.py` | Reads `.olm` ZIP archives, parses XML email messages safely (XXE-protected) |
+| `src/chunker.py` | Splits emails into 1 500-char chunks with 200-char overlap; handles attachments |
 | `src/embedder.py` | Generates embeddings with SentenceTransformer and writes to ChromaDB |
-| `src/retriever.py` | Semantic search, filter logic, stats, sender/folder aggregation |
-| `src/mcp_server.py` | FastMCP server exposing 8 tools for Claude Code |
-| `src/ingest.py` | Orchestrates parse → chunk → embed → store pipeline |
-| `src/cli.py` | Rich terminal interface for interactive and scripted queries |
-| `src/web_app.py` | Streamlit search UI |
+| `src/retriever.py` | Semantic search, 16-param filter logic, hybrid search, reranking, stats |
+| `src/email_db.py` | SQLite metadata store for analytics (emails, recipients, contacts, edges) |
+| `src/mcp_server.py` | FastMCP server exposing 38 tools for Claude Code |
+| `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
+| `src/cli.py` | Rich terminal interface with 25+ flags for search and analytics |
+| `src/web_app.py` | Streamlit search UI with filters, thread view, CSV export |
+| `src/web_ui.py` | Streamlit UI helpers and formatting |
+| `src/config.py` | Settings from environment (`.env` support) |
+| `src/storage.py` | ChromaDB client and collection helpers |
+| `src/validation.py` | Shared input validators (dates, positive_int) |
+| `src/sanitization.py` | Output safety (ANSI stripping, control character removal) |
+| `src/formatting.py` | Result formatting for Claude and CLI |
+| `src/attachment_extractor.py` | Extract text from PDF, DOCX, XLSX, CSV, HTML, TXT attachments |
+| `src/network_analysis.py` | Communication network analysis with NetworkX (centrality, communities) |
+| `src/temporal_analysis.py` | Time-series analysis with pandas (volume, heatmaps, response times) |
+| `src/entity_extractor.py` | Regex-based entity extraction (orgs, URLs, phones, @mentions) |
+| `src/nlp_entity_extractor.py` | spaCy NER for person/org/location extraction |
+| `src/topic_modeler.py` | NMF topic modeling with TF-IDF |
+| `src/keyword_extractor.py` | TF-IDF keyword extraction (global and per-sender/folder) |
+| `src/email_clusterer.py` | KMeans email clustering with auto-labeling |
+| `src/thread_summarizer.py` | Extractive thread summarization |
+| `src/thread_intelligence.py` | Action item and decision extraction from threads |
+| `src/query_expander.py` | Semantic query expansion using vocabulary similarity |
+| `src/query_suggestions.py` | Search suggestion generation from indexed data |
+| `src/bm25_index.py` | BM25 keyword index for hybrid search |
+| `src/reranker.py` | Cross-encoder reranking for result precision |
+| `src/dedup_detector.py` | Near-duplicate email detection using character n-grams |
+| `src/language_detector.py` | Language detection and distribution statistics |
+| `src/sentiment_analyzer.py` | Rule-based sentiment analysis |
+| `src/writing_analyzer.py` | Writing style and readability metrics (Flesch, grade level) |
+| `src/auto_tagger.py` | Automatic email tagging and categorization |
+| `src/report_generator.py` | Self-contained HTML report generation (Jinja2) |
+| `src/dashboard_charts.py` | Chart generation for Streamlit dashboard |
+| `src/__main__.py` | `python -m src` entry point for MCP server |
+| `src/__init__.py` | Package marker |
 
 ---
 
@@ -337,7 +828,8 @@ sequenceDiagram
     participant Parser as parse_olm.py
     participant Chunker as chunker.py
     participant Embedder as embedder.py
-    participant DB as ChromaDB
+    participant VDB as ChromaDB
+    participant SQL as SQLite
 
     Export->>Parser: read ZIP entries
     Parser->>Parser: parse XML (XXE-safe)
@@ -346,10 +838,11 @@ sequenceDiagram
     loop each email
         Chunker->>Chunker: split body into chunks
         Chunker-->>Embedder: chunks + metadata
-        Embedder->>DB: check chunk_id exists?
+        Embedder->>VDB: check chunk_id exists?
         alt new chunk
-            Embedder->>Embedder: encode text → vector
-            Embedder->>DB: store vector + metadata
+            Embedder->>Embedder: encode text -> vector
+            Embedder->>VDB: store vector + metadata
+            Embedder->>SQL: store email metadata
         else already indexed
             Embedder->>Embedder: skip
         end
@@ -378,7 +871,7 @@ pip install -r requirements-dev.txt
 # or with pip install -e .[dev]
 
 ruff check .          # linting
-pytest -q             # tests (103 tests, ~0.1s)
+pytest -q             # tests (593 tests)
 bandit -r src -q      # security scan
 ```
 
@@ -391,24 +884,48 @@ See [docs/API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) for the interface sta
 ```text
 outlook-email-rag/
 ├── src/
-│   ├── __main__.py         # python -m src → MCP server
-│   ├── mcp_server.py       # 8 MCP tools for Claude Code
-│   ├── retriever.py        # search, filters, stats
-│   ├── ingest.py           # ingestion pipeline
-│   ├── parse_olm.py        # OLM XML parser
-│   ├── chunker.py          # email chunking
-│   ├── embedder.py         # embedding + ChromaDB writes
-│   ├── config.py           # settings from environment
-│   ├── storage.py          # ChromaDB helpers
-│   ├── validation.py       # shared validators
-│   ├── sanitization.py     # output safety
-│   ├── cli.py              # terminal interface
-│   ├── web_app.py          # Streamlit UI
-│   └── web_ui.py           # Streamlit helpers
-├── tests/                  # 103 tests
-├── data/                   # put your .olm file here
+│   ├── __init__.py              # package marker
+│   ├── __main__.py              # python -m src -> MCP server
+│   ├── mcp_server.py            # 38 MCP tools for Claude Code
+│   ├── retriever.py             # search, filters, hybrid, reranking
+│   ├── ingest.py                # ingestion pipeline
+│   ├── parse_olm.py             # OLM XML parser
+│   ├── chunker.py               # email + attachment chunking
+│   ├── embedder.py              # embedding + ChromaDB writes
+│   ├── email_db.py              # SQLite metadata store
+│   ├── config.py                # settings from environment
+│   ├── storage.py               # ChromaDB helpers
+│   ├── validation.py            # shared validators
+│   ├── sanitization.py          # output safety
+│   ├── formatting.py            # result formatting
+│   ├── cli.py                   # terminal interface
+│   ├── web_app.py               # Streamlit UI
+│   ├── web_ui.py                # Streamlit helpers
+│   ├── attachment_extractor.py  # PDF/DOCX/XLSX/CSV text extraction
+│   ├── network_analysis.py      # communication network (NetworkX)
+│   ├── temporal_analysis.py     # time-series analytics (pandas)
+│   ├── entity_extractor.py      # regex entity extraction
+│   ├── nlp_entity_extractor.py  # spaCy NER
+│   ├── topic_modeler.py         # NMF topic modeling
+│   ├── keyword_extractor.py     # TF-IDF keywords
+│   ├── email_clusterer.py       # KMeans clustering
+│   ├── thread_summarizer.py     # extractive summarization
+│   ├── thread_intelligence.py   # action items + decisions
+│   ├── query_expander.py        # semantic query expansion
+│   ├── query_suggestions.py     # search suggestions
+│   ├── bm25_index.py            # BM25 keyword index
+│   ├── reranker.py              # cross-encoder reranking
+│   ├── dedup_detector.py        # duplicate detection
+│   ├── language_detector.py     # language detection
+│   ├── sentiment_analyzer.py    # sentiment analysis
+│   ├── writing_analyzer.py      # writing style metrics
+│   ├── auto_tagger.py           # automatic tagging
+│   ├── report_generator.py      # HTML report generation
+│   └── dashboard_charts.py      # Streamlit chart helpers
+├── tests/                       # 593 tests
+├── data/                        # put your .olm file here
 ├── .claude/
-│   └── settings.json       # auto-registers MCP server in Claude Code
+│   └── settings.json            # auto-registers MCP server in Claude Code
 ├── docs/
 │   └── API_COMPATIBILITY.md
 ├── .env.example

@@ -16,7 +16,10 @@ def build_active_filter_labels(
     min_score: float | None,
     cc: str | None = None,
     to: str | None = None,
+    bcc: str | None = None,
     has_attachments: bool | None = None,
+    priority: int | None = None,
+    email_type: str | None = None,
 ) -> list[str]:
     labels: list[str] = []
 
@@ -25,6 +28,7 @@ def build_active_filter_labels(
     folder_value = _normalize_optional_text(folder)
     cc_value = _normalize_optional_text(cc)
     to_value = _normalize_optional_text(to)
+    bcc_value = _normalize_optional_text(bcc)
 
     if sender_value:
         labels.append(f"Sender: {sender_value}")
@@ -36,8 +40,14 @@ def build_active_filter_labels(
         labels.append(f"Folder: {folder_value}")
     if cc_value:
         labels.append(f"CC: {cc_value}")
+    if bcc_value:
+        labels.append(f"BCC: {bcc_value}")
     if has_attachments is True:
         labels.append("Has attachments")
+    if priority is not None:
+        labels.append(f"Priority ≥ {priority}")
+    if email_type:
+        labels.append(f"Type: {email_type}")
     if date_from:
         labels.append(f"From: {date_from}")
     if date_to:

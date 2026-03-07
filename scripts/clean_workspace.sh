@@ -94,7 +94,7 @@ done < <(
   find . -type f \
     \( -name "*.log" -o -name "*.tmp" -o -name "*.bak" -o -name "*.orig" -o -name "*.sqlite3" -o -name "*.db" \) \
     -not -path "./.git/*" \
-    -not -path "./data/chromadb/*"
+    -not -path "./data/*"
 )
 
 if [[ "$dry_run" -eq 1 ]]; then

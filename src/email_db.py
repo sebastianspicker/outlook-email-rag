@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -99,6 +99,58 @@ CREATE INDEX IF NOT EXISTS idx_entity_type ON entities(entity_type);
 CREATE INDEX IF NOT EXISTS idx_entity_mentions_uid ON entity_mentions(email_uid);
 """
 
+_KEYWORDS_TOPICS_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS email_keywords (
+    email_uid TEXT NOT NULL REFERENCES emails(uid),
+    keyword   TEXT NOT NULL,
+    score     REAL NOT NULL,
+    PRIMARY KEY (email_uid, keyword)
+);
+CREATE INDEX IF NOT EXISTS idx_keywords_keyword ON email_keywords(keyword);
+
+CREATE TABLE IF NOT EXISTS topics (
+    id        INTEGER PRIMARY KEY,
+    label     TEXT NOT NULL,
+    top_words TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS email_topics (
+    email_uid TEXT NOT NULL REFERENCES emails(uid),
+    topic_id  INTEGER NOT NULL REFERENCES topics(id),
+    weight    REAL NOT NULL,
+    PRIMARY KEY (email_uid, topic_id)
+);
+CREATE INDEX IF NOT EXISTS idx_email_topics_topic ON email_topics(topic_id);
+"""
+
+_CLUSTER_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS email_clusters (
+    email_uid    TEXT PRIMARY KEY REFERENCES emails(uid),
+    cluster_id   INTEGER NOT NULL,
+    distance     REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_clusters_id ON email_clusters(cluster_id);
+
+CREATE TABLE IF NOT EXISTS cluster_info (
+    cluster_id        INTEGER PRIMARY KEY,
+    size              INTEGER NOT NULL,
+    representative_uid TEXT,
+    label             TEXT
+);
+"""
+
+_INGESTION_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    olm_path        TEXT NOT NULL,
+    started_at      TEXT NOT NULL,
+    completed_at    TEXT,
+    emails_parsed   INTEGER,
+    emails_inserted INTEGER,
+    status          TEXT DEFAULT 'running'
+);
+"""
+
 _ADDR_RE = re.compile(r"^(.*?)\s*<([^>]+)>$")
 
 
@@ -141,6 +193,9 @@ class EmailDatabase:
         cur = self.conn.cursor()
         cur.executescript(_SCHEMA_SQL)
         cur.executescript(_ENTITY_SCHEMA_SQL)
+        cur.executescript(_KEYWORDS_TOPICS_SCHEMA_SQL)
+        cur.executescript(_CLUSTER_SCHEMA_SQL)
+        cur.executescript(_INGESTION_SCHEMA_SQL)
         row = cur.execute(
             "SELECT MAX(version) AS v FROM schema_version"
         ).fetchone()
@@ -456,6 +511,53 @@ class EmailDatabase:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def people_in_emails(self, name_query: str, limit: int = 20) -> list[dict]:
+        """Find emails mentioning a person by name (LIKE match on person entities)."""
+        rows = self.conn.execute(
+            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
+                      ent.entity_text AS person_name
+               FROM entity_mentions em
+               JOIN entities ent ON em.entity_id = ent.id
+               JOIN emails e ON em.email_uid = e.uid
+               WHERE ent.entity_type = 'person'
+                 AND ent.normalized_form LIKE ?
+               ORDER BY e.date DESC LIMIT ?""",
+            (f"%{name_query.lower()}%", limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def entity_timeline(
+        self, entity_text: str, period: str = "month"
+    ) -> list[dict]:
+        """Show how often an entity appears over time.
+
+        Args:
+            entity_text: Entity text to search for (partial match).
+            period: 'day', 'week', or 'month'.
+
+        Returns:
+            List of {period, count} dicts.
+        """
+        if period == "day":
+            date_expr = "substr(e.date, 1, 10)"
+        elif period == "week":
+            # ISO week: YYYY-Www
+            date_expr = "strftime('%Y-W%W', e.date)"
+        else:
+            date_expr = "substr(e.date, 1, 7)"
+
+        rows = self.conn.execute(
+            f"""SELECT {date_expr} AS period, COUNT(*) AS count
+                FROM entity_mentions em
+                JOIN entities ent ON em.entity_id = ent.id
+                JOIN emails e ON em.email_uid = e.uid
+                WHERE ent.normalized_form LIKE ?
+                GROUP BY period
+                ORDER BY period""",
+            (f"%{entity_text.lower()}%",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def entity_co_occurrences(self, entity_text: str, limit: int = 20) -> list[dict]:
         """Entities that co-occur with the given entity in the same emails."""
         rows = self.conn.execute(
@@ -471,6 +573,175 @@ class EmailDatabase:
             (f"%{entity_text.lower()}%", limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Cluster operations (Phase C)
+    # ------------------------------------------------------------------
+
+    def insert_clusters_batch(
+        self, assignments: list[tuple[str, int, float]]
+    ) -> None:
+        """Insert cluster assignments.
+
+        Each tuple: (email_uid, cluster_id, distance_to_centroid).
+        """
+        cur = self.conn.cursor()
+        for uid, cluster_id, distance in assignments:
+            cur.execute(
+                """INSERT OR REPLACE INTO email_clusters(email_uid, cluster_id, distance)
+                   VALUES(?, ?, ?)""",
+                (uid, cluster_id, distance),
+            )
+        self.conn.commit()
+
+    def insert_cluster_info(self, clusters: list[dict]) -> None:
+        """Insert cluster metadata.
+
+        Each dict: {cluster_id, size, representative_uid, label}.
+        """
+        cur = self.conn.cursor()
+        for c in clusters:
+            cur.execute(
+                """INSERT OR REPLACE INTO cluster_info(cluster_id, size, representative_uid, label)
+                   VALUES(?, ?, ?, ?)""",
+                (c["cluster_id"], c["size"], c.get("representative_uid"), c.get("label")),
+            )
+        self.conn.commit()
+
+    def emails_in_cluster(self, cluster_id: int, limit: int = 50) -> list[dict]:
+        """Get emails in a specific cluster."""
+        rows = self.conn.execute(
+            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
+                      ec.distance
+               FROM email_clusters ec
+               JOIN emails e ON ec.email_uid = e.uid
+               WHERE ec.cluster_id = ?
+               ORDER BY ec.distance LIMIT ?""",
+            (cluster_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def cluster_summary(self) -> list[dict]:
+        """Get all clusters with sizes and representative info."""
+        rows = self.conn.execute(
+            """SELECT ci.cluster_id, ci.size, ci.representative_uid, ci.label,
+                      e.subject AS representative_subject
+               FROM cluster_info ci
+               LEFT JOIN emails e ON ci.representative_uid = e.uid
+               ORDER BY ci.size DESC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Keyword / Topic operations (Phase B)
+    # ------------------------------------------------------------------
+
+    def insert_keywords_batch(
+        self, email_uid: str, keywords: list[tuple[str, float]]
+    ) -> None:
+        """Insert keyword/score pairs for an email."""
+        cur = self.conn.cursor()
+        for keyword, score in keywords:
+            cur.execute(
+                """INSERT OR REPLACE INTO email_keywords(email_uid, keyword, score)
+                   VALUES(?, ?, ?)""",
+                (email_uid, keyword, score),
+            )
+        self.conn.commit()
+
+    def insert_topics(self, topics: list[dict]) -> None:
+        """Insert topic definitions.
+
+        Each dict: {id: int, label: str, top_words: list[str]}.
+        """
+        import json
+
+        cur = self.conn.cursor()
+        for topic in topics:
+            cur.execute(
+                "INSERT OR REPLACE INTO topics(id, label, top_words) VALUES(?, ?, ?)",
+                (topic["id"], topic["label"], json.dumps(topic["top_words"])),
+            )
+        self.conn.commit()
+
+    def insert_email_topics_batch(
+        self, email_uid: str, topic_weights: list[tuple[int, float]]
+    ) -> None:
+        """Insert topic assignments for an email."""
+        cur = self.conn.cursor()
+        for topic_id, weight in topic_weights:
+            cur.execute(
+                """INSERT OR REPLACE INTO email_topics(email_uid, topic_id, weight)
+                   VALUES(?, ?, ?)""",
+                (email_uid, topic_id, weight),
+            )
+        self.conn.commit()
+
+    def top_keywords(
+        self,
+        sender: str | None = None,
+        folder: str | None = None,
+        limit: int = 30,
+    ) -> list[dict]:
+        """Aggregate top keywords, optionally filtered by sender or folder."""
+        query = """SELECT ek.keyword, ROUND(AVG(ek.score), 4) AS avg_score,
+                          COUNT(DISTINCT ek.email_uid) AS email_count
+                   FROM email_keywords ek"""
+        conditions = []
+        params: list = []
+
+        if sender or folder:
+            query += " JOIN emails e ON ek.email_uid = e.uid"
+            if sender:
+                conditions.append("e.sender_email = ?")
+                params.append(sender)
+            if folder:
+                conditions.append("e.folder = ?")
+                params.append(folder)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += " GROUP BY ek.keyword ORDER BY avg_score DESC LIMIT ?"
+        params.append(limit)
+
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def emails_by_topic(self, topic_id: int, limit: int = 30) -> list[dict]:
+        """Get emails assigned to a specific topic, ranked by weight."""
+        rows = self.conn.execute(
+            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
+                      et.weight
+               FROM email_topics et
+               JOIN emails e ON et.email_uid = e.uid
+               WHERE et.topic_id = ?
+               ORDER BY et.weight DESC LIMIT ?""",
+            (topic_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def topic_distribution(self) -> list[dict]:
+        """Get all topics with their email counts."""
+        import json
+
+        rows = self.conn.execute(
+            """SELECT t.id, t.label, t.top_words,
+                      COUNT(et.email_uid) AS email_count
+               FROM topics t
+               LEFT JOIN email_topics et ON t.id = et.topic_id
+               GROUP BY t.id
+               ORDER BY email_count DESC"""
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "label": r["label"],
+                "top_words": json.loads(r["top_words"]),
+                "email_count": r["email_count"],
+            }
+            for r in rows
+        ]
 
     # ------------------------------------------------------------------
     # Read operations
@@ -513,6 +784,25 @@ class EmailDatabase:
             "SELECT 1 FROM emails WHERE uid = ?", (uid,)
         ).fetchone()
         return row is not None
+
+    def emails_by_sender(self, sender_email: str, limit: int = 100) -> list[dict]:
+        """Get emails from a specific sender.
+
+        Args:
+            sender_email: Sender's email address (partial match).
+            limit: Maximum emails to return.
+
+        Returns:
+            List of email dicts with uid, subject, body_text, date.
+        """
+        rows = self.conn.execute(
+            """SELECT uid, subject, body_text, date, sender_name, sender_email
+               FROM emails
+               WHERE sender_email LIKE ?
+               ORDER BY date DESC LIMIT ?""",
+            (f"%{sender_email}%", limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
     # Network queries (Phase 4)
@@ -624,3 +914,85 @@ class EmailDatabase:
         params.append(str(limit))
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Ingestion tracking
+    # ------------------------------------------------------------------
+
+    def record_ingestion_start(self, olm_path: str) -> int:
+        """Record the start of an ingestion run. Returns run ID."""
+        from datetime import datetime, timezone
+
+        cur = self.conn.execute(
+            "INSERT INTO ingestion_runs(olm_path, started_at) VALUES(?, ?)",
+            (olm_path, datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+    def record_ingestion_complete(self, run_id: int, stats: dict) -> None:
+        """Record the completion of an ingestion run."""
+        from datetime import datetime, timezone
+
+        self.conn.execute(
+            "UPDATE ingestion_runs SET completed_at=?, emails_parsed=?, emails_inserted=?, status='completed' WHERE id=?",
+            (
+                datetime.now(timezone.utc).isoformat(),
+                stats.get("emails_parsed", 0),
+                stats.get("emails_inserted", 0),
+                run_id,
+            ),
+        )
+        self.conn.commit()
+
+    def last_ingestion(self, olm_path: str | None = None) -> dict | None:
+        """Return the most recent completed ingestion run."""
+        if olm_path:
+            row = self.conn.execute(
+                "SELECT * FROM ingestion_runs WHERE olm_path=? AND status='completed' ORDER BY id DESC LIMIT 1",
+                (olm_path,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT * FROM ingestion_runs WHERE status='completed' ORDER BY id DESC LIMIT 1",
+            ).fetchone()
+        return dict(row) if row else None
+
+    def emails_by_base_subject(
+        self, min_group_size: int = 2
+    ) -> list[tuple[str, list[tuple[str, str]]]]:
+        """Group emails by base_subject for dedup comparison.
+
+        Returns:
+            List of (base_subject, [(uid, body_text), ...]) tuples,
+            only groups with >= min_group_size emails.
+        """
+        # Get base_subjects with enough emails
+        cursor = self.conn.execute(
+            """
+            SELECT base_subject, COUNT(*) as cnt
+            FROM emails
+            WHERE base_subject IS NOT NULL AND base_subject != ''
+            GROUP BY base_subject
+            HAVING cnt >= ?
+            ORDER BY cnt DESC
+            LIMIT 500
+            """,
+            (min_group_size,),
+        )
+        subjects = [row["base_subject"] for row in cursor]
+
+        results = []
+        for subject in subjects:
+            rows = self.conn.execute(
+                "SELECT uid, body_length FROM emails WHERE base_subject = ?",
+                (subject,),
+            ).fetchall()
+            # We don't store body in SQLite, but we can return UIDs
+            # The caller will need to use the body from elsewhere
+            # For simplicity, return empty bodies — the dedup detector
+            # will need to fetch bodies from ChromaDB or other source
+            emails = [(row["uid"], "") for row in rows]
+            results.append((subject, emails))
+
+        return results

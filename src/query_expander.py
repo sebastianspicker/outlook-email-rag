@@ -1,0 +1,137 @@
+"""Embedding-based query expansion for improved recall."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+class QueryExpander:
+    """Expand queries with semantically related terms using the embedding model.
+
+    Reuses the already-loaded SentenceTransformer model and keyword vocabulary
+    from the keyword extractor to find related terms at near-zero cost.
+    """
+
+    def __init__(self, model: Any = None, vocabulary: list[str] | None = None):
+        """Initialize query expander.
+
+        Args:
+            model: SentenceTransformer model instance (reuses existing).
+            vocabulary: List of corpus keywords to match against.
+        """
+        self._model = model
+        self._vocabulary = vocabulary or []
+        self._vocab_embeddings = None
+
+    def set_vocabulary(self, vocabulary: list[str]) -> None:
+        """Set or update the keyword vocabulary.
+
+        Args:
+            vocabulary: List of keywords/phrases from the corpus.
+        """
+        self._vocabulary = vocabulary
+        self._vocab_embeddings = None  # Reset cached embeddings
+
+    def expand(self, query: str, n_terms: int = 3) -> str:
+        """Expand a query with semantically related terms.
+
+        Embeds the query and finds the closest keywords from the corpus
+        vocabulary, appending them to the original query.
+
+        Args:
+            query: Original search query.
+            n_terms: Number of related terms to add.
+
+        Returns:
+            Expanded query string.
+        """
+        if not query or not query.strip():
+            return query
+
+        if not self._vocabulary or not self._model:
+            return query
+
+        try:
+            import numpy as np
+
+            # Lazy-compute vocabulary embeddings
+            if self._vocab_embeddings is None:
+                self._vocab_embeddings = self._model.encode(
+                    self._vocabulary, show_progress_bar=False
+                )
+
+            query_embedding = self._model.encode([query], show_progress_bar=False)
+
+            # Cosine similarity
+            similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
+            top_indices = similarities.argsort()[::-1]
+
+            # Select top terms not already in query
+            query_lower = query.lower()
+            added = []
+            for idx in top_indices:
+                if len(added) >= n_terms:
+                    break
+                term = self._vocabulary[idx]
+                # Skip terms already present in the query
+                if term.lower() in query_lower:
+                    continue
+                # Skip very short terms
+                if len(term) < 3:
+                    continue
+                added.append(term)
+
+            if not added:
+                return query
+
+            expanded = f"{query} {' '.join(added)}"
+            logger.debug("Query expanded: '%s' → '%s'", query, expanded)
+            return expanded
+
+        except Exception:
+            logger.debug("Query expansion failed", exc_info=True)
+            return query
+
+    def get_related_terms(self, query: str, n_terms: int = 5) -> list[tuple[str, float]]:
+        """Get related terms with their similarity scores.
+
+        Args:
+            query: Search query.
+            n_terms: Number of terms to return.
+
+        Returns:
+            List of (term, similarity_score) tuples.
+        """
+        if not query or not self._vocabulary or not self._model:
+            return []
+
+        try:
+            import numpy as np
+
+            if self._vocab_embeddings is None:
+                self._vocab_embeddings = self._model.encode(
+                    self._vocabulary, show_progress_bar=False
+                )
+
+            query_embedding = self._model.encode([query], show_progress_bar=False)
+            similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
+            top_indices = similarities.argsort()[::-1]
+
+            query_lower = query.lower()
+            results = []
+            for idx in top_indices:
+                if len(results) >= n_terms:
+                    break
+                term = self._vocabulary[idx]
+                if term.lower() in query_lower or len(term) < 3:
+                    continue
+                results.append((term, round(float(similarities[idx]), 4)))
+
+            return results
+
+        except Exception:
+            logger.debug("get_related_terms failed", exc_info=True)
+            return []

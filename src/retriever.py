@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 MAX_TOP_K = 1000
 
 
+def _normalize_filter(value: str | None) -> str | None:
+    """Strip whitespace and convert empty strings to None."""
+    if isinstance(value, str):
+        value = value.strip()
+    return value or None
+
+
 @dataclass
 class SearchResult:
     """A single search result."""
@@ -69,6 +76,8 @@ class EmailRetriever:
         self._model: SentenceTransformer | None = None
         self._email_db: Any = None
         self._email_db_checked = False
+        self._reranker: Any = None
+        self._bm25_index: Any = None
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
 
@@ -174,31 +183,46 @@ class EmailRetriever:
         has_attachments: bool | None = None,
         priority: int | None = None,
         min_score: float | None = None,
+        email_type: str | None = None,
+        rerank: bool = False,
+        hybrid: bool = False,
+        topic_id: int | None = None,
+        cluster_id: int | None = None,
+        expand_query: bool = False,
     ) -> list[SearchResult]:
         """Search with optional filters.
 
         Supports: sender, date_from, date_to, subject, folder, cc, to, bcc,
-        has_attachments, priority, min_score.
+        has_attachments, priority, min_score, email_type, topic_id, cluster_id.
 
         Results are deduplicated per email UID — only the best-scoring chunk
         per email is returned.
         """
-        sender = sender.strip() if isinstance(sender, str) else sender
-        sender = sender or None
-        date_from = date_from.strip() if isinstance(date_from, str) else date_from
-        date_from = date_from or None
-        date_to = date_to.strip() if isinstance(date_to, str) else date_to
-        date_to = date_to or None
-        subject = subject.strip() if isinstance(subject, str) else subject
-        subject = subject or None
-        folder = folder.strip() if isinstance(folder, str) else folder
-        folder = folder or None
-        cc = cc.strip() if isinstance(cc, str) else cc
-        cc = cc or None
-        to = to.strip() if isinstance(to, str) else to
-        to = to or None
-        bcc = bcc.strip() if isinstance(bcc, str) else bcc
-        bcc = bcc or None
+        # Pre-fetch UIDs for semantic filters (topic, cluster)
+        allowed_uids: set[str] | None = None
+        if self.email_db and (topic_id is not None or cluster_id is not None):
+            allowed_uids = self._resolve_semantic_uids(
+                topic_id=topic_id, cluster_id=cluster_id,
+            )
+            if not allowed_uids:
+                return []  # No matching emails for the semantic filter
+
+        # Optional query expansion
+        if expand_query and query:
+            query = self._expand_query(query)
+
+        # Normalize string filter values: strip whitespace and convert "" → None
+        sender = _normalize_filter(sender)
+        date_from = _normalize_filter(date_from)
+        date_to = _normalize_filter(date_to)
+        subject = _normalize_filter(subject)
+        folder = _normalize_filter(folder)
+        cc = _normalize_filter(cc)
+        to = _normalize_filter(to)
+        bcc = _normalize_filter(bcc)
+        email_type = _normalize_filter(email_type)
+        if email_type:
+            email_type = email_type.lower()
 
         if top_k <= 0:
             raise ValueError("top_k must be a positive integer.")
@@ -210,11 +234,19 @@ class EmailRetriever:
         has_filters = bool(
             sender or date_from or date_to or subject or folder or cc
             or to or bcc or has_attachments is not None or priority is not None
-            or min_score is not None
+            or min_score is not None or email_type or allowed_uids is not None
         )
+
+        # Determine effective rerank/hybrid from args or config
+        settings = getattr(self, "settings", None)
+        use_rerank = rerank or (settings.rerank_enabled if settings else False)
+        use_hybrid = hybrid or (settings.hybrid_enabled if settings else False)
+
+        # Over-fetch more when reranking (need larger candidate pool)
+        rerank_multiplier = 3 if use_rerank else 1
         # Over-fetch 2x for dedup (we need extra to compensate for multi-chunk emails)
         dedup_multiplier = 2
-        multiplier = (8 if has_filters else 1) * dedup_multiplier
+        multiplier = (8 if has_filters else 1) * dedup_multiplier * rerank_multiplier
         fetch_size = max(top_k * multiplier, top_k)
         max_fetch_size = 10_000
         max_attempts = 6
@@ -228,28 +260,46 @@ class EmailRetriever:
                     query_embedding = to_builtin_list(self.model.encode([query]))
                 raw_candidates = self._query_with_embedding(query_embedding, fetch_size)
 
+            # Merge with BM25 results if hybrid mode is enabled
+            if use_hybrid:
+                raw_candidates = self._merge_hybrid(query, raw_candidates, fetch_size)
+
             raw_count = len(raw_candidates)
 
             if has_filters:
+                # Build string filter args: [(needle, metadata_keys, match_type), ...]
+                _sf = self._STRING_FILTERS
+                string_filters = [
+                    (sender,     *_sf["sender"]),
+                    (subject,    *_sf["subject"]),
+                    (folder,     *_sf["folder"]),
+                    (cc,         *_sf["cc"]),
+                    (to,         *_sf["to"]),
+                    (bcc,        *_sf["bcc"]),
+                    (email_type, *_sf["email_type"]),
+                ]
                 filtered = [
                     result
                     for result in raw_candidates
-                    if self._matches_sender(result, sender)
+                    if all(
+                        self._matches_string(result, needle, keys, mtype)
+                        for needle, keys, mtype in string_filters
+                    )
                     and self._matches_date_from(result, date_from)
                     and self._matches_date_to(result, date_to)
-                    and self._matches_subject(result, subject)
-                    and self._matches_folder(result, folder)
-                    and self._matches_cc(result, cc)
-                    and self._matches_to(result, to)
-                    and self._matches_bcc(result, bcc)
                     and self._matches_has_attachments(result, has_attachments)
                     and self._matches_priority(result, priority)
                     and self._matches_min_score(result, min_score)
+                    and self._matches_allowed_uids(result, allowed_uids)
                 ]
             else:
                 filtered = raw_candidates
 
             deduped = _deduplicate_by_email(filtered)
+
+            # Apply cross-encoder reranking if enabled
+            if use_rerank and deduped:
+                deduped = self._apply_rerank(query, deduped, top_k)
 
             if len(deduped) >= top_k:
                 return deduped[:top_k]
@@ -264,6 +314,59 @@ class EmailRetriever:
             fetch_size = min(fetch_size * 2, max_fetch_size)
 
         return deduped[:top_k] if filtered else []
+
+    def _apply_rerank(self, query: str, results: list[SearchResult], top_k: int) -> list[SearchResult]:
+        """Apply cross-encoder reranking to results."""
+        if self._reranker is None:
+            from .reranker import CrossEncoderReranker
+
+            model = getattr(getattr(self, "settings", None), "rerank_model", None)
+            self._reranker = CrossEncoderReranker(model_name=model)
+        return self._reranker.rerank(query, results, top_k=top_k)
+
+    def _merge_hybrid(
+        self, query: str, semantic_results: list[SearchResult], fetch_size: int
+    ) -> list[SearchResult]:
+        """Merge semantic results with BM25 keyword results via RRF."""
+        try:
+            if self._bm25_index is None:
+                from .bm25_index import BM25Index
+
+                self._bm25_index = BM25Index()
+                self._bm25_index.build_from_collection(self.collection)
+
+            if not self._bm25_index.is_built:
+                return semantic_results
+
+            from .bm25_index import reciprocal_rank_fusion
+
+            bm25_results = self._bm25_index.search(query, top_k=fetch_size)
+            if not bm25_results:
+                return semantic_results
+
+            semantic_ids = [r.chunk_id for r in semantic_results]
+            bm25_ids = [cid for cid, _ in bm25_results]
+
+            fused_ids = reciprocal_rank_fusion(semantic_ids, bm25_ids)
+
+            # Build lookup from semantic results
+            result_map = {r.chunk_id: r for r in semantic_results}
+            merged = []
+            for cid in fused_ids:
+                if cid in result_map:
+                    merged.append(result_map[cid])
+            # Append any remaining semantic results not in fused list
+            seen = set(fused_ids)
+            for r in semantic_results:
+                if r.chunk_id not in seen:
+                    merged.append(r)
+            return merged
+        except ImportError:
+            logger.warning("rank_bm25 not installed; hybrid search disabled")
+            return semantic_results
+        except Exception:
+            logger.debug("BM25 hybrid merge failed", exc_info=True)
+            return semantic_results
 
     def search_by_thread(self, conversation_id: str, top_k: int = 50) -> list[SearchResult]:
         """Retrieve all emails in a conversation thread, sorted by date.
@@ -489,14 +592,36 @@ class EmailRetriever:
         self.client.delete_collection(self.collection_name)
         self.collection = get_collection(self.client, self.collection_name)
 
+    # ── Data-driven string filter matchers ──
+    # Each entry: (metadata_keys, match_type)
+    #   match_type "contains" → needle in value
+    #   match_type "exact"    → needle == value
+    _STRING_FILTERS: dict[str, tuple[tuple[str, ...], str]] = {
+        "sender":     (("sender_email", "sender_name"), "contains"),
+        "subject":    (("subject",), "contains"),
+        "folder":     (("folder",), "contains"),
+        "cc":         (("cc",), "contains"),
+        "to":         (("to",), "contains"),
+        "bcc":        (("bcc",), "contains"),
+        "email_type": (("email_type",), "exact"),
+    }
+
     @staticmethod
-    def _matches_sender(result: SearchResult, sender: str | None) -> bool:
-        if not sender:
+    def _matches_string(
+        result: SearchResult, needle: str | None,
+        metadata_keys: tuple[str, ...], match_type: str,
+    ) -> bool:
+        """Parameterized string matcher for metadata fields."""
+        if not needle:
             return True
-        needle = sender.lower()
-        sender_email = str(result.metadata.get("sender_email", "") or "").lower()
-        sender_name = str(result.metadata.get("sender_name", "") or "").lower()
-        return needle in sender_email or needle in sender_name
+        needle_lower = needle.lower()
+        for key in metadata_keys:
+            value = str(result.metadata.get(key, "") or "").lower()
+            if match_type == "contains" and needle_lower in value:
+                return True
+            if match_type == "exact" and needle_lower == value:
+                return True
+        return False
 
     @staticmethod
     def _matches_date_from(result: SearchResult, date_from: str | None) -> bool:
@@ -515,46 +640,6 @@ class EmailRetriever:
         if not date_prefix:
             return False
         return date_prefix <= date_to
-
-    @staticmethod
-    def _matches_subject(result: SearchResult, subject: str | None) -> bool:
-        if not subject:
-            return True
-        needle = subject.lower()
-        subject_value = str(result.metadata.get("subject", "") or "").lower()
-        return needle in subject_value
-
-    @staticmethod
-    def _matches_folder(result: SearchResult, folder: str | None) -> bool:
-        if not folder:
-            return True
-        needle = folder.lower()
-        folder_value = str(result.metadata.get("folder", "") or "").lower()
-        return needle in folder_value
-
-    @staticmethod
-    def _matches_cc(result: SearchResult, cc: str | None) -> bool:
-        if not cc:
-            return True
-        needle = cc.lower()
-        cc_value = str(result.metadata.get("cc", "") or "").lower()
-        return needle in cc_value
-
-    @staticmethod
-    def _matches_to(result: SearchResult, to: str | None) -> bool:
-        if not to:
-            return True
-        needle = to.lower()
-        to_value = str(result.metadata.get("to", "") or "").lower()
-        return needle in to_value
-
-    @staticmethod
-    def _matches_bcc(result: SearchResult, bcc: str | None) -> bool:
-        if not bcc:
-            return True
-        needle = bcc.lower()
-        bcc_value = str(result.metadata.get("bcc", "") or "").lower()
-        return needle in bcc_value
 
     @staticmethod
     def _matches_has_attachments(result: SearchResult, has_attachments: bool | None) -> bool:
@@ -578,6 +663,73 @@ class EmailRetriever:
         if min_score is None:
             return True
         return result.score >= min_score
+
+    @staticmethod
+    def _matches_allowed_uids(
+        result: SearchResult, allowed_uids: set[str] | None
+    ) -> bool:
+        if allowed_uids is None:
+            return True
+        uid = str(result.metadata.get("uid", "")).strip()
+        return uid in allowed_uids
+
+    def _resolve_semantic_uids(
+        self,
+        topic_id: int | None = None,
+        cluster_id: int | None = None,
+    ) -> set[str]:
+        """Pre-fetch email UIDs matching semantic filters from SQLite."""
+        db = self.email_db
+        if db is None:
+            return set()
+
+        uid_sets: list[set[str]] = []
+
+        if topic_id is not None:
+            try:
+                rows = db.emails_by_topic(topic_id, limit=10_000)
+                uid_sets.append({r["uid"] for r in rows})
+            except Exception:
+                logger.debug("topic_id filter failed", exc_info=True)
+                uid_sets.append(set())
+
+        if cluster_id is not None:
+            try:
+                rows = db.emails_in_cluster(cluster_id, limit=10_000)
+                uid_sets.append({r["uid"] for r in rows})
+            except Exception:
+                logger.debug("cluster_id filter failed", exc_info=True)
+                uid_sets.append(set())
+
+        if not uid_sets:
+            return set()
+
+        # Intersect all UID sets
+        result = uid_sets[0]
+        for s in uid_sets[1:]:
+            result &= s
+        return result
+
+    def _expand_query(self, query: str) -> str:
+        """Expand query with semantically related terms."""
+        try:
+            from .query_expander import QueryExpander
+
+            db = self.email_db
+            if db is None:
+                return query
+
+            # Get top keywords as vocabulary
+            keywords = db.top_keywords(limit=200)
+            if not keywords:
+                return query
+
+            vocab = [kw["keyword"] for kw in keywords]
+            expander = QueryExpander(model=self.model, vocabulary=vocab)
+            return expander.expand(query, n_terms=3)
+        except Exception:
+            logger.debug("Query expansion failed", exc_info=True)
+            return query
 
     @staticmethod
     def _email_dedup_key(meta: dict[str, Any]) -> str | None:

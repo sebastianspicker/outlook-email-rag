@@ -13,6 +13,16 @@ lxml>=5.0.0
 networkx>=3.2
 pandas>=2.1.0
 
+# Search quality
+rank_bm25>=0.2.2
+
+# Reporting
+jinja2>=3.0.0
+
+# NLP
+spacy>=3.7.0
+textstat>=0.7.0
+
 # Utilities and UI
 python-dotenv>=1.0.0
 rich>=13.0.0

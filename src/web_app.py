@@ -9,6 +9,10 @@ from typing import Any, cast
 
 import streamlit as st
 
+# Streamlit doesn't support `python -m` module execution, so `streamlit run
+# src/web_app.py` uses the file directly.  Relative imports work when imported
+# as part of the `src` package, but fail when Streamlit runs the file as
+# __main__.  The ImportError fallback handles that case.
 try:
     from .retriever import EmailRetriever
     from .validation import validate_date_window
@@ -188,6 +192,163 @@ def render_results_summary(results: list[Any], active_filters: list[str], sort_l
         st.markdown(chips, unsafe_allow_html=True)
 
 
+def _get_email_db_safe():
+    """Try to get EmailDatabase instance, return None if unavailable."""
+    import os
+
+    try:
+        from .config import get_settings
+        from .email_db import EmailDatabase
+    except ImportError:
+        from src.config import get_settings
+        from src.email_db import EmailDatabase
+
+    settings = get_settings()
+    if settings.sqlite_path and os.path.exists(settings.sqlite_path):
+        return EmailDatabase(settings.sqlite_path)
+    return None
+
+
+def render_dashboard_page() -> None:
+    """Render the analytics dashboard page."""
+    st.markdown("## Analytics Dashboard")
+
+    db = _get_email_db_safe()
+    if db is None:
+        st.warning("SQLite database not available. Run ingestion first to enable analytics.")
+        return
+
+    try:
+        from .dashboard_charts import prepare_heatmap_data, prepare_response_times_data, prepare_volume_chart_data
+        from .temporal_analysis import TemporalAnalyzer
+    except ImportError:
+        from src.dashboard_charts import prepare_heatmap_data, prepare_response_times_data, prepare_volume_chart_data
+        from src.temporal_analysis import TemporalAnalyzer
+
+    import pandas as pd
+
+    analyzer = TemporalAnalyzer(db)
+
+    # Volume timeline
+    st.subheader("Email Volume Over Time")
+    period = st.selectbox("Period", ["day", "week", "month"], index=2)
+    volume_data = prepare_volume_chart_data(analyzer, period=period)
+    if volume_data:
+        df = pd.DataFrame(volume_data)
+        st.line_chart(df, x="period", y="count")
+    else:
+        st.info("No volume data available.")
+
+    # Activity heatmap
+    st.subheader("Activity Heatmap (hour × day-of-week)")
+    heatmap_grid = prepare_heatmap_data(analyzer)
+    if any(any(row) for row in heatmap_grid):
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        df_heat = pd.DataFrame(heatmap_grid, index=days, columns=[f"{h:02d}" for h in range(24)])
+        st.dataframe(df_heat, use_container_width=True)
+    else:
+        st.info("No activity data available.")
+
+    # Top contacts
+    st.subheader("Top Contacts")
+    email_input = st.text_input("Your email address", placeholder="you@example.com")
+    if email_input:
+        contacts = db.top_contacts(email_input, limit=15)
+        if contacts:
+            df_contacts = pd.DataFrame(contacts)
+            st.bar_chart(df_contacts, x="partner", y="total_count")
+        else:
+            st.info(f"No contacts found for {email_input}")
+
+    # Response times
+    st.subheader("Response Times")
+    resp_data = prepare_response_times_data(analyzer, limit=15)
+    if resp_data:
+        df_resp = pd.DataFrame(resp_data)
+        st.dataframe(df_resp, use_container_width=True)
+    else:
+        st.info("No response time data available.")
+
+
+def render_entity_page() -> None:
+    """Render the entity browser page."""
+    st.markdown("## Entity Browser")
+
+    db = _get_email_db_safe()
+    if db is None:
+        st.warning("SQLite database not available. Run ingestion with `--extract-entities` first.")
+        return
+
+    import pandas as pd
+
+    entity_types = ["All", "organization", "url", "phone", "mention", "email"]
+    selected_type = st.selectbox("Entity Type", entity_types, index=0)
+    entity_type = None if selected_type == "All" else selected_type
+
+    entities = db.top_entities(entity_type=entity_type, limit=30)
+    if entities:
+        df = pd.DataFrame(entities)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No entities found. Run ingestion with `--extract-entities` to populate.")
+
+    # Co-occurrence search
+    st.subheader("Entity Co-occurrences")
+    entity_query = st.text_input("Find co-occurring entities for:", placeholder="Acme Corp")
+    if entity_query:
+        co_entities = db.entity_co_occurrences(entity_query, limit=20)
+        if co_entities:
+            df_co = pd.DataFrame(co_entities)
+            st.dataframe(df_co, use_container_width=True)
+        else:
+            st.info(f"No co-occurrences found for '{entity_query}'")
+
+
+def render_network_page() -> None:
+    """Render the network analysis page."""
+    st.markdown("## Communication Network")
+
+    db = _get_email_db_safe()
+    if db is None:
+        st.warning("SQLite database not available. Run ingestion first.")
+        return
+
+    try:
+        from .dashboard_charts import prepare_network_summary
+    except ImportError:
+        from src.dashboard_charts import prepare_network_summary
+
+    net_data = prepare_network_summary(db, top_n=20)
+
+    if "error" in net_data:
+        st.warning(net_data["error"])
+        return
+
+    # Metrics
+    met_col1, met_col2 = st.columns(2)
+    met_col1.metric("Total Nodes", net_data.get("total_nodes", 0))
+    met_col2.metric("Total Edges", net_data.get("total_edges", 0))
+
+    # Most connected
+    most_connected = net_data.get("most_connected", [])
+    if most_connected:
+        import pandas as pd
+
+        st.subheader("Most Connected")
+        df_mc = pd.DataFrame(most_connected)
+        st.dataframe(df_mc, use_container_width=True)
+
+    # Communities
+    communities = net_data.get("communities", [])
+    if communities:
+        st.subheader(f"Communities ({len(communities)})")
+        for idx, community in enumerate(communities[:10]):
+            members = community.get("members", [])
+            with st.expander(f"Community {idx + 1} ({len(members)} members)"):
+                for member in members[:20]:
+                    st.text(member)
+
+
 def main() -> None:
     inject_styles()
     st.markdown("<h1 class='hero-title'>Email RAG</h1>", unsafe_allow_html=True)
@@ -196,10 +357,29 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
+    # Navigation
+    page = st.sidebar.radio(
+        "Navigate",
+        ["🔍 Search", "📊 Dashboard", "🏷️ Entities", "🌐 Network"],
+        index=0,
+    )
+
     chromadb_path = st.sidebar.text_input("ChromaDB Path", value="") or None
     retriever = get_retriever(chromadb_path)
     render_sidebar(retriever)
 
+    # Route to non-search pages (don't need ChromaDB data)
+    if page == "📊 Dashboard":
+        render_dashboard_page()
+        return
+    if page == "🏷️ Entities":
+        render_entity_page()
+        return
+    if page == "🌐 Network":
+        render_network_page()
+        return
+
+    # Search page
     if retriever.collection.count() == 0:
         st.warning("No emails indexed yet.")
         st.info(
@@ -238,8 +418,15 @@ def main() -> None:
         with filter_col5:
             cc = st.text_input("CC (optional)")
 
-        att_col, _ = st.columns([1, 4])
-        with att_col:
+        filter2_col1, filter2_col2, filter2_col3, filter2_col4 = st.columns(4)
+        with filter2_col1:
+            bcc = st.text_input("BCC (optional)")
+        with filter2_col2:
+            priority = st.number_input("Min Priority", min_value=0, max_value=5, value=0, step=1)
+        with filter2_col3:
+            email_type_options = ["Any", "reply", "forward", "original"]
+            email_type_label = st.selectbox("Email Type", email_type_options, index=0)
+        with filter2_col4:
             has_attachments = st.checkbox("Has attachments")
 
         date_col1, date_col2 = st.columns(2)
@@ -263,13 +450,18 @@ def main() -> None:
             else:
                 min_score_value = round(float(min_score), 2) if min_score > 0.0 else None
                 has_att_value = True if has_attachments else None
+                priority_value = int(priority) if priority and priority > 0 else None
+                email_type_value = email_type_label if email_type_label != "Any" else None
                 filters = {
                     "sender": sender or None,
                     "to": to_filter or None,
                     "subject": subject or None,
                     "folder": folder or None,
                     "cc": cc or None,
+                    "bcc": bcc or None,
                     "has_attachments": has_att_value,
+                    "priority": priority_value,
+                    "email_type": email_type_value,
                     "date_from": valid_date_from,
                     "date_to": valid_date_to,
                     "min_score": min_score_value,
@@ -283,7 +475,10 @@ def main() -> None:
                     subject=filters["subject"],
                     folder=filters["folder"],
                     cc=filters["cc"],
+                    bcc=filters["bcc"],
                     has_attachments=filters["has_attachments"],
+                    priority=filters["priority"],
+                    email_type=filters["email_type"],
                     date_from=filters["date_from"],
                     date_to=filters["date_to"],
                     min_score=filters["min_score"],
@@ -310,7 +505,10 @@ def main() -> None:
     subject_filter = _as_optional_str(filters.get("subject"))
     folder_filter = _as_optional_str(filters.get("folder"))
     cc_filter = _as_optional_str(filters.get("cc"))
+    bcc_filter = _as_optional_str(filters.get("bcc"))
     has_att_filter = filters.get("has_attachments")
+    priority_filter = filters.get("priority")
+    email_type_filter = _as_optional_str(filters.get("email_type"))
     date_from_filter = _as_optional_str(filters.get("date_from"))
     date_to_filter = _as_optional_str(filters.get("date_to"))
     min_score_filter = _as_optional_float(filters.get("min_score"))
@@ -320,7 +518,10 @@ def main() -> None:
         subject=subject_filter,
         folder=folder_filter,
         cc=cc_filter,
+        bcc=bcc_filter,
         has_attachments=has_att_filter if isinstance(has_att_filter, bool) else None,
+        priority=int(priority_filter) if isinstance(priority_filter, (int, float)) else None,
+        email_type=email_type_filter,
         date_from=date_from_filter,
         date_to=date_to_filter,
         min_score=min_score_filter,

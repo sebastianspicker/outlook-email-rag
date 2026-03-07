@@ -59,7 +59,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--folder", default=None, help="Optional folder filter (partial match).")
     parser.add_argument("--cc", default=None, help="Optional CC recipient filter (partial match).")
     parser.add_argument("--to", default=None, help="Optional To recipient filter (partial match).")
+    parser.add_argument("--bcc", default=None, help="Optional BCC recipient filter (partial match).")
     parser.add_argument("--has-attachments", action="store_true", default=None, help="Filter to emails with attachments.")
+    parser.add_argument("--priority", type=int, default=None, help="Minimum priority level (integer).")
+    parser.add_argument(
+        "--email-type",
+        choices=["reply", "forward", "original"],
+        default=None,
+        help="Filter by email type (reply, forward, or original).",
+    )
     parser.add_argument("--date-from", type=_parse_iso_date, default=None, help="Start date (YYYY-MM-DD).")
     parser.add_argument("--date-to", type=_parse_iso_date, default=None, help="End date (YYYY-MM-DD).")
     parser.add_argument(
@@ -68,6 +76,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Optional minimum relevance score threshold (0.0-1.0).",
     )
+    parser.add_argument("--rerank", action="store_true", help="Re-rank results with cross-encoder for better precision.")
+    parser.add_argument("--hybrid", action="store_true", help="Use hybrid semantic + BM25 keyword search.")
+    parser.add_argument("--topic", type=int, default=None, metavar="TOPIC_ID", help="Filter by topic ID.")
+    parser.add_argument("--cluster-id", type=int, default=None, metavar="CLUSTER_ID", help="Filter by cluster ID.")
+    parser.add_argument("--expand-query", action="store_true", help="Expand query with related terms.")
     parser.add_argument("--chromadb-path", default=None, help="Custom ChromaDB path.")
 
     parser.add_argument("--stats", action="store_true", help="Print archive statistics and exit.")
@@ -85,6 +98,60 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--yes", action="store_true", help="Confirm destructive operations.")
     parser.add_argument("--log-level", default=None, help="Logging level override.")
+
+    # Analytics commands (require SQLite)
+    parser.add_argument(
+        "--suggest",
+        action="store_true",
+        help="Show query suggestions based on indexed data and exit.",
+    )
+
+    parser.add_argument(
+        "--top-contacts",
+        metavar="EMAIL",
+        default=None,
+        help="Show top contacts for an email address and exit.",
+    )
+    parser.add_argument(
+        "--volume",
+        choices=["day", "week", "month"],
+        default=None,
+        help="Show email volume over time by period and exit.",
+    )
+    parser.add_argument(
+        "--entities",
+        nargs="?",
+        const="all",
+        default=None,
+        metavar="TYPE",
+        help="Show top entities (optionally by type: organization/url/phone/mention/email) and exit.",
+    )
+    parser.add_argument(
+        "--heatmap",
+        action="store_true",
+        help="Show activity heatmap (hour × day-of-week) and exit.",
+    )
+    parser.add_argument(
+        "--response-times",
+        action="store_true",
+        help="Show average response times per replier and exit.",
+    )
+    parser.add_argument(
+        "--generate-report",
+        nargs="?",
+        const="report.html",
+        default=None,
+        metavar="OUTPUT",
+        help="Generate an HTML archive report (default: report.html) and exit.",
+    )
+    parser.add_argument(
+        "--export-network",
+        nargs="?",
+        const="network.graphml",
+        default=None,
+        metavar="OUTPUT",
+        help="Export communication network as GraphML (default: network.graphml) and exit.",
+    )
 
     args = parser.parse_args(argv)
     _validate_arg_combinations(args, parser)
@@ -141,10 +208,18 @@ def run_single_query(
     folder: str | None = None,
     cc: str | None = None,
     to: str | None = None,
+    bcc: str | None = None,
     has_attachments: bool | None = None,
+    priority: int | None = None,
+    email_type: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     min_score: float | None = None,
+    rerank: bool = False,
+    hybrid: bool = False,
+    topic_id: int | None = None,
+    cluster_id: int | None = None,
+    expand_query: bool = False,
 ) -> int:
     """Run a single query and print output. Returns process exit code."""
     results = retriever.search_filtered(
@@ -155,10 +230,18 @@ def run_single_query(
         folder=folder,
         cc=cc,
         to=to,
+        bcc=bcc,
         has_attachments=has_attachments,
+        priority=priority,
+        email_type=email_type,
         date_from=date_from,
         date_to=date_to,
         min_score=min_score,
+        rerank=rerank,
+        hybrid=hybrid,
+        topic_id=topic_id,
+        cluster_id=cluster_id,
+        expand_query=expand_query,
     )
 
     if as_json:
@@ -208,6 +291,25 @@ def main(argv: list[str] | None = None) -> None:
         _print_sender_lines(retriever.list_senders(args.list_senders), print_fn=print)
         sys.exit(0)
 
+    # Suggest command
+    if args.suggest:
+        _run_suggest()
+        sys.exit(0)
+
+    # Report / export commands
+    if args.generate_report is not None:
+        _run_generate_report(args.generate_report)
+        sys.exit(0)
+
+    if args.export_network is not None:
+        _run_export_network(args.export_network)
+        sys.exit(0)
+
+    # Analytics commands (require SQLite)
+    if any([args.top_contacts, args.volume, args.entities is not None, args.heatmap, args.response_times]):
+        _run_analytics_command(args)
+        sys.exit(0)
+
     if retriever.collection.count() == 0:
         print("No emails in database. Run ingestion first:")
         print("  python -m src.ingest data/your-export.olm")
@@ -226,10 +328,18 @@ def main(argv: list[str] | None = None) -> None:
             folder=args.folder,
             cc=args.cc,
             to=args.to,
+            bcc=args.bcc,
             has_attachments=True if args.has_attachments else None,
+            priority=args.priority,
+            email_type=args.email_type,
             date_from=args.date_from,
             date_to=args.date_to,
             min_score=args.min_score,
+            rerank=args.rerank,
+            hybrid=args.hybrid,
+            topic_id=args.topic,
+            cluster_id=args.cluster_id,
+            expand_query=args.expand_query,
         )
         sys.exit(code)
 
@@ -307,6 +417,161 @@ def _render_results_table(console, table_cls, results) -> None:
     console.print(table)
 
 
+def _get_email_db():
+    """Get EmailDatabase instance from settings, or exit with error."""
+    import os
+
+    settings = get_settings()
+    sqlite_path = settings.sqlite_path
+    if not sqlite_path or not os.path.exists(sqlite_path):
+        print("SQLite database not found. Run ingestion first:")
+        print("  python -m src.ingest data/your-export.olm --extract-entities")
+        sys.exit(1)
+
+    from .email_db import EmailDatabase
+
+    return EmailDatabase(sqlite_path)
+
+
+def _run_analytics_command(args: argparse.Namespace) -> None:
+    """Dispatch analytics commands."""
+    db = _get_email_db()
+
+    if args.top_contacts:
+        _run_top_contacts(db, args.top_contacts)
+    elif args.volume:
+        _run_volume(db, args.volume)
+    elif args.entities is not None:
+        entity_type = args.entities if args.entities != "all" else None
+        _run_entities(db, entity_type)
+    elif args.heatmap:
+        _run_heatmap(db)
+    elif args.response_times:
+        _run_response_times(db)
+
+
+def _run_top_contacts(db, email_address: str) -> None:
+    contacts = db.top_contacts(email_address, limit=20)
+    if not contacts:
+        print(f"No contacts found for {email_address}")
+        return
+    print(f"\nTop contacts for {email_address}:\n")
+    for contact in contacts:
+        print(f"  {contact['total_count']:>4}x  {contact['partner']}")
+
+
+def _run_volume(db, period: str) -> None:
+    from .temporal_analysis import TemporalAnalyzer
+
+    analyzer = TemporalAnalyzer(db)
+    data = analyzer.volume_over_time(period=period)
+    if not data:
+        print("No volume data available.")
+        return
+    print(f"\nEmail volume by {period}:\n")
+    for row in data:
+        bar = "█" * min(50, row["count"])
+        print(f"  {row['period']}  {row['count']:>5}  {bar}")
+
+
+def _run_entities(db, entity_type: str | None) -> None:
+    entities = db.top_entities(entity_type=entity_type, limit=30)
+    if not entities:
+        label = entity_type or "all types"
+        print(f"No entities found ({label}).")
+        return
+    label = entity_type or "all"
+    print(f"\nTop entities ({label}):\n")
+    for ent in entities:
+        print(f"  {ent['mention_count']:>4}x  [{ent['entity_type']}]  {ent['entity_text']}")
+
+
+def _run_heatmap(db) -> None:
+    from .temporal_analysis import TemporalAnalyzer
+
+    analyzer = TemporalAnalyzer(db)
+    data = analyzer.activity_heatmap()
+    if not data:
+        print("No heatmap data available.")
+        return
+
+    # Build grid: rows=hours (0-23), cols=days (0=Mon-6=Sun)
+    grid: dict[tuple[int, int], int] = {}
+    max_count = 0
+    for row in data:
+        key = (row["hour"], row["day_of_week"])
+        grid[key] = row["count"]
+        max_count = max(max_count, row["count"])
+
+    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    print("\nActivity heatmap (hour × day-of-week):\n")
+    print(f"      {'   '.join(days)}")
+    levels = " ░▒▓█"
+    for hour in range(24):
+        row_str = f"  {hour:02d}  "
+        for day in range(7):
+            count = grid.get((hour, day), 0)
+            if max_count > 0:
+                level = int((count / max_count) * (len(levels) - 1))
+            else:
+                level = 0
+            row_str += f" {levels[level]}  "
+        print(row_str)
+    print(f"\n  Legend: ' '=0  ░=low  ▒=mid  ▓=high  █=peak (max={max_count})")
+
+
+def _run_response_times(db) -> None:
+    from .temporal_analysis import TemporalAnalyzer
+
+    analyzer = TemporalAnalyzer(db)
+    data = analyzer.response_times(limit=20)
+    if not data:
+        print("No response time data available.")
+        return
+    print("\nAverage response times:\n")
+    for row in data:
+        print(
+            f"  {row['avg_response_hours']:>6.1f}h avg  "
+            f"({row['response_count']:>3} replies)  {row['replier']}"
+        )
+
+
+def _run_suggest() -> None:
+    db = _get_email_db()
+    from .query_suggestions import QuerySuggester
+
+    suggester = QuerySuggester(db)
+    suggestions = suggester.suggest_flat(limit=15)
+    if not suggestions:
+        print("No suggestions available. Is the SQLite database populated?")
+        return
+    print("\nQuery suggestions:\n")
+    for suggestion in suggestions:
+        print(f"  • {suggestion}")
+
+
+def _run_generate_report(output_path: str) -> None:
+    db = _get_email_db()
+    from .report_generator import ReportGenerator
+
+    generator = ReportGenerator(db)
+    generator.generate(output_path=output_path)
+    print(f"Report generated: {output_path}")
+
+
+def _run_export_network(output_path: str) -> None:
+    db = _get_email_db()
+    from .network_analysis import CommunicationNetwork
+
+    net = CommunicationNetwork(db)
+    result = net.export_graphml(output_path)
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        sys.exit(1)
+    print(f"Network exported: {output_path}")
+    print(f"  Nodes: {result['total_nodes']}, Edges: {result['total_edges']}")
+
+
 def _parse_iso_date(value: str) -> str:
     try:
         return parse_iso_date(value)
@@ -350,24 +615,48 @@ def _validate_arg_combinations(args: argparse.Namespace, parser: argparse.Argume
         or args.folder
         or args.cc
         or args.to
+        or args.bcc
         or args.has_attachments
+        or args.priority is not None
+        or args.email_type is not None
         or args.date_from
         or args.date_to
         or args.min_score is not None
         or args.json
         or args.format is not None
+        or args.topic is not None
+        or args.cluster_id is not None
+        or args.expand_query
     ):
         parser.error(
-            "--sender/--subject/--folder/--cc/--to/--has-attachments/"
-            "--date-from/--date-to/--min-score/--json/--format require --query"
+            "--sender/--subject/--folder/--cc/--to/--bcc/--has-attachments/"
+            "--priority/--email-type/--date-from/--date-to/--min-score/"
+            "--topic/--cluster-id/--expand-query/--json/--format require --query"
         )
 
-    operational_modes = [bool(args.stats), bool(args.list_senders), bool(args.reset_index)]
+    analytics_modes = [
+        bool(args.top_contacts), bool(args.volume), args.entities is not None,
+        bool(args.heatmap), bool(args.response_times),
+    ]
+    operational_modes = [
+        bool(args.stats), bool(args.list_senders), bool(args.reset_index),
+        bool(args.suggest),
+        args.generate_report is not None,
+        args.export_network is not None,
+        *analytics_modes,
+    ]
     if sum(operational_modes) > 1:
-        parser.error("--stats, --list-senders, and --reset-index are mutually exclusive")
+        parser.error(
+            "--stats, --list-senders, --reset-index, --suggest, --generate-report, "
+            "--export-network, --top-contacts, --volume, "
+            "--entities, --heatmap, and --response-times are mutually exclusive"
+        )
 
     if args.query and any(operational_modes):
-        parser.error("--query cannot be combined with --stats, --list-senders, or --reset-index")
+        parser.error(
+            "--query cannot be combined with operational commands "
+            "(--stats, --list-senders, --reset-index, --top-contacts, etc.)"
+        )
 
 
 def resolve_output_format(args: argparse.Namespace) -> OutputFormat:

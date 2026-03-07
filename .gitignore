@@ -19,17 +19,17 @@ htmlcov/
 
 # Runtime artifacts
 *.log
-.db
+*.db
 *.sqlite3
 *.bak
 *.orig
-RELEASE_NOTES.md
 .tmp/
 tmp/
 
 # Local/private email data and vector indexes
 data/*.olm
 data/chromadb/
+data/email_metadata.db
 
 # Environment
 .env

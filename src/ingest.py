@@ -28,6 +28,7 @@ def ingest(
     dry_run: bool = False,
     extract_attachments: bool = False,
     extract_entities: bool = False,
+    incremental: bool = False,
 ) -> dict:
     """Parse an OLM file and ingest all emails into the vector database."""
     settings = get_settings()
@@ -65,12 +66,25 @@ def ingest(
         email_db = EmailDatabase(resolved_sqlite)
         logger.info("SQLite DB: %s", resolved_sqlite)
 
-    # Entity extractor
+    # Entity extractor — prefer NLP (spaCy) if available, fall back to regex
     entity_extractor_fn = None
     if extract_entities and not dry_run:
-        from .entity_extractor import extract_entities as _extract_entities
+        try:
+            from .nlp_entity_extractor import extract_nlp_entities, is_spacy_available
 
-        entity_extractor_fn = _extract_entities
+            if is_spacy_available():
+                entity_extractor_fn = extract_nlp_entities
+                logger.info("Entity extraction: spaCy NLP + regex (enhanced)")
+            else:
+                from .entity_extractor import extract_entities as _extract_entities
+
+                entity_extractor_fn = _extract_entities
+                logger.info("Entity extraction: regex-only (spaCy not available)")
+        except ImportError:
+            from .entity_extractor import extract_entities as _extract_entities
+
+            entity_extractor_fn = _extract_entities
+            logger.info("Entity extraction: regex-only")
 
     attachment_extractor = None
     if extract_attachments:
@@ -78,17 +92,28 @@ def ingest(
 
         attachment_extractor = extract_text
 
+    # Record ingestion start
+    ingestion_run_id = None
+    if email_db:
+        ingestion_run_id = email_db.record_ingestion_start(olm_path)
+
     total_emails = 0
     total_chunks_created = 0
     total_chunks_added = 0
     total_batches_written = 0
     total_attachment_chunks = 0
+    total_skipped_incremental = 0
     sqlite_inserted = 0
     pending_chunks = []
     pending_emails = []
 
     for email in parse_olm(olm_path, extract_attachments=extract_attachments):
         total_emails += 1
+
+        # Incremental mode: skip already-ingested emails
+        if incremental and email_db and email_db.email_exists(email.uid):
+            total_skipped_incremental += 1
+            continue
         email_dict = email.to_dict()
         chunks = chunk_email(email_dict)
         total_chunks_created += len(chunks)
@@ -161,9 +186,6 @@ def ingest(
                         [(e.text, e.entity_type, e.normalized_form) for e in entities],
                     )
 
-    if email_db:
-        email_db.close()
-
     elapsed = time.time() - start_time
 
     stats = {
@@ -175,11 +197,23 @@ def ingest(
         "batches_written": total_batches_written,
         "total_in_db": embedder.count() if embedder else None,
         "sqlite_inserted": sqlite_inserted,
+        "skipped_incremental": total_skipped_incremental,
         "dry_run": dry_run,
         "extract_attachments": extract_attachments,
         "extract_entities": extract_entities,
+        "incremental": incremental,
         "elapsed_seconds": round(elapsed, 1),
     }
+
+    # Record ingestion completion
+    if email_db and ingestion_run_id is not None:
+        email_db.record_ingestion_complete(ingestion_run_id, {
+            "emails_parsed": total_emails,
+            "emails_inserted": sqlite_inserted,
+        })
+
+    if email_db:
+        email_db.close()
 
     logger.info("Ingestion complete: %s", stats)
     return stats
@@ -222,6 +256,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Custom path for SQLite metadata database.",
     )
     parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Skip emails already present in SQLite (saves embedding compute on re-runs).",
+    )
+    parser.add_argument(
         "--reset-index",
         action="store_true",
         help="Delete ChromaDB collection and SQLite DB, then exit.",
@@ -258,6 +297,7 @@ def main(argv: list[str] | None = None) -> None:
             dry_run=args.dry_run,
             extract_attachments=args.extract_attachments,
             extract_entities=args.extract_entities,
+            incremental=args.incremental,
         )
     except FileNotFoundError as exc:
         print(str(exc))
@@ -318,6 +358,8 @@ def format_ingestion_summary(stats: dict[str, Any]) -> list[str]:
         )
         if "sqlite_inserted" in stats:
             lines.append(f"SQLite rows inserted: {stats['sqlite_inserted']}")
+        if stats.get("skipped_incremental", 0) > 0:
+            lines.append(f"Skipped (incremental): {stats['skipped_incremental']}")
 
     lines.append(f"Elapsed: {stats['elapsed_seconds']}s")
     return lines
