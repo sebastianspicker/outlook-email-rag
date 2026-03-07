@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,11 +53,13 @@ class EmailRetriever:
         chromadb_path: str | None = None,
         model_name: str | None = None,
         collection_name: str | None = None,
+        sqlite_path: str | None = None,
     ):
         self.settings = resolve_runtime_settings(
             chromadb_path=chromadb_path,
             embedding_model=model_name,
             collection_name=collection_name,
+            sqlite_path=sqlite_path,
         )
 
         self.chromadb_path = self.settings.chromadb_path
@@ -64,8 +67,25 @@ class EmailRetriever:
         self.collection_name = self.settings.collection_name
 
         self._model: SentenceTransformer | None = None
+        self._email_db: Any = None
+        self._email_db_checked = False
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
+
+    @property
+    def email_db(self):
+        """Lazy-loaded EmailDatabase (None if SQLite file doesn't exist)."""
+        if not getattr(self, "_email_db_checked", False):
+            self._email_db_checked = True
+            settings = getattr(self, "settings", None)
+            sqlite_path = getattr(settings, "sqlite_path", None) if settings else None
+            if sqlite_path and os.path.exists(sqlite_path):
+                from .email_db import EmailDatabase
+
+                self._email_db = EmailDatabase(sqlite_path)
+            else:
+                self._email_db = None
+        return getattr(self, "_email_db", None)
 
     @property
     def model(self) -> SentenceTransformer:
@@ -278,12 +298,28 @@ class EmailRetriever:
         return deduped[:top_k]
 
     def list_senders(self, limit: int = 50) -> list[dict[str, Any]]:
-        """List unique senders sorted by message count."""
+        """List unique senders sorted by message count.
+
+        Uses SQLite when available for O(1) query, falls back to
+        iterating ChromaDB metadata otherwise.
+        """
         if limit <= 0:
             raise ValueError("limit must be a positive integer.")
         if limit > 10_000:
             raise ValueError("limit must be <= 10000.")
 
+        if self.email_db:
+            try:
+                rows = self.email_db.top_senders(limit=limit)
+                if rows:
+                    return [
+                        {"name": r["sender_name"], "email": r["sender_email"], "count": r["message_count"]}
+                        for r in rows
+                    ]
+            except Exception:
+                logger.debug("SQLite list_senders failed, falling back to ChromaDB", exc_info=True)
+
+        # ChromaDB fallback (slow O(n) iteration)
         sender_counts: dict[str, dict[str, Any]] = {}
         sender_email_keys: dict[str, set[str]] = {}
         sender_unknown_uid_counts: dict[str, int] = {}
@@ -316,8 +352,29 @@ class EmailRetriever:
         return [{"folder": name, "count": count} for name, count in stats.get("folders", {}).items()]
 
     def stats(self) -> dict[str, Any]:
-        """Get summary statistics about the indexed archive."""
+        """Get summary statistics about the indexed archive.
+
+        Uses SQLite for O(1) aggregates when available, falls back to
+        iterating ChromaDB metadata otherwise.
+        """
         total_chunks = self.collection.count()
+
+        if self.email_db:
+            try:
+                email_count = self.email_db.email_count()
+                if email_count > 0:
+                    min_d, max_d = self.email_db.date_range()
+                    return {
+                        "total_chunks": total_chunks,
+                        "total_emails": email_count,
+                        "unique_senders": self.email_db.unique_sender_count(),
+                        "date_range": {"earliest": min_d[:10] if min_d else None, "latest": max_d[:10] if max_d else None},
+                        "folders": self.email_db.folder_counts(),
+                    }
+            except Exception:
+                logger.debug("SQLite stats failed, falling back to ChromaDB", exc_info=True)
+
+        # ChromaDB fallback (slow O(n) iteration)
         if total_chunks == 0:
             return {"total_chunks": 0, "total_emails": 0, "unique_senders": 0, "date_range": {}, "folders": {}}
 

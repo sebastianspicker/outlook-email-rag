@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 import zipfile
 from typing import Any
@@ -21,10 +22,12 @@ logger = logging.getLogger(__name__)
 def ingest(
     olm_path: str,
     chromadb_path: str | None = None,
+    sqlite_path: str | None = None,
     batch_size: int = 500,
     max_emails: int | None = None,
     dry_run: bool = False,
     extract_attachments: bool = False,
+    extract_entities: bool = False,
 ) -> dict:
     """Parse an OLM file and ingest all emails into the vector database."""
     settings = get_settings()
@@ -53,6 +56,22 @@ def ingest(
         logger.info("Database write disabled (dry-run)")
         logger.info("Configured default DB path: %s", chromadb_path or settings.chromadb_path)
 
+    # SQLite relational store
+    email_db = None
+    if not dry_run:
+        from .email_db import EmailDatabase
+
+        resolved_sqlite = sqlite_path or settings.sqlite_path
+        email_db = EmailDatabase(resolved_sqlite)
+        logger.info("SQLite DB: %s", resolved_sqlite)
+
+    # Entity extractor
+    entity_extractor_fn = None
+    if extract_entities and not dry_run:
+        from .entity_extractor import extract_entities as _extract_entities
+
+        entity_extractor_fn = _extract_entities
+
     attachment_extractor = None
     if extract_attachments:
         from .attachment_extractor import extract_text
@@ -64,7 +83,9 @@ def ingest(
     total_chunks_added = 0
     total_batches_written = 0
     total_attachment_chunks = 0
+    sqlite_inserted = 0
     pending_chunks = []
+    pending_emails = []
 
     for email in parse_olm(olm_path, extract_attachments=extract_attachments):
         total_emails += 1
@@ -73,6 +94,10 @@ def ingest(
         total_chunks_created += len(chunks)
         if embedder:
             pending_chunks.extend(chunks)
+
+        # Buffer emails for SQLite batch write
+        if email_db:
+            pending_emails.append(email)
 
         # Process attachment contents if enabled
         if attachment_extractor and email.attachment_contents:
@@ -109,9 +134,35 @@ def ingest(
             total_batches_written += 1
             pending_chunks = []
 
+        if email_db and len(pending_emails) >= batch_size:
+            sqlite_inserted += email_db.insert_emails_batch(pending_emails)
+            if entity_extractor_fn:
+                for em in pending_emails:
+                    entities = entity_extractor_fn(em.clean_body, em.sender_email)
+                    if entities:
+                        email_db.insert_entities_batch(
+                            em.uid,
+                            [(e.text, e.entity_type, e.normalized_form) for e in entities],
+                        )
+            pending_emails = []
+
     if embedder and pending_chunks:
         total_chunks_added += embedder.add_chunks(pending_chunks, batch_size=batch_size)
         total_batches_written += 1
+
+    if email_db and pending_emails:
+        sqlite_inserted += email_db.insert_emails_batch(pending_emails)
+        if entity_extractor_fn:
+            for em in pending_emails:
+                entities = entity_extractor_fn(em.clean_body, em.sender_email)
+                if entities:
+                    email_db.insert_entities_batch(
+                        em.uid,
+                        [(e.text, e.entity_type, e.normalized_form) for e in entities],
+                    )
+
+    if email_db:
+        email_db.close()
 
     elapsed = time.time() - start_time
 
@@ -123,8 +174,10 @@ def ingest(
         "chunks_skipped": (total_chunks_created - total_chunks_added) if embedder else 0,
         "batches_written": total_batches_written,
         "total_in_db": embedder.count() if embedder else None,
+        "sqlite_inserted": sqlite_inserted,
         "dry_run": dry_run,
         "extract_attachments": extract_attachments,
+        "extract_entities": extract_entities,
         "elapsed_seconds": round(elapsed, 1),
     }
 
@@ -159,6 +212,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Extract and index text content from attachments (PDF, DOCX, XLSX, text).",
     )
     parser.add_argument(
+        "--extract-entities",
+        action="store_true",
+        help="Extract entities (organizations, URLs, phones) and store in SQLite.",
+    )
+    parser.add_argument(
+        "--sqlite-path",
+        default=None,
+        help="Custom path for SQLite metadata database.",
+    )
+    parser.add_argument(
+        "--reset-index",
+        action="store_true",
+        help="Delete ChromaDB collection and SQLite DB, then exit.",
+    )
+    parser.add_argument("--yes", action="store_true", help="Confirm destructive operations.")
+    parser.add_argument(
         "--log-level",
         default=None,
         help="Logging level override (DEBUG, INFO, WARNING, ERROR).",
@@ -171,14 +240,24 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     configure_logging(args.log_level)
 
+    if args.reset_index:
+        if not args.yes:
+            print("Refusing to reset index without --yes.")
+            raise SystemExit(2)
+        _reset_index(args)
+        print("Index has been reset.")
+        raise SystemExit(0)
+
     try:
         stats = ingest(
             args.olm_path,
             chromadb_path=args.chromadb_path,
+            sqlite_path=args.sqlite_path,
             batch_size=args.batch_size,
             max_emails=args.max_emails,
             dry_run=args.dry_run,
             extract_attachments=args.extract_attachments,
+            extract_entities=args.extract_entities,
         )
     except FileNotFoundError as exc:
         print(str(exc))
@@ -195,6 +274,21 @@ def main(argv: list[str] | None = None) -> None:
 
     summary_lines = format_ingestion_summary(stats)
     print("\n" + "\n".join(summary_lines))
+
+
+def _reset_index(args: argparse.Namespace) -> None:
+    """Delete ChromaDB collection and SQLite DB file."""
+    settings = get_settings()
+    sqlite_file = args.sqlite_path or settings.sqlite_path
+    if os.path.exists(sqlite_file):
+        os.remove(sqlite_file)
+        print(f"Deleted SQLite DB: {sqlite_file}")
+    chromadb_dir = args.chromadb_path or settings.chromadb_path
+    if os.path.isdir(chromadb_dir):
+        import shutil
+
+        shutil.rmtree(chromadb_dir)
+        print(f"Deleted ChromaDB: {chromadb_dir}")
 
 
 def _positive_int(raw: str) -> int:
@@ -222,6 +316,8 @@ def format_ingestion_summary(stats: dict[str, Any]) -> list[str]:
                 f"Total in DB: {stats['total_in_db']}",
             ]
         )
+        if "sqlite_inserted" in stats:
+            lines.append(f"SQLite rows inserted: {stats['sqlite_inserted']}")
 
     lines.append(f"Elapsed: {stats['elapsed_seconds']}s")
     return lines

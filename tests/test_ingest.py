@@ -76,6 +76,113 @@ def test_ingest_dry_run_reports_qol_stats(monkeypatch):
     assert stats["batches_written"] == 0
 
 
+def _make_mock_email(idx):
+    from src.parse_olm import Email
+
+    return Email(
+        message_id=f"<msg{idx}@test.com>",
+        subject=f"Subject {idx}",
+        sender_name="Sender",
+        sender_email="sender@test.com",
+        to=["recipient@test.com"],
+        cc=[],
+        bcc=[],
+        date=f"2024-01-0{idx}T10:00:00",
+        body_text=f"Body {idx}",
+        body_html="",
+        folder="Inbox",
+        has_attachments=False,
+    )
+
+
+class _MockEmbedder:
+    def __init__(self, **_kw):
+        self.chromadb_path = "mock"
+        self.model_name = "mock"
+        self._count = 0
+
+    def count(self):
+        return self._count
+
+    def add_chunks(self, chunks, **_kw):
+        self._count += len(chunks)
+        return len(chunks)
+
+
+def test_ingest_populates_sqlite(monkeypatch, tmp_path):
+    import src.ingest as ingest_mod
+
+    emails = [_make_mock_email(i) for i in range(1, 4)]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: emails)
+    monkeypatch.setattr(
+        ingest_mod,
+        "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+
+    import src.embedder as embedder_mod
+
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+    stats = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+
+    assert stats["sqlite_inserted"] == 3
+
+    from src.email_db import EmailDatabase
+
+    db = EmailDatabase(sqlite_file)
+    assert db.email_count() == 3
+    db.close()
+
+
+def test_ingest_dry_run_skips_sqlite(monkeypatch, tmp_path):
+    import src.ingest as ingest_mod
+
+    emails = [_make_mock_email(1)]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: emails)
+    monkeypatch.setattr(
+        ingest_mod,
+        "chunk_email",
+        lambda email: [{"chunk_id": "x"}],
+    )
+
+    sqlite_file = str(tmp_path / "test.db")
+    stats = ingest_mod.ingest("mock.olm", dry_run=True, sqlite_path=sqlite_file)
+
+    assert stats["sqlite_inserted"] == 0
+    import os
+
+    assert not os.path.exists(sqlite_file)
+
+
+def test_reingest_is_idempotent(monkeypatch, tmp_path):
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+
+    emails = [_make_mock_email(i) for i in range(1, 3)]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: emails)
+    monkeypatch.setattr(
+        ingest_mod,
+        "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+    stats1 = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+    assert stats1["sqlite_inserted"] == 2
+
+    stats2 = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+    assert stats2["sqlite_inserted"] == 0
+
+    from src.email_db import EmailDatabase
+
+    db = EmailDatabase(sqlite_file)
+    assert db.email_count() == 2
+    db.close()
+
+
 def test_format_ingestion_summary_includes_qol_fields():
     from src.ingest import format_ingestion_summary
 

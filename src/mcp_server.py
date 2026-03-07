@@ -471,6 +471,10 @@ class EmailIngestInput(BaseModel):
         default=False,
         description="If true, parse and chunk without writing to the database.",
     )
+    extract_entities: bool = Field(
+        default=False,
+        description="If true, extract entities (orgs, URLs, phones) and store in SQLite.",
+    )
 
 
 @mcp.tool(
@@ -494,6 +498,7 @@ async def email_ingest(params: EmailIngestInput) -> str:
             - olm_path (str): Absolute path to the .olm file
             - max_emails (int, optional): Cap on emails to parse
             - dry_run (bool): If true, parse without writing (default: False)
+            - extract_entities (bool): If true, extract entities into SQLite
 
     Returns:
         str: JSON summary of the ingestion run.
@@ -505,6 +510,7 @@ async def email_ingest(params: EmailIngestInput) -> str:
             olm_path=params.olm_path,
             max_emails=params.max_emails,
             dry_run=params.dry_run,
+            extract_entities=params.extract_entities,
         )
     except FileNotFoundError as exc:
         return json.dumps({"error": str(exc)})
@@ -562,6 +568,216 @@ async def email_search_thread(params: EmailSearchThreadInput) -> str:
     if not results:
         return "No emails found for this conversation thread."
     return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+
+
+# ── EmailDatabase helper ──────────────────────────────────────
+
+_email_db = None
+_email_db_lock = threading.Lock()
+
+
+def get_email_db():
+    """Lazy singleton for the SQLite email database."""
+    global _email_db
+    with _email_db_lock:
+        if _email_db is None:
+            import os
+
+            from .email_db import EmailDatabase
+
+            settings = get_settings()
+            if os.path.exists(settings.sqlite_path):
+                _email_db = EmailDatabase(settings.sqlite_path)
+    return _email_db
+
+
+# ── Network Analysis Tools ────────────────────────────────────
+
+
+class TopContactsInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    email_address: str = Field(
+        ..., description="Email address to find top contacts for.", min_length=1
+    )
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+@mcp.tool(name="email_top_contacts", annotations=_tool_annotations("Top Email Contacts"))
+async def email_top_contacts(params: TopContactsInput) -> str:
+    """Find top communication partners for an email address.
+
+    Returns contacts ranked by total bidirectional email frequency
+    (emails sent to + received from each partner).
+    """
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    contacts = db.top_contacts(params.email_address, limit=params.limit)
+    return json.dumps(contacts, indent=2)
+
+
+class CommunicationBetweenInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    email_a: str = Field(..., description="First email address.", min_length=1)
+    email_b: str = Field(..., description="Second email address.", min_length=1)
+
+
+@mcp.tool(
+    name="email_communication_between",
+    annotations=_tool_annotations("Communication Between Two Contacts"),
+)
+async def email_communication_between(params: CommunicationBetweenInput) -> str:
+    """Get bidirectional communication stats between two email addresses."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    result = db.communication_between(params.email_a, params.email_b)
+    return json.dumps(result, indent=2)
+
+
+class NetworkAnalysisInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    top_n: int = Field(default=20, ge=1, le=100, description="Number of top nodes to return.")
+
+
+@mcp.tool(name="email_network_analysis", annotations=_tool_annotations("Email Network Analysis"))
+async def email_network_analysis(params: NetworkAnalysisInput) -> str:
+    """Analyze the communication network: centrality, communities, bridge nodes."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    from .network_analysis import CommunicationNetwork
+
+    net = CommunicationNetwork(db)
+    result = net.network_analysis(top_n=params.top_n)
+    return json.dumps(result, indent=2)
+
+
+# ── Temporal Analysis Tools ───────────────────────────────────
+
+
+class VolumeOverTimeInput(DateRangeInput):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    period: str = Field(
+        default="day",
+        description="Aggregation period: 'day', 'week', or 'month'.",
+    )
+    sender: Optional[str] = Field(default=None, description="Filter by sender email.")
+
+
+@mcp.tool(name="email_volume_over_time", annotations=_tool_annotations("Email Volume Over Time"))
+async def email_volume_over_time(params: VolumeOverTimeInput) -> str:
+    """Get email volume grouped by time period (day/week/month)."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    from .temporal_analysis import TemporalAnalyzer
+
+    analyzer = TemporalAnalyzer(db)
+    result = analyzer.volume_over_time(
+        period=params.period,
+        date_from=params.date_from,
+        date_to=params.date_to,
+        sender=params.sender,
+    )
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool(name="email_activity_pattern", annotations=_tool_annotations("Email Activity Heatmap"))
+async def email_activity_pattern() -> str:
+    """Get email activity heatmap: hour-of-day x day-of-week counts."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    from .temporal_analysis import TemporalAnalyzer
+
+    analyzer = TemporalAnalyzer(db)
+    result = analyzer.activity_heatmap()
+    return json.dumps(result, indent=2)
+
+
+class ResponseTimesInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    sender: Optional[str] = Field(default=None, description="Filter by replier email.")
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+@mcp.tool(name="email_response_times", annotations=_tool_annotations("Email Response Times"))
+async def email_response_times(params: ResponseTimesInput) -> str:
+    """Get average response times per sender (in hours)."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    from .temporal_analysis import TemporalAnalyzer
+
+    analyzer = TemporalAnalyzer(db)
+    result = analyzer.response_times(sender=params.sender, limit=params.limit)
+    return json.dumps(result, indent=2)
+
+
+# ── Entity Tools ──────────────────────────────────────────────
+
+
+class EntitySearchInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    entity: str = Field(..., description="Entity text to search for (partial match).", min_length=1)
+    entity_type: Optional[str] = Field(
+        default=None,
+        description="Filter by entity type: 'organization', 'url', 'phone', 'mention', 'email'.",
+    )
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+@mcp.tool(name="email_search_by_entity", annotations=_tool_annotations("Search by Entity"))
+async def email_search_by_entity(params: EntitySearchInput) -> str:
+    """Find emails mentioning a specific entity (organization, URL, phone, etc.)."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    results = db.search_by_entity(params.entity, entity_type=params.entity_type, limit=params.limit)
+    return json.dumps(results, indent=2)
+
+
+class ListEntitiesInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: Optional[str] = Field(
+        default=None, description="Filter by type: 'organization', 'url', 'phone', 'mention', 'email'."
+    )
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+@mcp.tool(name="email_list_entities", annotations=_tool_annotations("List Top Entities"))
+async def email_list_entities(params: ListEntitiesInput) -> str:
+    """List most frequently mentioned entities in the email archive."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    results = db.top_entities(entity_type=params.entity_type, limit=params.limit)
+    return json.dumps(results, indent=2)
+
+
+class EntityNetworkInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    entity: str = Field(..., description="Entity to find co-occurrences for.", min_length=1)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+@mcp.tool(name="email_entity_network", annotations=_tool_annotations("Entity Co-occurrences"))
+async def email_entity_network(params: EntityNetworkInput) -> str:
+    """Find entities that co-occur with the given entity in the same emails."""
+    db = get_email_db()
+    if not db:
+        return json.dumps({"error": "SQLite database not available. Run ingestion first."})
+    results = db.entity_co_occurrences(params.entity, limit=params.limit)
+    return json.dumps(results, indent=2)
 
 
 # ── Entry Point ────────────────────────────────────────────────

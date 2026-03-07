@@ -13,6 +13,7 @@ class Settings:
     """Environment-backed settings for the email RAG application."""
 
     chromadb_path: str = "data/chromadb"
+    sqlite_path: str = "data/email_metadata.db"
     embedding_model: str = "all-MiniLM-L6-v2"
     collection_name: str = "emails"
     top_k: int = 10
@@ -23,6 +24,7 @@ class Settings:
         """Build settings from environment variables with safe defaults."""
         return cls(
             chromadb_path=os.getenv("CHROMADB_PATH", cls.chromadb_path),
+            sqlite_path=os.getenv("SQLITE_PATH", cls.sqlite_path),
             embedding_model=os.getenv("EMBEDDING_MODEL", cls.embedding_model),
             collection_name=os.getenv("COLLECTION_NAME", cls.collection_name),
             top_k=_int_from_env("TOP_K", cls.top_k, min_value=1, max_value=1000),
@@ -40,11 +42,13 @@ def resolve_runtime_settings(
     chromadb_path: str | None = None,
     embedding_model: str | None = None,
     collection_name: str | None = None,
+    sqlite_path: str | None = None,
 ) -> Settings:
     """Derive runtime settings from env defaults with optional overrides."""
     base = get_settings()
     return Settings(
         chromadb_path=chromadb_path or base.chromadb_path,
+        sqlite_path=sqlite_path or base.sqlite_path,
         embedding_model=embedding_model or base.embedding_model,
         collection_name=collection_name or base.collection_name,
         top_k=base.top_k,
