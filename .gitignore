@@ -34,6 +34,9 @@ data/email_metadata.db
 # Environment
 .env
 
+# Personal Claude instructions (not for public repo)
+CLAUDE.personal.md
+
 # IDE
 .vscode/
 .idea/
