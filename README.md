@@ -19,6 +19,8 @@ You export your mailbox from Outlook for Mac once, run a one-time indexing step,
 - *"What topics dominate my inbox?"*
 - *"Find emails similar to this one about the contract"*
 - *"Analyze the writing style of emails from marketing"*
+- *"Export the conversation about the contract renewal as a PDF"*
+- *"Browse through all my emails from January, 20 at a time"*
 
 Claude reads the indexed emails and gives you precise, sourced answers — without touching Outlook again.
 
@@ -36,7 +38,7 @@ flowchart LR
     F --> G[("ChromaDB\nvector store")]
     F --> H[("SQLite\nmetadata")]
 
-    I["You ask\nClaude"] --> J["38 MCP tools\ncalled by Claude"]
+    I["You ask\nClaude"] --> J["43 MCP tools\ncalled by Claude"]
     J --> G
     J --> H
     G --> K["Ranked\nresults"]
@@ -49,7 +51,7 @@ flowchart LR
 sequenceDiagram
     participant You
     participant Claude as Claude Code
-    participant MCP as MCP Server (38 tools)
+    participant MCP as MCP Server (43 tools)
     participant VDB as ChromaDB (vectors)
     participant SQL as SQLite (metadata)
 
@@ -168,7 +170,7 @@ The project includes a `.claude/settings.json` that automatically registers the 
 
 ## Using with Claude Code (MCP Server)
 
-This is the primary way to use Email RAG. Claude Code talks to your email index through 38 MCP tools — you just ask questions in plain English.
+This is the primary way to use Email RAG. Claude Code talks to your email index through 43 MCP tools — you just ask questions in plain English.
 
 ### How it connects
 
@@ -194,7 +196,7 @@ After opening the project in Claude Code, you can check that the tools loaded:
 
 1. Type `/mcp` in the Claude Code prompt
 2. Look for `email_search` in the server list — it should show as **connected**
-3. You should see all 38 tools listed beneath it
+3. You should see all 43 tools listed beneath it
 
 If it shows as disconnected:
 - Make sure the virtual environment exists: `ls .venv/bin/python`
@@ -268,6 +270,21 @@ Analyze the writing style of emails from marketing@company.com.
 Are there duplicate emails in my archive?
 ```
 
+**Reading and exporting emails:**
+
+```
+Get the full text of the email with UID abc123.
+```
+```
+Browse all my emails from January, 20 at a time.
+```
+```
+Export the thread about the server migration as an HTML file.
+```
+```
+Export the email with UID xyz789 as a PDF.
+```
+
 **Reporting:**
 
 ```
@@ -320,11 +337,21 @@ Claude picks the right tool automatically, but here's the full reference:
 | `email_stats` | Archive statistics (total emails, date range, senders, folders) |
 | `email_query_suggestions` | Get search suggestions based on indexed data |
 
-#### Ingestion (1)
+#### Email Reading & Export (4)
+
+| Tool | What it does |
+|------|-------------|
+| `email_get_full` | Get a single email with its complete body text |
+| `email_browse` | Browse emails in pages for systematic review (with filters) |
+| `email_export_thread` | Export a conversation thread as formatted HTML or PDF |
+| `email_export_single` | Export a single email as formatted HTML or PDF |
+
+#### Ingestion (2)
 
 | Tool | What it does |
 |------|-------------|
 | `email_ingest` | Trigger ingestion of an `.olm` file from within Claude |
+| `email_reingest_bodies` | Backfill full body text for emails missing it in SQLite |
 
 #### Network Analysis (3)
 
@@ -580,6 +607,40 @@ python -m src.cli --entities organization   # filter by type
 python -m src.cli --suggest
 ```
 
+### Browsing emails
+
+Browse your archive page by page for systematic review:
+
+```bash
+# Browse newest emails (default: 20 per page)
+python -m src.cli --browse
+
+# Navigate pages
+python -m src.cli --browse --page 3 --page-size 10
+
+# Filter by folder or sender
+python -m src.cli --browse --folder Inbox
+python -m src.cli --browse --sender legal@company.com
+```
+
+### Exporting emails
+
+Export conversation threads or individual emails as formatted HTML (or PDF with weasyprint):
+
+```bash
+# Export a conversation thread by conversation ID
+python -m src.cli --export-thread conv_abc123
+
+# Export a single email by UID
+python -m src.cli --export-email uid_xyz789
+
+# Choose format (html or pdf) and output path
+python -m src.cli --export-thread conv_abc123 --export-format pdf --output thread.pdf
+python -m src.cli --export-email uid_xyz789 --output email.html
+```
+
+> **PDF support** requires `weasyprint`: `pip install weasyprint`. Without it, export falls back to HTML automatically.
+
 ### Reporting commands
 
 ```bash
@@ -632,6 +693,13 @@ python -m src.cli --reset-index --yes
 | `--heatmap` | flag | Activity heatmap |
 | `--response-times` | flag | Response time statistics |
 | `--suggest` | flag | Search suggestions |
+| `--browse` | flag | Browse emails page by page |
+| `--page` | int | Page number for `--browse` (default: 1) |
+| `--page-size` | int | Emails per page for `--browse` (default: 20) |
+| `--export-thread` | string | Export a conversation thread by conversation ID |
+| `--export-email` | string | Export a single email by UID |
+| `--export-format` | choice | Export format: `html` or `pdf` (default: `html`) |
+| `--output`, `-o` | string | Output file path for exports |
 | `--generate-report` | string? | Generate HTML report (default: `report.html`) |
 | `--export-network` | string? | Export GraphML network (default: `network.graphml`) |
 | `--reset-index` | flag | Delete and recreate the index (requires `--yes`) |
@@ -758,7 +826,7 @@ block-beta
     end
 
     block:interfaces["Interfaces"]:1
-        mcp["mcp_server.py\n38 MCP tools\n(primary)"]
+        mcp["mcp_server.py\n43 MCP tools\n(primary)"]
         cli["cli.py\nTerminal search"]
         ui["web_app.py\nStreamlit UI"]
     end
@@ -784,7 +852,8 @@ block-beta
 | `src/embedder.py` | Generates embeddings with SentenceTransformer and writes to ChromaDB |
 | `src/retriever.py` | Semantic search, 16-param filter logic, hybrid search, reranking, stats |
 | `src/email_db.py` | SQLite metadata store for analytics (emails, recipients, contacts, edges) |
-| `src/mcp_server.py` | FastMCP server exposing 38 tools for Claude Code |
+| `src/email_exporter.py` | Export threads/emails as styled HTML or PDF (Jinja2 + optional weasyprint) |
+| `src/mcp_server.py` | FastMCP server exposing 43 tools for Claude Code |
 | `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
 | `src/cli.py` | Rich terminal interface with 25+ flags for search and analytics |
 | `src/web_app.py` | Streamlit search UI with filters, thread view, CSV export |
@@ -871,7 +940,7 @@ pip install -r requirements-dev.txt
 # or with pip install -e .[dev]
 
 ruff check .          # linting
-pytest -q             # tests (593 tests)
+pytest -q             # tests (673 tests)
 bandit -r src -q      # security scan
 ```
 
@@ -886,13 +955,14 @@ outlook-email-rag/
 ├── src/
 │   ├── __init__.py              # package marker
 │   ├── __main__.py              # python -m src -> MCP server
-│   ├── mcp_server.py            # 38 MCP tools for Claude Code
+│   ├── mcp_server.py            # 43 MCP tools for Claude Code
 │   ├── retriever.py             # search, filters, hybrid, reranking
 │   ├── ingest.py                # ingestion pipeline
 │   ├── parse_olm.py             # OLM XML parser
 │   ├── chunker.py               # email + attachment chunking
 │   ├── embedder.py              # embedding + ChromaDB writes
 │   ├── email_db.py              # SQLite metadata store
+│   ├── email_exporter.py        # thread/email HTML/PDF export
 │   ├── config.py                # settings from environment
 │   ├── storage.py               # ChromaDB helpers
 │   ├── validation.py            # shared validators
@@ -922,7 +992,7 @@ outlook-email-rag/
 │   ├── auto_tagger.py           # automatic tagging
 │   ├── report_generator.py      # HTML report generation
 │   └── dashboard_charts.py      # Streamlit chart helpers
-├── tests/                       # 593 tests
+├── tests/                       # 673 tests
 ├── data/                        # put your .olm file here
 ├── .claude/
 │   └── settings.json            # auto-registers MCP server in Claude Code

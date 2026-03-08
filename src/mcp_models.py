@@ -464,3 +464,73 @@ class WritingAnalysisInput(StrictInput):
         description="Sender email to analyze. If omitted, compares top senders.",
     )
     limit: int = Field(default=10, ge=1, le=50)
+
+
+class ReingestBodiesInput(StrictInput):
+    """Input for body text re-ingestion."""
+
+    olm_path: str = Field(
+        ...,
+        description="Absolute path to the .olm file to re-read bodies from.",
+        min_length=1,
+    )
+
+
+# ── Export & Browse Inputs ──────────────────────────────────
+
+
+class ExportThreadInput(StrictInput):
+    """Input for exporting a conversation thread as HTML/PDF."""
+
+    conversation_id: str = Field(
+        ..., description="Conversation thread ID from search results.", min_length=1
+    )
+    output_path: Optional[str] = Field(
+        default=None,
+        description="File path to save export. If omitted, returns HTML string.",
+    )
+    format: str = Field(
+        default="html",
+        description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
+    )
+
+
+class ExportSingleInput(StrictInput):
+    """Input for exporting a single email as HTML/PDF."""
+
+    uid: str = Field(
+        ..., description="Email UID from search results.", min_length=1
+    )
+    output_path: Optional[str] = Field(
+        default=None,
+        description="File path to save export. If omitted, returns HTML string.",
+    )
+    format: str = Field(
+        default="html",
+        description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
+    )
+
+
+class BrowseInput(PlainInput):
+    """Input for paginated email browsing."""
+
+    offset: int = Field(default=0, ge=0, description="Starting position.")
+    limit: int = Field(default=20, ge=1, le=50, description="Emails per page.")
+    folder: Optional[str] = Field(default=None, description="Filter by folder (exact match).")
+    sender: Optional[str] = Field(default=None, description="Filter by sender (partial match).")
+    sort_order: str = Field(
+        default="desc",
+        description="Sort order: 'asc' (oldest first) or 'desc' (newest first).",
+    )
+    include_body: bool = Field(
+        default=True,
+        description="Include full body text in results.",
+    )
+
+
+class GetFullEmailInput(StrictInput):
+    """Input for getting a single email with full body."""
+
+    uid: str = Field(
+        ..., description="Email UID from search results.", min_length=1
+    )

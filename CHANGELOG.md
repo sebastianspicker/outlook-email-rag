@@ -58,10 +58,20 @@ and this project adheres to semantic versioning principles for public interfaces
 - `src/report_generator.py`: Self-contained HTML report generation using Jinja2 templates.
 - `src/dashboard_charts.py`: Chart generation helpers for Streamlit dashboard.
 
-#### New MCP Tools (30 new, 38 total)
+#### Email Export & Browse
+
+- `src/email_exporter.py`: Export conversation threads and single emails as styled HTML or PDF (Jinja2 template, optional weasyprint for PDF).
+- `src/templates/thread_export.html`: Mail-client-style HTML template with headers, body, attachment listings, and print-friendly CSS.
+- SQLite schema v3: `body_text` and `body_html` columns now persist full email bodies during ingestion.
+- `get_email_full()`, `get_thread_emails()`, `list_emails_paginated()` methods on `EmailDatabase`.
+- `reingest_bodies()` function to backfill body text for existing databases from OLM.
+
+#### New MCP Tools (35 new, 43 total)
 
 - **Core Search**: `email_search_by_recipient`, `email_search_thread`, `email_smart_search`, `email_find_similar`.
 - **Archive Info**: `email_query_suggestions`.
+- **Email Reading & Export**: `email_get_full`, `email_browse`, `email_export_thread`, `email_export_single`.
+- **Ingestion**: `email_reingest_bodies`.
 - **Network Analysis**: `email_top_contacts`, `email_communication_between`, `email_network_analysis`.
 - **Temporal Analysis**: `email_volume_over_time`, `email_activity_pattern`, `email_response_times`.
 - **Entity & NLP**: `email_search_by_entity`, `email_list_entities`, `email_entity_network`, `email_find_people`, `email_entity_timeline`.
@@ -83,6 +93,12 @@ and this project adheres to semantic versioning principles for public interfaces
 - `--response-times` for response time stats.
 - `--generate-report` for HTML report generation.
 - `--export-network` for GraphML network export.
+- `--browse` for paginated email browsing.
+- `--page`, `--page-size` for browse pagination control.
+- `--export-thread CONV_ID` for thread export.
+- `--export-email UID` for single email export.
+- `--export-format {html,pdf}` for export format selection.
+- `--output PATH` (`-o`) for export output path.
 
 #### Streamlit UI Enhancements
 
@@ -132,8 +148,8 @@ and this project adheres to semantic versioning principles for public interfaces
 - Simplified `_serialize_results` helper in MCP server to direct `retriever.serialize_results()` call.
 - Removed trivial wrapper functions `_sanitize_terminal_text()` (CLI) and `_sanitize_untrusted_text()` (MCP server).
 - Ingest progress log interval reduced from 500 to 100 emails.
-- README rewritten to reflect 38 MCP tools, 593 tests, full architecture.
-- `docs/API_COMPATIBILITY.md` expanded to cover all 38 tools and all CLI flags.
+- README rewritten to reflect 43 MCP tools, 673 tests, full architecture.
+- `docs/API_COMPATIBILITY.md` expanded to cover all 43 tools and all CLI flags.
 
 ### Breaking
 

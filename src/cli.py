@@ -153,6 +153,49 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Export communication network as GraphML (default: network.graphml) and exit.",
     )
 
+    # Export & browse commands
+    parser.add_argument(
+        "--export-thread",
+        metavar="CONVERSATION_ID",
+        default=None,
+        help="Export a conversation thread as HTML/PDF and exit.",
+    )
+    parser.add_argument(
+        "--export-email",
+        metavar="UID",
+        default=None,
+        help="Export a single email as HTML/PDF and exit.",
+    )
+    parser.add_argument(
+        "--export-format",
+        choices=["html", "pdf"],
+        default="html",
+        help="Format for --export-thread / --export-email (default: html).",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Output path for --export-thread / --export-email.",
+    )
+    parser.add_argument(
+        "--browse",
+        action="store_true",
+        help="Browse emails in pages for systematic review.",
+    )
+    parser.add_argument(
+        "--page",
+        type=_positive_int_arg,
+        default=1,
+        help="Page number for --browse (default: 1).",
+    )
+    parser.add_argument(
+        "--page-size",
+        type=_positive_int_arg,
+        default=20,
+        help="Emails per page for --browse (default: 20, max: 50).",
+    )
+
     args = parser.parse_args(argv)
     _validate_arg_combinations(args, parser)
     return args
@@ -303,6 +346,27 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.export_network is not None:
         _run_export_network(args.export_network)
+        sys.exit(0)
+
+    # Export commands
+    if args.export_thread:
+        _run_export_thread(args.export_thread, args.export_format, args.output)
+        sys.exit(0)
+
+    if args.export_email:
+        _run_export_email(args.export_email, args.export_format, args.output)
+        sys.exit(0)
+
+    # Browse command
+    if args.browse:
+        page_size = min(args.page_size, 50)
+        offset = (args.page - 1) * page_size
+        _run_browse(
+            offset=offset,
+            limit=page_size,
+            folder=args.folder,
+            sender=args.sender,
+        )
         sys.exit(0)
 
     # Analytics commands (require SQLite)
@@ -559,6 +623,76 @@ def _run_generate_report(output_path: str) -> None:
     print(f"Report generated: {output_path}")
 
 
+def _run_export_thread(conversation_id: str, fmt: str, output_path: str | None) -> None:
+    db = _get_email_db()
+    from .email_exporter import EmailExporter
+
+    exporter = EmailExporter(db)
+    if output_path:
+        result = exporter.export_thread_file(conversation_id, output_path, fmt=fmt)
+    else:
+        # Default output path
+        safe_id = conversation_id[:20].replace("/", "_")
+        default_path = f"thread_{safe_id}.{fmt}"
+        result = exporter.export_thread_file(conversation_id, default_path, fmt=fmt)
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        sys.exit(1)
+    print(f"Thread exported: {result['output_path']} ({result['email_count']} emails)")
+    if "note" in result:
+        print(f"  Note: {result['note']}")
+
+
+def _run_export_email(uid: str, fmt: str, output_path: str | None) -> None:
+    db = _get_email_db()
+    from .email_exporter import EmailExporter
+
+    exporter = EmailExporter(db)
+    if not output_path:
+        output_path = f"email_{uid[:12]}.{fmt}"
+    result = exporter.export_single_file(uid, output_path, fmt=fmt)
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        sys.exit(1)
+    print(f"Email exported: {result['output_path']}")
+    if "note" in result:
+        print(f"  Note: {result['note']}")
+
+
+def _run_browse(
+    offset: int = 0,
+    limit: int = 20,
+    folder: str | None = None,
+    sender: str | None = None,
+) -> None:
+    db = _get_email_db()
+    page = db.list_emails_paginated(
+        offset=offset, limit=limit, folder=folder, sender=sender
+    )
+    total = page["total"]
+    emails = page["emails"]
+    page_num = (offset // limit) + 1
+    total_pages = (total + limit - 1) // limit if total > 0 else 0
+
+    print(f"\nBrowsing emails: page {page_num}/{total_pages} ({total} total)\n")
+    if not emails:
+        print("No emails found.")
+        return
+
+    for i, email in enumerate(emails, start=offset + 1):
+        subj = sanitize_untrusted_text(str(email.get("subject", "(no subject)")))
+        sender_val = email.get("sender_email", "?")
+        date_val = str(email.get("date", "?"))[:10]
+        uid = email.get("uid", "?")[:12]
+        print(f"  {i:>4}  {date_val}  {sender_val:<30}  {subj}")
+        print(f"        uid: {uid}  conv: {email.get('conversation_id', '')[:20]}")
+
+    print(f"\nShowing {offset + 1}–{offset + len(emails)} of {total}")
+    if offset + limit < total:
+        print(f"Next page: --browse --page {page_num + 1} --page-size {limit}")
+
+
 def _run_export_network(output_path: str) -> None:
     db = _get_email_db()
     from .network_analysis import CommunicationNetwork
@@ -643,12 +777,16 @@ def _validate_arg_combinations(args: argparse.Namespace, parser: argparse.Argume
         bool(args.suggest),
         args.generate_report is not None,
         args.export_network is not None,
+        bool(args.export_thread),
+        bool(args.export_email),
+        bool(args.browse),
         *analytics_modes,
     ]
     if sum(operational_modes) > 1:
         parser.error(
             "--stats, --list-senders, --reset-index, --suggest, --generate-report, "
-            "--export-network, --top-contacts, --volume, "
+            "--export-network, --export-thread, --export-email, --browse, "
+            "--top-contacts, --volume, "
             "--entities, --heatmap, and --response-times are mutually exclusive"
         )
 

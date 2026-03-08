@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS emails (
     conversation_id  TEXT,
     in_reply_to      TEXT,
     base_subject     TEXT,
-    body_length      INTEGER
+    body_length      INTEGER,
+    body_text        TEXT,
+    body_html        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender_email);
@@ -200,12 +202,27 @@ class EmailDatabase:
             "SELECT MAX(version) AS v FROM schema_version"
         ).fetchone()
         current = row["v"] if row and row["v"] else 0
+        if current < 3:
+            self._migrate_to_v3(cur)
         if current < _SCHEMA_VERSION:
             cur.execute(
                 "INSERT OR REPLACE INTO schema_version(version) VALUES(?)",
                 (_SCHEMA_VERSION,),
             )
         self.conn.commit()
+
+    def _migrate_to_v3(self, cur: sqlite3.Cursor) -> None:
+        """Add body_text and body_html columns (schema v3)."""
+        existing = {
+            row[1]
+            for row in cur.execute("PRAGMA table_info(emails)").fetchall()
+        }
+        if "body_text" not in existing:
+            cur.execute("ALTER TABLE emails ADD COLUMN body_text TEXT")
+            logger.info("Schema migration v3: added body_text column")
+        if "body_html" not in existing:
+            cur.execute("ALTER TABLE emails ADD COLUMN body_html TEXT")
+            logger.info("Schema migration v3: added body_html column")
 
     def close(self) -> None:
         if self._conn is not None:
@@ -227,8 +244,8 @@ class EmailDatabase:
                 """INSERT INTO emails (uid, message_id, subject, sender_name,
                    sender_email, date, folder, email_type, has_attachments,
                    attachment_count, priority, is_read, conversation_id,
-                   in_reply_to, base_subject, body_length)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   in_reply_to, base_subject, body_length, body_text, body_html)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     email.uid,
                     email.message_id,
@@ -246,6 +263,8 @@ class EmailDatabase:
                     email.in_reply_to,
                     email.base_subject,
                     len(email.clean_body),
+                    email.clean_body,
+                    email.body_html,
                 ),
             )
         except sqlite3.IntegrityError:
@@ -306,8 +325,8 @@ class EmailDatabase:
                         """INSERT INTO emails (uid, message_id, subject, sender_name,
                            sender_email, date, folder, email_type, has_attachments,
                            attachment_count, priority, is_read, conversation_id,
-                           in_reply_to, base_subject, body_length)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           in_reply_to, base_subject, body_length, body_text, body_html)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             email.uid,
                             email.message_id,
@@ -325,6 +344,8 @@ class EmailDatabase:
                             email.in_reply_to,
                             email.base_subject,
                             len(email.clean_body),
+                            email.clean_body,
+                            email.body_html,
                         ),
                     )
                 except sqlite3.IntegrityError:
@@ -803,6 +824,132 @@ class EmailDatabase:
             (f"%{sender_email}%", limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Full-body retrieval (Phase: export & browse)
+    # ------------------------------------------------------------------
+
+    def _recipients_for_uid(self, uid: str) -> dict[str, list[str]]:
+        """Return {to: [...], cc: [...], bcc: [...]} for a single email."""
+        rows = self.conn.execute(
+            "SELECT address, display_name, type FROM recipients WHERE email_uid = ?",
+            (uid,),
+        ).fetchall()
+        result: dict[str, list[str]] = {"to": [], "cc": [], "bcc": []}
+        for r in rows:
+            addr = r["address"]
+            name = r["display_name"]
+            formatted = f"{name} <{addr}>" if name else addr
+            result[r["type"]].append(formatted)
+        return result
+
+    def get_email_full(self, uid: str) -> dict | None:
+        """Get a single email with full body text by UID."""
+        row = self.conn.execute(
+            "SELECT * FROM emails WHERE uid = ?", (uid,)
+        ).fetchone()
+        if not row:
+            return None
+        email = dict(row)
+        recipients = self._recipients_for_uid(uid)
+        email["to"] = recipients["to"]
+        email["cc"] = recipients["cc"]
+        email["bcc"] = recipients["bcc"]
+        return email
+
+    def get_thread_emails(self, conversation_id: str) -> list[dict]:
+        """Get all emails in a conversation thread, sorted by date ASC."""
+        if not conversation_id:
+            return []
+        rows = self.conn.execute(
+            "SELECT * FROM emails WHERE conversation_id = ? ORDER BY date ASC",
+            (conversation_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            email = dict(row)
+            recipients = self._recipients_for_uid(email["uid"])
+            email["to"] = recipients["to"]
+            email["cc"] = recipients["cc"]
+            email["bcc"] = recipients["bcc"]
+            result.append(email)
+        return result
+
+    def list_emails_paginated(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        sort_by: str = "date",
+        sort_order: str = "DESC",
+        folder: str | None = None,
+        sender: str | None = None,
+    ) -> dict:
+        """Return a page of emails with metadata for browsing.
+
+        Args:
+            offset: Starting position.
+            limit: Emails per page.
+            sort_by: Column to sort by (date, subject, sender_email).
+            sort_order: ASC or DESC.
+            folder: Optional folder filter (exact match).
+            sender: Optional sender filter (LIKE match).
+
+        Returns:
+            {"emails": [...], "total": int, "offset": int, "limit": int}
+        """
+        allowed_sort = {"date", "subject", "sender_email", "folder"}
+        if sort_by not in allowed_sort:
+            sort_by = "date"
+        sort_order = "ASC" if sort_order.upper() == "ASC" else "DESC"
+
+        conditions = []
+        params: list = []
+        if folder:
+            conditions.append("folder = ?")
+            params.append(folder)
+        if sender:
+            conditions.append("sender_email LIKE ?")
+            params.append(f"%{sender}%")
+
+        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        total_row = self.conn.execute(
+            f"SELECT COUNT(*) AS c FROM emails{where}", params
+        ).fetchone()
+        total = total_row["c"]
+
+        rows = self.conn.execute(
+            f"""SELECT uid, subject, sender_name, sender_email, date, folder,
+                       email_type, has_attachments, attachment_count, body_length,
+                       conversation_id
+                FROM emails{where}
+                ORDER BY {sort_by} {sort_order}
+                LIMIT ? OFFSET ?""",
+            [*params, limit, offset],
+        ).fetchall()
+
+        return {
+            "emails": [dict(r) for r in rows],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+
+    def update_body_text(self, uid: str, body_text: str, body_html: str) -> bool:
+        """Update body_text and body_html for an existing email. Returns True if updated."""
+        cur = self.conn.execute(
+            "UPDATE emails SET body_text = ?, body_html = ? WHERE uid = ?",
+            (body_text, body_html, uid),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def uids_missing_body(self) -> set[str]:
+        """Return UIDs of emails where body_text is NULL."""
+        rows = self.conn.execute(
+            "SELECT uid FROM emails WHERE body_text IS NULL"
+        ).fetchall()
+        return {r["uid"] for r in rows}
 
     # ------------------------------------------------------------------
     # Network queries (Phase 4)

@@ -265,6 +265,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Delete ChromaDB collection and SQLite DB, then exit.",
     )
+    parser.add_argument(
+        "--reingest-bodies",
+        action="store_true",
+        help="Re-parse OLM to backfill body_text/body_html for existing SQLite rows.",
+    )
     parser.add_argument("--yes", action="store_true", help="Confirm destructive operations.")
     parser.add_argument(
         "--log-level",
@@ -285,6 +290,11 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(2)
         _reset_index(args)
         print("Index has been reset.")
+        raise SystemExit(0)
+
+    if args.reingest_bodies:
+        result = reingest_bodies(args.olm_path, sqlite_path=args.sqlite_path)
+        print(result["message"])
         raise SystemExit(0)
 
     try:
@@ -314,6 +324,45 @@ def main(argv: list[str] | None = None) -> None:
 
     summary_lines = format_ingestion_summary(stats)
     print("\n" + "\n".join(summary_lines))
+
+
+def reingest_bodies(
+    olm_path: str,
+    sqlite_path: str | None = None,
+) -> dict:
+    """Backfill body_text/body_html for emails missing them in SQLite.
+
+    This re-parses the OLM file and updates existing SQLite rows that have
+    NULL body_text. Useful after upgrading from schema v2 to v3.
+    """
+    settings = get_settings()
+    from .email_db import EmailDatabase
+
+    resolved_sqlite = sqlite_path or settings.sqlite_path
+    email_db = EmailDatabase(resolved_sqlite)
+    missing_uids = email_db.uids_missing_body()
+
+    if not missing_uids:
+        email_db.close()
+        return {"updated": 0, "total_missing": 0, "message": "All emails already have body text."}
+
+    logger.info("Re-ingesting bodies for %d emails", len(missing_uids))
+    updated = 0
+
+    for email in parse_olm(olm_path):
+        if email.uid in missing_uids:
+            email_db.update_body_text(email.uid, email.clean_body, email.body_html)
+            updated += 1
+            if updated % 100 == 0:
+                logger.info("Updated %d / %d bodies", updated, len(missing_uids))
+
+    email_db.close()
+    logger.info("Body re-ingestion complete: %d updated", updated)
+    return {
+        "updated": updated,
+        "total_missing": len(missing_uids),
+        "message": f"Updated {updated} of {len(missing_uids)} emails with body text.",
+    }
 
 
 def _reset_index(args: argparse.Namespace) -> None:
