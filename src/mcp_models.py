@@ -157,6 +157,10 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
     priority: Optional[int] = Field(
         default=None, ge=0, description="Minimum priority level (emails with priority >= this value)."
     )
+    email_type: Optional[str] = Field(
+        default=None,
+        description="Filter by email type: 'reply', 'forward', or 'original'.",
+    )
     min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     rerank: bool = Field(
         default=False,
@@ -257,9 +261,20 @@ class EmailIngestInput(StrictInput):
         default=False,
         description="If true, parse and chunk without writing to the database.",
     )
+    extract_attachments: bool = Field(
+        default=False,
+        description="If true, extract and index text content from attachments (PDF, DOCX, XLSX, text).",
+    )
     extract_entities: bool = Field(
         default=False,
         description="If true, extract named entities (people, orgs, locations) during ingestion.",
+    )
+    embed_images: bool = Field(
+        default=False,
+        description=(
+            "If true, embed image attachments (JPG, PNG, etc.) using Visualized-BGE-M3 "
+            "for cross-modal search. Automatically enables extract_attachments."
+        ),
     )
 
 
@@ -533,4 +548,313 @@ class GetFullEmailInput(StrictInput):
 
     uid: str = Field(
         ..., description="Email UID from search results.", min_length=1
+    )
+
+
+# ── Evidence Management Inputs ──────────────────────────────
+
+
+class EvidenceAddInput(StrictInput):
+    """Input for adding an evidence item."""
+
+    email_uid: str = Field(
+        ..., description="UID of the source email (from search results).", min_length=1
+    )
+    category: str = Field(
+        ...,
+        description=(
+            "Evidence category: discrimination, harassment, sexual_harassment, "
+            "insult, bossing, retaliation, exclusion, microaggression, "
+            "hostile_environment, or other."
+        ),
+        min_length=1,
+    )
+    key_quote: str = Field(
+        ...,
+        description=(
+            "Exact quote from the email body that constitutes evidence. "
+            "Must appear verbatim in the email text."
+        ),
+        min_length=1,
+    )
+    summary: str = Field(
+        ...,
+        description="Brief description of why this is evidence (1-2 sentences).",
+        min_length=1,
+    )
+    relevance: int = Field(
+        ...,
+        ge=1, le=5,
+        description="Relevance rating: 1=tangential, 2=minor, 3=moderate, 4=significant, 5=critical.",
+    )
+    notes: str = Field(
+        default="",
+        description="Optional notes for the lawyer or analyst.",
+    )
+
+
+class EvidenceListInput(PlainInput):
+    """Input for listing evidence items."""
+
+    category: Optional[str] = Field(default=None, description="Filter by category.")
+    min_relevance: Optional[int] = Field(
+        default=None, ge=1, le=5, description="Minimum relevance score."
+    )
+    email_uid: Optional[str] = Field(
+        default=None, description="Filter to evidence from a specific email."
+    )
+    limit: int = Field(default=100, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
+
+
+class EvidenceGetInput(PlainInput):
+    """Input for getting a single evidence item."""
+
+    evidence_id: int = Field(..., ge=1, description="ID of the evidence item.")
+
+
+class EvidenceUpdateInput(StrictInput):
+    """Input for updating an evidence item."""
+
+    evidence_id: int = Field(..., ge=1, description="ID of the evidence item to update.")
+    category: Optional[str] = Field(default=None)
+    key_quote: Optional[str] = Field(default=None)
+    summary: Optional[str] = Field(default=None)
+    relevance: Optional[int] = Field(default=None, ge=1, le=5)
+    notes: Optional[str] = Field(default=None)
+
+
+class EvidenceRemoveInput(PlainInput):
+    """Input for removing an evidence item."""
+
+    evidence_id: int = Field(..., ge=1, description="ID of the evidence item to remove.")
+
+
+class EvidenceExportInput(StrictInput):
+    """Input for exporting the evidence report."""
+
+    output_path: str = Field(
+        default="evidence_report.html",
+        description="Output file path for the evidence report.",
+    )
+    format: str = Field(
+        default="html",
+        description="Output format: 'html', 'csv', or 'pdf' (pdf requires weasyprint).",
+    )
+    min_relevance: Optional[int] = Field(
+        default=None, ge=1, le=5,
+        description="Only include items with this minimum relevance.",
+    )
+    category: Optional[str] = Field(
+        default=None, description="Only include items in this category."
+    )
+
+
+class EvidenceAddBatchInput(PlainInput):
+    """Input for batch-adding evidence items."""
+
+    items: list[EvidenceAddInput] = Field(
+        ...,
+        description="List of evidence items to add (1-20 per batch).",
+        min_length=1,
+        max_length=20,
+    )
+
+
+class EvidenceSearchInput(StrictInput):
+    """Input for searching within evidence items."""
+
+    query: str = Field(
+        ...,
+        description="Text to search for across key_quote, summary, and notes.",
+        min_length=1,
+        max_length=500,
+    )
+    category: Optional[str] = Field(default=None, description="Filter by category.")
+    min_relevance: Optional[int] = Field(
+        default=None, ge=1, le=5, description="Minimum relevance score."
+    )
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class EvidenceTimelineInput(PlainInput):
+    """Input for chronological evidence view."""
+
+    category: Optional[str] = Field(default=None, description="Filter by category.")
+    min_relevance: Optional[int] = Field(
+        default=None, ge=1, le=5, description="Minimum relevance score."
+    )
+
+
+# ── Chain of Custody Inputs ─────────────────────────────────
+
+
+class RelationshipPathsInput(StrictInput):
+    """Input for finding communication paths between two people."""
+
+    source: str = Field(
+        ...,
+        description="Source email address.",
+        min_length=1,
+    )
+    target: str = Field(
+        ...,
+        description="Target email address.",
+        min_length=1,
+    )
+    max_hops: int = Field(
+        default=3, ge=1, le=6,
+        description="Maximum number of intermediate hops (1-6).",
+    )
+    top_k: int = Field(
+        default=5, ge=1, le=20,
+        description="Maximum paths to return.",
+    )
+
+
+class SharedRecipientsInput(PlainInput):
+    """Input for finding recipients common to multiple senders."""
+
+    email_addresses: list[str] = Field(
+        ...,
+        description="List of sender email addresses (2 or more).",
+        min_length=2,
+    )
+    min_shared: int = Field(
+        default=2, ge=2,
+        description="Minimum number of senders who must share a recipient.",
+    )
+
+
+class CoordinatedTimingInput(PlainInput):
+    """Input for detecting synchronized communication patterns."""
+
+    email_addresses: list[str] = Field(
+        ...,
+        description="List of sender email addresses (2 or more).",
+        min_length=2,
+    )
+    window_hours: int = Field(
+        default=24, ge=1, le=168,
+        description="Time window size in hours for co-activity detection.",
+    )
+    min_events: int = Field(
+        default=3, ge=2,
+        description="Minimum emails within a window to count as coordinated.",
+    )
+
+
+class RelationshipSummaryInput(StrictInput):
+    """Input for a comprehensive person profile."""
+
+    email_address: str = Field(
+        ...,
+        description="Email address to profile.",
+        min_length=1,
+    )
+    limit: int = Field(
+        default=20, ge=1, le=100,
+        description="Max contacts to return in profile.",
+    )
+
+
+# ── Dossier Generation Inputs ───────────────────────────────
+
+
+class DossierGenerateInput(StrictInput):
+    """Input for generating a proof dossier."""
+
+    output_path: str = Field(
+        default="dossier.html",
+        description="File path for the generated dossier.",
+    )
+    format: str = Field(
+        default="html",
+        description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
+    )
+    title: str = Field(
+        default="Proof Dossier",
+        description="Title for the dossier cover page.",
+    )
+    case_reference: str = Field(
+        default="",
+        description="Case reference number or identifier.",
+    )
+    custodian: str = Field(
+        default="",
+        description="Name of the evidence custodian.",
+    )
+    min_relevance: Optional[int] = Field(
+        default=None, ge=1, le=5,
+        description="Only include evidence with this minimum relevance.",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        description="Only include evidence in this category.",
+    )
+    include_relationships: bool = Field(
+        default=True,
+        description="Include relationship analysis section.",
+    )
+    include_custody: bool = Field(
+        default=True,
+        description="Include chain-of-custody log section.",
+    )
+    persons_of_interest: Optional[list[str]] = Field(
+        default=None,
+        description="Email addresses to focus relationship analysis on.",
+    )
+
+
+class DossierPreviewInput(PlainInput):
+    """Input for previewing dossier contents without generating it."""
+
+    min_relevance: Optional[int] = Field(
+        default=None, ge=1, le=5,
+        description="Minimum relevance score filter.",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        description="Category filter.",
+    )
+
+
+class CustodyChainInput(PlainInput):
+    """Input for viewing chain-of-custody audit trail."""
+
+    target_type: Optional[str] = Field(
+        default=None,
+        description="Filter by target type: 'email', 'evidence', 'ingestion_run', 'export'.",
+    )
+    target_id: Optional[str] = Field(
+        default=None,
+        description="Filter by target ID (e.g., email UID, evidence ID).",
+    )
+    action: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filter by action type: 'ingest_start', 'evidence_add', "
+            "'evidence_update', 'evidence_remove', 'export', 'verify'."
+        ),
+    )
+    limit: int = Field(default=50, ge=1, le=500, description="Max events to return.")
+
+
+class EmailProvenanceInput(StrictInput):
+    """Input for full email provenance lookup."""
+
+    email_uid: str = Field(
+        ...,
+        description="Email UID to trace provenance for.",
+        min_length=1,
+    )
+
+
+class EvidenceProvenanceInput(PlainInput):
+    """Input for full evidence provenance lookup."""
+
+    evidence_id: int = Field(
+        ...,
+        ge=1,
+        description="Evidence item ID to trace provenance for.",
     )

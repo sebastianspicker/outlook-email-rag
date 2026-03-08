@@ -426,31 +426,31 @@ class TestEntityTimeline:
 
 class TestMCPTools:
     def test_find_people_tool_importable(self):
-        from src.mcp_server import email_find_people
+        from src.tools import entities
 
-        assert callable(email_find_people)
+        assert callable(entities.register)
 
     def test_entity_timeline_tool_importable(self):
-        from src.mcp_server import email_entity_timeline
+        from src.tools import entities
 
-        assert callable(email_entity_timeline)
+        assert callable(entities.register)
 
     def test_find_people_input_model(self):
-        from src.mcp_server import FindPeopleInput
+        from src.mcp_models import FindPeopleInput
 
         inp = FindPeopleInput(name="John", limit=5)
         assert inp.name == "John"
         assert inp.limit == 5
 
     def test_entity_timeline_input_model(self):
-        from src.mcp_server import EntityTimelineInput
+        from src.mcp_models import EntityTimelineInput
 
         inp = EntityTimelineInput(entity="Acme", period="week")
         assert inp.entity == "Acme"
         assert inp.period == "week"
 
     def test_entity_timeline_input_default_period(self):
-        from src.mcp_server import EntityTimelineInput
+        from src.mcp_models import EntityTimelineInput
 
         inp = EntityTimelineInput(entity="Acme")
         assert inp.period == "month"

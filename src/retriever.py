@@ -8,11 +8,10 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from sentence_transformers import SentenceTransformer
-
 from .config import resolve_runtime_settings
 from .formatting import estimate_tokens, format_context_block
-from .storage import get_chroma_client, get_collection, iter_collection_metadatas, to_builtin_list
+from .multi_vector_embedder import MultiVectorEmbedder
+from .storage import get_chroma_client, get_collection, iter_collection_metadatas
 
 logger = logging.getLogger(__name__)
 MAX_TOP_K = 1000
@@ -73,11 +72,12 @@ class EmailRetriever:
         self.model_name = self.settings.embedding_model
         self.collection_name = self.settings.collection_name
 
-        self._model: SentenceTransformer | None = None
+        self._embedder: MultiVectorEmbedder | None = None
         self._email_db: Any = None
         self._email_db_checked = False
         self._reranker: Any = None
         self._bm25_index: Any = None
+        self._sparse_index: Any = None
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
 
@@ -97,10 +97,22 @@ class EmailRetriever:
         return getattr(self, "_email_db", None)
 
     @property
-    def model(self) -> SentenceTransformer:
-        if self._model is None:
-            self._model = SentenceTransformer(self.model_name)
-        return self._model
+    def embedder(self) -> MultiVectorEmbedder:
+        """Lazy-loaded multi-vector embedder."""
+        if self._embedder is None:
+            self._embedder = MultiVectorEmbedder(
+                model_name=self.model_name,
+                device=self.settings.device,
+                sparse_enabled=self.settings.sparse_enabled,
+                colbert_enabled=self.settings.colbert_rerank_enabled,
+                batch_size=self.settings.embedding_batch_size,
+            )
+        return self._embedder
+
+    @property
+    def model(self) -> MultiVectorEmbedder:
+        """Backward-compatible alias for ``embedder``."""
+        return self.embedder
 
     def search(self, query: str, top_k: int | None = None, where: dict | None = None) -> list[SearchResult]:
         """Semantic search across all emails."""
@@ -117,7 +129,7 @@ class EmailRetriever:
         if requested <= 0:
             requested = 10
 
-        query_embedding = to_builtin_list(self.model.encode([query]))
+        query_embedding = self.embedder.encode_dense([query])
         return self._query_with_embedding(query_embedding, requested, where=where)
 
     def _query_with_embedding(
@@ -257,7 +269,7 @@ class EmailRetriever:
                 raw_candidates = self.search(query, top_k=fetch_size)
             else:
                 if query_embedding is None:
-                    query_embedding = to_builtin_list(self.model.encode([query]))
+                    query_embedding = self.embedder.encode_dense([query])
                 raw_candidates = self._query_with_embedding(query_embedding, fetch_size)
 
             # Merge with BM25 results if hybrid mode is enabled
@@ -297,7 +309,7 @@ class EmailRetriever:
 
             deduped = _deduplicate_by_email(filtered)
 
-            # Apply cross-encoder reranking if enabled
+            # Apply reranking if enabled (ColBERT preferred, cross-encoder fallback)
             if use_rerank and deduped:
                 deduped = self._apply_rerank(query, deduped, top_k)
 
@@ -316,38 +328,45 @@ class EmailRetriever:
         return deduped[:top_k] if filtered else []
 
     def _apply_rerank(self, query: str, results: list[SearchResult], top_k: int) -> list[SearchResult]:
-        """Apply cross-encoder reranking to results."""
+        """Apply reranking: ColBERT (if available) or cross-encoder fallback."""
+        # Try ColBERT reranking first (same model, no extra load)
+        settings = getattr(self, "settings", None)
+        use_colbert = getattr(settings, "colbert_rerank_enabled", False)
+        if use_colbert and self.embedder.has_colbert:
+            from .colbert_reranker import ColBERTReranker
+
+            reranker = ColBERTReranker(self.embedder)
+            return reranker.rerank(query, results, top_k=top_k)
+
+        # Cross-encoder fallback
         if self._reranker is None:
             from .reranker import CrossEncoderReranker
 
-            model = getattr(getattr(self, "settings", None), "rerank_model", None)
+            model = getattr(settings, "rerank_model", None)
             self._reranker = CrossEncoderReranker(model_name=model)
         return self._reranker.rerank(query, results, top_k=top_k)
 
     def _merge_hybrid(
         self, query: str, semantic_results: list[SearchResult], fetch_size: int
     ) -> list[SearchResult]:
-        """Merge semantic results with BM25 keyword results via RRF."""
+        """Merge semantic results with sparse/BM25 keyword results via RRF.
+
+        Prefers BGE-M3 learned sparse vectors (from SparseIndex) when available,
+        falling back to BM25 otherwise.
+        """
         try:
-            if self._bm25_index is None:
-                from .bm25_index import BM25Index
+            keyword_ids = self._get_sparse_results(query, fetch_size)
 
-                self._bm25_index = BM25Index()
-                self._bm25_index.build_from_collection(self.collection)
+            if keyword_ids is None:
+                keyword_ids = self._get_bm25_results(query, fetch_size)
 
-            if not self._bm25_index.is_built:
+            if not keyword_ids:
                 return semantic_results
 
             from .bm25_index import reciprocal_rank_fusion
 
-            bm25_results = self._bm25_index.search(query, top_k=fetch_size)
-            if not bm25_results:
-                return semantic_results
-
             semantic_ids = [r.chunk_id for r in semantic_results]
-            bm25_ids = [cid for cid, _ in bm25_results]
-
-            fused_ids = reciprocal_rank_fusion(semantic_ids, bm25_ids)
+            fused_ids = reciprocal_rank_fusion(semantic_ids, keyword_ids)
 
             # Build lookup from semantic results
             result_map = {r.chunk_id: r for r in semantic_results}
@@ -365,8 +384,57 @@ class EmailRetriever:
             logger.warning("rank_bm25 not installed; hybrid search disabled")
             return semantic_results
         except Exception:
-            logger.debug("BM25 hybrid merge failed", exc_info=True)
+            logger.debug("Hybrid merge failed", exc_info=True)
             return semantic_results
+
+    def _get_sparse_results(self, query: str, top_k: int) -> list[str] | None:
+        """Try learned sparse retrieval. Returns None if unavailable."""
+        if not self.embedder.has_sparse:
+            return None
+
+        db = self.email_db
+        if db is None:
+            return None
+
+        try:
+            if self._sparse_index is None:
+                from .sparse_index import SparseIndex
+
+                self._sparse_index = SparseIndex()
+                self._sparse_index.build_from_db(db)
+
+            if not self._sparse_index.is_built or self._sparse_index.doc_count == 0:
+                return None
+
+            query_sparse = self.embedder.encode_sparse([query])
+            if not query_sparse or not query_sparse[0]:
+                return None
+
+            results = self._sparse_index.search(query_sparse[0], top_k=top_k)
+            return [cid for cid, _ in results] if results else None
+        except Exception:
+            logger.debug("Sparse retrieval failed", exc_info=True)
+            return None
+
+    def _get_bm25_results(self, query: str, top_k: int) -> list[str] | None:
+        """BM25 keyword retrieval fallback."""
+        try:
+            if self._bm25_index is None:
+                from .bm25_index import BM25Index
+
+                self._bm25_index = BM25Index()
+                self._bm25_index.build_from_collection(self.collection)
+
+            if not self._bm25_index.is_built:
+                return None
+
+            results = self._bm25_index.search(query, top_k=top_k)
+            return [cid for cid, _ in results] if results else None
+        except ImportError:
+            return None
+        except Exception:
+            logger.debug("BM25 retrieval failed", exc_info=True)
+            return None
 
     def search_by_thread(self, conversation_id: str, top_k: int = 50) -> list[SearchResult]:
         """Retrieve all emails in a conversation thread, sorted by date.
@@ -380,7 +448,9 @@ class EmailRetriever:
             raise ValueError("top_k must be a positive integer.")
 
         # Use a dummy embedding (zeros) — we want ALL matches, not semantic ranking
-        dim = self.model.get_sentence_embedding_dimension()
+        # Encode a single text to determine the embedding dimension
+        probe = self.embedder.encode_dense(["dim_probe"])
+        dim = len(probe[0]) if probe else 1024
         dummy_embedding = [[0.0] * dim]
 
         total = self.collection.count()

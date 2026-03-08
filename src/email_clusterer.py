@@ -109,6 +109,110 @@ class EmailClusterer:
         logger.info("Auto-detected k=%d (silhouette=%.3f)", best_k, best_score)
         return best_k
 
+    def fit_hybrid(
+        self,
+        dense_embeddings: np.ndarray,
+        sparse_vectors: dict[str, dict[int, float]],
+        uids: list[str],
+        n_clusters: int | None = None,
+        sparse_weight: float = 0.3,
+        svd_dims: int = 64,
+    ) -> None:
+        """Fit KMeans using combined dense + sparse features.
+
+        Sparse vectors are converted to a feature matrix via truncated SVD,
+        then concatenated with dense embeddings using weighted blending.
+
+        Args:
+            dense_embeddings: Dense embedding array (n_samples, n_features).
+            sparse_vectors: {uid: {token_id: weight}} sparse vectors.
+            uids: List of email UIDs corresponding to rows.
+            n_clusters: Override number of clusters.
+            sparse_weight: Weight for sparse features (0.0-1.0).
+            svd_dims: Number of SVD dimensions for sparse features.
+        """
+        if len(dense_embeddings) < 3:
+            logger.warning("Need at least 3 embeddings for clustering, got %d", len(dense_embeddings))
+            self._is_fitted = False
+            return
+
+        sparse_matrix = self._sparse_to_svd(sparse_vectors, uids, svd_dims)
+
+        if sparse_matrix is not None:
+            # Normalize both feature sets
+            dense_norm = self._l2_normalize(dense_embeddings)
+            sparse_norm = self._l2_normalize(sparse_matrix)
+
+            # Weighted concatenation
+            alpha = 1.0 - sparse_weight
+            combined = np.hstack([
+                alpha * dense_norm,
+                sparse_weight * sparse_norm,
+            ])
+            logger.info(
+                "Hybrid features: dense=%d + sparse_svd=%d = %d dims (alpha=%.2f)",
+                dense_embeddings.shape[1], svd_dims, combined.shape[1], alpha,
+            )
+        else:
+            logger.info("No sparse vectors available, falling back to dense-only clustering")
+            combined = dense_embeddings
+
+        self.fit(combined, uids, n_clusters=n_clusters)
+
+    @staticmethod
+    def _sparse_to_svd(
+        sparse_vectors: dict[str, dict[int, float]],
+        uids: list[str],
+        n_components: int,
+    ) -> np.ndarray | None:
+        """Convert sparse vectors to dense matrix via truncated SVD."""
+        if not sparse_vectors:
+            return None
+
+        from scipy.sparse import lil_matrix
+        from sklearn.decomposition import TruncatedSVD
+
+        # Collect all token IDs
+        all_tokens: set[int] = set()
+        for sv in sparse_vectors.values():
+            all_tokens.update(sv.keys())
+
+        if not all_tokens:
+            return None
+
+        token_to_col = {tid: i for i, tid in enumerate(sorted(all_tokens))}
+        n_cols = len(token_to_col)
+
+        # Build sparse matrix
+        matrix = lil_matrix((len(uids), n_cols), dtype=np.float32)
+        for row_idx, uid in enumerate(uids):
+            sv = sparse_vectors.get(uid, {})
+            for token_id, weight in sv.items():
+                if token_id in token_to_col:
+                    matrix[row_idx, token_to_col[token_id]] = weight
+
+        csr = matrix.tocsr()
+
+        # Truncated SVD
+        actual_components = min(n_components, n_cols - 1, len(uids) - 1)
+        if actual_components < 1:
+            return None
+
+        svd = TruncatedSVD(n_components=actual_components, random_state=42)
+        reduced = svd.fit_transform(csr)
+        logger.info(
+            "Sparse SVD: %d tokens -> %d dims (variance explained: %.1f%%)",
+            n_cols, actual_components, svd.explained_variance_ratio_.sum() * 100,
+        )
+        return reduced
+
+    @staticmethod
+    def _l2_normalize(matrix: np.ndarray) -> np.ndarray:
+        """L2-normalize rows of a matrix."""
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        return matrix / norms
+
     @property
     def is_fitted(self) -> bool:
         return self._is_fitted

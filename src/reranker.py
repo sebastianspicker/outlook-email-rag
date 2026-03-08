@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+_DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
 
 
 class CrossEncoderReranker:

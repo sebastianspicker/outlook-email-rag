@@ -55,7 +55,13 @@ class _DummyCollection:
 
 
 def _matches_where(metadata: dict[str, Any], where: dict[str, Any]) -> bool:
-    return all(metadata.get(key) == value for key, value in where.items())
+    for key, value in where.items():
+        if isinstance(value, dict) and "$eq" in value:
+            if metadata.get(key) != value["$eq"]:
+                return False
+        elif metadata.get(key) != value:
+            return False
+    return True
 
 
 class _DummyClient:
@@ -94,10 +100,11 @@ def _ensure_sentence_transformers_stub() -> None:
     sentence_transformers = types.ModuleType("sentence_transformers")
 
     class SentenceTransformer:
-        def __init__(self, model_name):
+        def __init__(self, model_name, device=None):
             self.model_name = model_name
+            self.device = device
 
-        def encode(self, texts, show_progress_bar=False):
+        def encode(self, texts, show_progress_bar=False, batch_size=32):
             return [[0.1, 0.2, 0.3] for _ in texts]
 
     sentence_transformers.SentenceTransformer = SentenceTransformer

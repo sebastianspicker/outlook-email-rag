@@ -119,6 +119,52 @@ class TestEmailClusterer:
         assert clusterer.get_assignments() == []
         assert clusterer.find_similar(np.array([1.0, 2.0])) == []
 
+    def test_fit_hybrid_with_sparse(self):
+        embeddings, uids = _make_embeddings()
+        sparse_vectors = {uid: {i: float(i) * 0.1} for i, uid in enumerate(uids)}
+        clusterer = EmailClusterer(n_clusters=3)
+        clusterer.fit_hybrid(embeddings, sparse_vectors, uids)
+        assert clusterer.is_fitted
+        clusters = clusterer.get_clusters()
+        assert len(clusters) == 3
+
+    def test_fit_hybrid_no_sparse(self):
+        embeddings, uids = _make_embeddings()
+        clusterer = EmailClusterer(n_clusters=3)
+        clusterer.fit_hybrid(embeddings, {}, uids)
+        assert clusterer.is_fitted
+
+    def test_fit_hybrid_too_few(self):
+        embeddings = np.array([[1.0, 2.0], [3.0, 4.0]])
+        uids = ["a", "b"]
+        clusterer = EmailClusterer(n_clusters=3)
+        clusterer.fit_hybrid(embeddings, {}, uids)
+        assert not clusterer.is_fitted
+
+    def test_l2_normalize(self):
+        matrix = np.array([[3.0, 4.0], [0.0, 0.0]], dtype=np.float32)
+        normed = EmailClusterer._l2_normalize(matrix)
+        # First row: [0.6, 0.8]
+        assert abs(normed[0, 0] - 0.6) < 1e-5
+        assert abs(normed[0, 1] - 0.8) < 1e-5
+        # Second row: near-zero, clamped
+        assert abs(np.linalg.norm(normed[1])) < 1e-3
+
+    def test_sparse_to_svd(self):
+        uids = ["a", "b", "c", "d"]
+        sparse = {
+            "a": {1: 0.5, 2: 0.3},
+            "b": {2: 0.9, 3: 0.4},
+            "c": {1: 0.2, 3: 0.7},
+            "d": {1: 0.1, 2: 0.6, 3: 0.1},
+        }
+        result = EmailClusterer._sparse_to_svd(sparse, uids, n_components=2)
+        assert result is not None
+        assert result.shape == (4, 2)
+
+    def test_sparse_to_svd_empty(self):
+        assert EmailClusterer._sparse_to_svd({}, ["a"], 2) is None
+
 
 # ── SQLite cluster tests ─────────────────────────────────────
 
@@ -199,22 +245,22 @@ class TestClusterSQLite:
 
 class TestMCPClusterTools:
     def test_clusters_tool_importable(self):
-        from src.mcp_server import email_clusters_tool
+        from src.tools import topics  # email_clusters lives in topics module
 
-        assert callable(email_clusters_tool)
+        assert hasattr(topics, "register")
 
     def test_find_similar_tool_importable(self):
-        from src.mcp_server import email_find_similar
+        from src.tools import topics  # email_find_similar lives in topics module
 
-        assert callable(email_find_similar)
+        assert callable(topics.register)
 
     def test_cluster_emails_tool_importable(self):
-        from src.mcp_server import email_cluster_emails
+        from src.tools import topics  # email_cluster_emails lives in topics module
 
-        assert callable(email_cluster_emails)
+        assert callable(topics.register)
 
     def test_cluster_emails_input(self):
-        from src.mcp_server import ClusterEmailsInput
+        from src.mcp_models import ClusterEmailsInput
 
         inp = ClusterEmailsInput(cluster_id=5, limit=20)
         assert inp.cluster_id == 5

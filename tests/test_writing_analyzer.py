@@ -175,19 +175,19 @@ class TestSenderProfile:
 
 class TestMCPWritingTool:
     def test_writing_analysis_tool_importable(self):
-        from src.mcp_server import email_writing_analysis
+        from src.tools import reporting  # email_writing_analysis lives in reporting module
 
-        assert callable(email_writing_analysis)
+        assert callable(reporting.register)
 
     def test_writing_analysis_input(self):
-        from src.mcp_server import WritingAnalysisInput
+        from src.mcp_models import WritingAnalysisInput
 
         inp = WritingAnalysisInput(sender="alice@co.com", limit=20)
         assert inp.sender == "alice@co.com"
         assert inp.limit == 20
 
     def test_writing_analysis_input_defaults(self):
-        from src.mcp_server import WritingAnalysisInput
+        from src.mcp_models import WritingAnalysisInput
 
         inp = WritingAnalysisInput()
         assert inp.sender is None

@@ -264,3 +264,110 @@ def test_structured_input_rejects_invalid_min_score():
             query="hello",
             min_score=1.2,
         )
+
+
+@pytest.mark.asyncio
+async def test_email_search_structured_forwards_email_type(monkeypatch):
+    from src import mcp_server
+
+    captured = {}
+
+    class DummyRetriever(_BasicRetriever):
+        def search_filtered(self, **kwargs):
+            captured.update(kwargs)
+            return []
+
+    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
+
+    params = mcp_server.EmailSearchStructuredInput(
+        query="hello", email_type="reply",
+    )
+    payload = await mcp_server.email_search_structured(params)
+    data = json.loads(payload)
+
+    assert captured["email_type"] == "reply"
+    assert data["filters"]["email_type"] == "reply"
+
+
+def test_structured_input_accepts_email_type():
+    from src import mcp_server
+
+    params = mcp_server.EmailSearchStructuredInput(
+        query="hello", email_type="forward",
+    )
+    assert params.email_type == "forward"
+
+
+def test_ingest_input_accepts_extract_attachments_and_embed_images():
+    from src import mcp_server
+
+    params = mcp_server.EmailIngestInput(
+        olm_path="/tmp/test.olm",
+        extract_attachments=True,
+        embed_images=True,
+    )
+    assert params.extract_attachments is True
+    assert params.embed_images is True
+
+
+@pytest.mark.asyncio
+async def test_email_model_info_returns_json(monkeypatch):
+    from src import mcp_server
+
+    class DummyEmbedder:
+        device = "cpu"
+        _model = type("Model", (), {"__name__": "StubModel"})()
+        has_sparse = False
+        has_colbert = False
+
+    class DummyRetriever:
+        embedder = DummyEmbedder()
+
+    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
+
+    output = await mcp_server.email_model_info()
+    data = json.loads(output)
+
+    assert "embedding_model" in data
+    assert "device" in data
+    assert "sparse_enabled" in data
+    assert "colbert_rerank_enabled" in data
+
+
+@pytest.mark.asyncio
+async def test_email_sparse_status_returns_json(monkeypatch):
+    from src import mcp_server
+
+    class DummyRetriever:
+        _sparse_index = None
+
+    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
+    monkeypatch.setattr(mcp_server, "get_email_db", lambda: None)
+
+    output = await mcp_server.email_sparse_status()
+    data = json.loads(output)
+
+    assert "sparse_enabled" in data
+    assert "sparse_vector_count" in data
+    assert "index_built" in data
+
+
+def test_all_tool_modules_importable():
+    """Smoke test: every tool module under src/tools/ imports cleanly."""
+    from src.tools import (
+        browse,
+        data_quality,
+        entities,
+        evidence,
+        network,
+        reporting,
+        temporal,
+        threads,
+        topics,
+    )
+
+    for module in [
+        browse, data_quality, entities, evidence, network,
+        reporting, temporal, threads, topics,
+    ]:
+        assert callable(module.register), f"{module.__name__} missing register()"

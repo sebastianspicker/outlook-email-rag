@@ -349,6 +349,135 @@ def render_network_page() -> None:
                     st.text(member)
 
 
+def render_evidence_page() -> None:
+    """Render the evidence management page."""
+    st.markdown("## Evidence Collection")
+
+    db = _get_email_db_safe()
+    if db is None:
+        st.warning("SQLite database not available. Run ingestion first to enable evidence management.")
+        return
+
+    import pandas as pd
+
+    # ── Overview metrics ──────────────────────────────────────
+    stats = db.evidence_stats()
+    met_col1, met_col2, met_col3 = st.columns(3)
+    met_col1.metric("Total Items", stats["total"])
+    met_col2.metric("Verified", stats["verified"])
+    met_col3.metric("Unverified", stats["unverified"])
+
+    # Category breakdown chart
+    categories = db.evidence_categories()
+    cats_with_items = [c for c in categories if c["count"] > 0]
+    if cats_with_items:
+        st.subheader("Items by Category")
+        df_cats = pd.DataFrame(cats_with_items)
+        st.bar_chart(df_cats, x="category", y="count")
+
+    st.divider()
+
+    # ── Browse / Search ───────────────────────────────────────
+    st.subheader("Browse Evidence")
+    browse_col1, browse_col2, browse_col3 = st.columns(3)
+
+    with browse_col1:
+        all_categories = ["All"] + [c["category"] for c in categories]
+        selected_cat = st.selectbox("Category", all_categories, index=0)
+
+    with browse_col2:
+        min_rel = st.slider("Min Relevance", min_value=1, max_value=5, value=1)
+
+    with browse_col3:
+        text_filter = st.text_input("Text search", placeholder="Search quotes, summaries, notes...")
+
+    cat_filter = None if selected_cat == "All" else selected_cat
+    rel_filter = min_rel if min_rel > 1 else None
+
+    if text_filter.strip():
+        result = db.search_evidence(
+            query=text_filter.strip(),
+            category=cat_filter,
+            min_relevance=rel_filter,
+            limit=100,
+        )
+        items = result["items"]
+        total = result["total"]
+    else:
+        result = db.list_evidence(
+            category=cat_filter,
+            min_relevance=rel_filter,
+            limit=100,
+        )
+        items = result["items"]
+        total = result["total"]
+
+    st.caption(f"Showing {len(items)} of {total} items")
+
+    if not items:
+        st.info("No evidence items found. Use the `evidence_add` MCP tool from Claude Code to start collecting evidence.")
+    else:
+        for item in items:
+            relevance_stars = "★" * item["relevance"] + "☆" * (5 - item["relevance"])
+            verified_icon = "✓" if item.get("verified") else "✗"
+            date_short = str(item.get("date", ""))[:10]
+
+            with st.expander(
+                f"{item['category'].upper()} | {relevance_stars} | {verified_icon} verified | "
+                f"{item.get('sender_name', '')} | {date_short} — {item.get('subject', '')}",
+                expanded=False,
+            ):
+                st.markdown(f"**Quote:** {item.get('key_quote', '')}")
+                st.markdown(f"**Summary:** {item.get('summary', '')}")
+                if item.get("notes"):
+                    st.markdown(f"**Notes:** {item['notes']}")
+                st.caption(
+                    f"ID: {item['id']} | Sender: {item.get('sender_email', '')} | "
+                    f"Recipients: {item.get('recipients', '')} | "
+                    f"Email UID: {item.get('email_uid', '')}"
+                )
+
+    st.divider()
+
+    # ── Export ────────────────────────────────────────────────
+    st.subheader("Export Evidence")
+    export_col1, export_col2 = st.columns(2)
+
+    with export_col1:
+        export_format = st.selectbox("Format", ["html", "csv"], index=0)
+
+    with export_col2:
+        export_min_rel = st.selectbox("Min Relevance for Export", [1, 2, 3, 4, 5], index=0)
+
+    if st.button("Generate Export"):
+        try:
+            from .evidence_exporter import EvidenceExporter
+        except ImportError:
+            from src.evidence_exporter import EvidenceExporter
+
+        exporter = EvidenceExporter(db)
+        export_result = exporter.export(
+            fmt=export_format,
+            min_relevance=export_min_rel if export_min_rel > 1 else None,
+            category=cat_filter,
+        )
+
+        if export_format == "html" and "html" in export_result:
+            st.download_button(
+                label="Download HTML Report",
+                data=export_result["html"],
+                file_name="evidence_report.html",
+                mime="text/html",
+            )
+        elif export_format == "csv" and "csv" in export_result:
+            st.download_button(
+                label="Download CSV",
+                data=export_result["csv"],
+                file_name="evidence_report.csv",
+                mime="text/csv",
+            )
+
+
 def main() -> None:
     inject_styles()
     st.markdown("<h1 class='hero-title'>Email RAG</h1>", unsafe_allow_html=True)
@@ -360,7 +489,7 @@ def main() -> None:
     # Navigation
     page = st.sidebar.radio(
         "Navigate",
-        ["🔍 Search", "📊 Dashboard", "🏷️ Entities", "🌐 Network"],
+        ["🔍 Search", "📊 Dashboard", "🏷️ Entities", "🌐 Network", "📋 Evidence"],
         index=0,
     )
 
@@ -377,6 +506,9 @@ def main() -> None:
         return
     if page == "🌐 Network":
         render_network_page()
+        return
+    if page == "📋 Evidence":
+        render_evidence_page()
         return
 
     # Search page
@@ -435,6 +567,24 @@ def main() -> None:
         with date_col2:
             date_to_val = st.date_input("Date To", value=None)
 
+        with st.expander("Advanced Search Options"):
+            adv_col1, adv_col2, adv_col3 = st.columns(3)
+            with adv_col1:
+                use_hybrid = st.checkbox(
+                    "Hybrid search (semantic + keyword)",
+                    help="Combines dense vector search with sparse keyword matching for better recall.",
+                )
+            with adv_col2:
+                use_rerank = st.checkbox(
+                    "Re-rank results (better precision)",
+                    help="Re-ranks results using ColBERT or cross-encoder for improved precision.",
+                )
+            with adv_col3:
+                use_expand = st.checkbox(
+                    "Expand query (better recall)",
+                    help="Expands query with semantically related terms for broader results.",
+                )
+
         search_clicked = st.form_submit_button("Search", type="primary")
 
     if search_clicked:
@@ -465,6 +615,9 @@ def main() -> None:
                     "date_from": valid_date_from,
                     "date_to": valid_date_to,
                     "min_score": min_score_value,
+                    "hybrid": use_hybrid,
+                    "rerank": use_rerank,
+                    "expand_query": use_expand,
                 }
 
                 results = retriever.search_filtered(
@@ -482,6 +635,9 @@ def main() -> None:
                     date_from=filters["date_from"],
                     date_to=filters["date_to"],
                     min_score=filters["min_score"],
+                    hybrid=filters["hybrid"],
+                    rerank=filters["rerank"],
+                    expand_query=filters["expand_query"],
                 )
                 sort_value = SORT_OPTIONS[sort_label]
                 sorted_results = sort_search_results(results, sort_value)

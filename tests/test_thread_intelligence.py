@@ -214,29 +214,29 @@ class TestThreadAnalyzer:
 
 class TestMCPThreadTools:
     def test_thread_summary_tool_importable(self):
-        from src.mcp_server import email_thread_summary
+        from src.tools import threads
 
-        assert callable(email_thread_summary)
+        assert callable(threads.register)
 
     def test_action_items_tool_importable(self):
-        from src.mcp_server import email_action_items
+        from src.tools import threads
 
-        assert callable(email_action_items)
+        assert callable(threads.register)
 
     def test_decisions_tool_importable(self):
-        from src.mcp_server import email_decisions
+        from src.tools import threads
 
-        assert callable(email_decisions)
+        assert callable(threads.register)
 
     def test_thread_summary_input(self):
-        from src.mcp_server import ThreadSummaryInput
+        from src.mcp_models import ThreadSummaryInput
 
         inp = ThreadSummaryInput(conversation_id="test-thread-123", max_sentences=3)
         assert inp.conversation_id == "test-thread-123"
         assert inp.max_sentences == 3
 
     def test_action_items_input(self):
-        from src.mcp_server import ActionItemsInput
+        from src.mcp_models import ActionItemsInput
 
         inp = ActionItemsInput(conversation_id="abc", days=7, limit=10)
         assert inp.conversation_id == "abc"
@@ -244,7 +244,7 @@ class TestMCPThreadTools:
         assert inp.limit == 10
 
     def test_decisions_input(self):
-        from src.mcp_server import DecisionsInput
+        from src.mcp_models import DecisionsInput
 
         inp = DecisionsInput(conversation_id="xyz", days=30)
         assert inp.conversation_id == "xyz"

@@ -9,6 +9,58 @@ and this project adheres to semantic versioning principles for public interfaces
 
 ### Added
 
+#### BGE-M3 Multi-Vector Optimization
+
+- `src/multi_vector_embedder.py`: Unified embedder supporting BGEM3FlagModel (dense + sparse + ColBERT) with SentenceTransformer fallback. MPS float32 workaround, auto batch sizing.
+- `src/sparse_index.py`: In-memory inverted index backed by SQLite (schema v5, packed BLOB). Replaces BM25 when sparse vectors available.
+- `src/colbert_reranker.py`: ColBERT MaxSim token-level reranking using same BGE-M3 model. Supersedes cross-encoder when available.
+- `src/email_clusterer.py`: `fit_hybrid()` for dense + sparse SVD features with weighted concatenation.
+- `src/training_data_generator.py`: Contrastive triplet generation from email threads with hard negative mining (same-sender, cross-thread).
+- `src/fine_tuner.py`: Domain fine-tuning via FlagEmbedding config or SentenceTransformers direct training.
+- `src/image_embedder.py`: Visualized-BGE-M3 for cross-modal image→text retrieval in shared 1024-d space.
+- CLI flags: `--generate-training-data`, `--fine-tune`, `--embed-images`.
+- Env vars: `SPARSE_ENABLED`, `COLBERT_RERANK_ENABLED`, `EMBEDDING_BATCH_SIZE`.
+
+#### Integration & Polish Pass
+
+- `src/ingest.py`: `embed_images` parameter wired end-to-end — creates `chunk_type: "image"` ChromaDB chunks with 1024-d embeddings. Auto-enables `extract_attachments` when `embed_images=True`.
+- `src/mcp_server.py`: New MCP tools `email_model_info` (embedding backend diagnostics) and `email_sparse_status` (sparse index status).
+- `src/mcp_server.py`: `email_search_structured` now supports `email_type` filter (reply/forward/original).
+- `src/mcp_server.py`: `email_ingest` now accepts `extract_attachments` and `embed_images` parameters.
+- `src/web_app.py`: Advanced Search Options expander with hybrid search, re-ranking, and query expansion checkboxes.
+- `src/attachment_extractor.py`: Deduplicated `_IMAGE_EXTENSIONS` — now imports from `image_embedder.py`.
+- `.env.example`: Added `SPARSE_ENABLED`, `COLBERT_RERANK_ENABLED`, `EMBEDDING_BATCH_SIZE` documentation.
+
+### Changed
+
+- `src/config.py`, `src/reranker.py`: Default rerank model changed from `cross-encoder/ms-marco-MiniLM-L-6-v2` (English-only) to `BAAI/bge-reranker-v2-m3` (multilingual, aligned with BGE-M3 embeddings). Drop-in replacement via `sentence_transformers.CrossEncoder`.
+- `src/fine_tuner.py`: FlagEmbedding status changed from `"config_written"` to `"config_ready"` with clear training command in output.
+- `src/cli.py`: `--json` flag now emits deprecation warning recommending `--format json`.
+- `src/cli.py`: Refactored from flat 58-flag argparse to 7 subcommand groups (`search`, `browse`, `export`, `evidence`, `analytics`, `training`, `admin`) with full backward compatibility. Legacy flat-flag usage emits `DeprecationWarning` but continues to work. `parse_known_args` dual-parser dispatches to subcommand or legacy parser automatically.
+- `src/mcp_server.py`: Split from 1,873 lines into `src/tools/` subpackage — 54 tools moved to 9 domain modules (`network`, `temporal`, `entities`, `threads`, `topics`, `data_quality`, `reporting`, `browse`, `evidence`). 14 core tools remain in `mcp_server.py`. `ToolDeps` dependency injection avoids circular imports.
+- `tests/conftest.py`: `_matches_where()` now supports ChromaDB `{"field": {"$eq": value}}` nested filter syntax.
+
+#### Evidence Collection & Legal Export
+
+- `src/email_db.py`: `evidence_items` SQLite table with FK to `emails`, auto-populated sender/date/recipients, quote verification against email body text.
+- `src/email_db.py`: CRUD methods — `add_evidence()`, `list_evidence()`, `get_evidence()`, `update_evidence()`, `remove_evidence()`, `verify_evidence_quotes()`, `evidence_stats()`.
+- `src/evidence_exporter.py`: Evidence report export as HTML (with appendix of full source emails) or CSV.
+- `src/templates/evidence_report.html`: Professional Jinja2 template with category badges, relevance stars, verification status banner, and print-friendly appendix.
+
+#### Evidence MCP Tools (12)
+
+- **Evidence Management**: `evidence_add`, `evidence_add_batch`, `evidence_list`, `evidence_get`, `evidence_update`, `evidence_remove`, `evidence_search`, `evidence_verify`, `evidence_export`, `evidence_stats`, `evidence_timeline`, `evidence_categories`.
+
+#### New CLI Flags
+
+- `--evidence-list` — list evidence items with optional `--category` and `--min-relevance` filters.
+- `--evidence-export PATH` — export evidence report.
+- `--evidence-export-format {html,csv,pdf}` — format for evidence export.
+- `--evidence-stats` — show evidence collection statistics.
+- `--evidence-verify` — re-verify all quotes against source emails.
+- `--category` — evidence category filter.
+- `--min-relevance` — minimum relevance filter (1-5).
+
 - `src/__main__.py`: `python -m src` now starts the MCP server directly.
 - `.claude/settings.json`: project-level MCP server registration — Claude Code auto-discovers tools when the project is opened.
 - `pyproject.toml`: added `[project]` and `[build-system]` sections; `pip install -e .[dev]` now works.
@@ -51,7 +103,6 @@ and this project adheres to semantic versioning principles for public interfaces
 - `src/dedup_detector.py`: Near-duplicate email detection using character n-gram similarity.
 - `src/language_detector.py`: Language detection and distribution statistics.
 - `src/sentiment_analyzer.py`: Rule-based sentiment analysis across emails.
-- `src/auto_tagger.py`: Automatic email tagging and categorization.
 
 #### Reporting
 
@@ -66,7 +117,7 @@ and this project adheres to semantic versioning principles for public interfaces
 - `get_email_full()`, `get_thread_emails()`, `list_emails_paginated()` methods on `EmailDatabase`.
 - `reingest_bodies()` function to backfill body text for existing databases from OLM.
 
-#### New MCP Tools (35 new, 43 total)
+#### Search & Analytics MCP Tools (43)
 
 - **Core Search**: `email_search_by_recipient`, `email_search_thread`, `email_smart_search`, `email_find_similar`.
 - **Archive Info**: `email_query_suggestions`.
@@ -135,6 +186,62 @@ and this project adheres to semantic versioning principles for public interfaces
 - `textstat>=0.7.0` — writing readability metrics.
 - `streamlit>=1.40.0` — web UI.
 
+#### Multilingual Embedding & MPS GPU Acceleration
+
+- Default embedding model changed from `all-MiniLM-L6-v2` (384 dims, English-only) to `BAAI/bge-m3` (1024 dims, 100+ languages including German).
+- `src/config.py`: `device` setting with auto-detection (`mps` on Apple Silicon, `cuda` on NVIDIA, `cpu` fallback).
+- `resolve_device()` function for automatic GPU backend selection.
+- PyTorch MPS backend support for 3-10x faster embedding on Apple Silicon.
+
+#### Chain of Custody & Integrity
+
+- `src/email_db.py`: `custody_chain` SQLite table for cryptographic audit trail (action, timestamp, actor, target, content hash).
+- `src/email_db.py`: `log_custody_event()`, `get_custody_chain()`, `email_provenance()`, `evidence_provenance()`, `compute_content_hash()` methods.
+- `src/email_db.py`: Evidence lifecycle tracking — `add_evidence()`, `update_evidence()`, `remove_evidence()` auto-log custody events with content hashes and old-value snapshots.
+- `src/email_db.py`: `content_sha256` column on emails, `content_hash` and `ingestion_run_id` on evidence items.
+- `src/email_db.py`: `ingestion_runs` extended with `olm_sha256`, `file_size_bytes`, `custodian`.
+- `src/ingest.py`: Streaming SHA-256 hash of OLM file at ingestion start, per-email content hashing during batch insert.
+
+#### Chain of Custody MCP Tools (3)
+
+- `custody_chain` — view chain-of-custody audit trail with optional filters.
+- `email_provenance` — full provenance: OLM source hash, ingestion run, custody events.
+- `evidence_provenance` — full evidence chain: item details + source email provenance + modification history.
+
+#### Relationship & Complicity Analysis
+
+- `src/network_analysis.py`: `find_paths()` — shortest communication paths between two people via NetworkX.
+- `src/network_analysis.py`: `shared_recipients()` — recipients common to multiple senders.
+- `src/network_analysis.py`: `coordinated_timing()` — time windows where multiple senders were active simultaneously.
+- `src/network_analysis.py`: `relationship_summary()` — single-call comprehensive profile (top contacts, community, bridge score, send/receive ratio).
+- `src/email_db.py`: `shared_recipients_query()` and `sender_activity_timeline()` SQL methods.
+
+#### Relationship Analysis MCP Tools (4)
+
+- `relationship_paths` — find communication paths between two people through intermediaries.
+- `shared_recipients` — identify recipients common to multiple senders.
+- `coordinated_timing` — detect synchronized communication windows.
+- `relationship_summary` — one-call profile: top contacts, community, bridge score.
+
+#### Proof Dossier Generation
+
+- `src/dossier_generator.py`: `DossierGenerator` class — comprehensive proof dossier combining evidence timeline, source emails, relationship context, and chain-of-custody log.
+- `src/templates/dossier.html`: Print-optimized HTML template with cover page, stats, TOC, evidence timeline, source email appendix, relationship analysis, custody log.
+- `DossierGenerator.preview()` — token-efficient check of dossier contents before generation.
+- `DossierGenerator.generate_file()` — HTML or PDF (via weasyprint) export.
+
+#### Proof Dossier MCP Tools (2)
+
+- `dossier_generate` — generate comprehensive proof dossier as HTML/PDF.
+- `dossier_preview` — preview dossier contents (counts, categories, date range) without generating.
+
+#### New CLI Flags
+
+- `--dossier PATH` — generate proof dossier.
+- `--dossier-format {html,pdf}` — dossier output format.
+- `--custody-chain` — view chain-of-custody audit trail.
+- `--provenance UID` — view email provenance (OLM source hash, ingestion run, custody events).
+
 ### Changed
 
 - Removed `anthropic` SDK dependency — MCP server is now the sole Claude integration point.
@@ -148,8 +255,13 @@ and this project adheres to semantic versioning principles for public interfaces
 - Simplified `_serialize_results` helper in MCP server to direct `retriever.serialize_results()` call.
 - Removed trivial wrapper functions `_sanitize_terminal_text()` (CLI) and `_sanitize_untrusted_text()` (MCP server).
 - Ingest progress log interval reduced from 500 to 100 emails.
-- README rewritten to reflect 43 MCP tools, 673 tests, full architecture.
-- `docs/API_COMPATIBILITY.md` expanded to cover all 43 tools and all CLI flags.
+- README rewritten to reflect 64 MCP tools, 812 tests, full architecture.
+- `docs/API_COMPATIBILITY.md` expanded to cover all 64 tools and all CLI flags.
+- Default embedding model changed to `BAAI/bge-m3` (multilingual, 1024 dims). Requires re-ingestion.
+
+### Removed
+
+- `src/auto_tagger.py`: Dead code — simple keyword tagger never imported by production code.
 
 ### Breaking
 

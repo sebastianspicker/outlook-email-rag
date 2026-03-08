@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Iterable
 
-from sentence_transformers import SentenceTransformer
-
 from .chunker import EmailChunk
 from .config import resolve_runtime_settings
+from .multi_vector_embedder import MultiVectorEmbedder, MultiVectorResult
 from .storage import get_chroma_client, get_collection, iter_collection_ids, to_builtin_list
 
 logger = logging.getLogger(__name__)
@@ -33,18 +32,30 @@ class EmailEmbedder:
         self.model_name = self.settings.embedding_model
         self.collection_name = self.settings.collection_name
 
-        self._model: SentenceTransformer | None = None
+        self._embedder: MultiVectorEmbedder | None = None
         self._existing_ids_cache: set[str] | None = None
 
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
 
     @property
-    def model(self) -> SentenceTransformer:
-        if self._model is None:
-            logger.info("Loading embedding model: %s", self.model_name)
-            self._model = SentenceTransformer(self.model_name)
-        return self._model
+    def embedder(self) -> MultiVectorEmbedder:
+        """Lazy-loaded multi-vector embedder."""
+        if self._embedder is None:
+            batch_size = self.settings.embedding_batch_size
+            self._embedder = MultiVectorEmbedder(
+                model_name=self.model_name,
+                device=self.settings.device,
+                sparse_enabled=self.settings.sparse_enabled,
+                colbert_enabled=self.settings.colbert_rerank_enabled,
+                batch_size=batch_size,
+            )
+        return self._embedder
+
+    @property
+    def model(self) -> MultiVectorEmbedder:
+        """Backward-compatible alias for ``embedder``."""
+        return self.embedder
 
     def get_existing_ids(self, refresh: bool = False) -> set[str]:
         """Get all known chunk IDs, cached for current embedder lifecycle."""
@@ -68,8 +79,6 @@ class EmailEmbedder:
         existing = self.get_existing_ids(refresh=False)
 
         # Deduplicate: skip chunks already in DB *and* duplicates within this batch
-        # (two emails can share a uid when they have the same message_id or
-        # the same subject|date|sender fallback hash).
         seen: set[str] = set()
         new_chunks: list[EmailChunk] = []
         for chunk in chunks:
@@ -95,7 +104,8 @@ class EmailEmbedder:
             ids = [chunk.chunk_id for chunk in batch]
             metadatas = [chunk.metadata for chunk in batch]
 
-            embeddings = to_builtin_list(self.model.encode(texts, show_progress_bar=False))
+            result: MultiVectorResult = self.embedder.encode_all(texts)
+            embeddings = to_builtin_list(result.dense)
 
             self.collection.add(
                 ids=ids,
@@ -104,12 +114,34 @@ class EmailEmbedder:
                 metadatas=metadatas,
             )
 
+            # Sparse vectors stored via callback if available (Phase 2 hook)
+            if result.sparse is not None:
+                self._store_sparse(ids, result.sparse)
+
             existing.update(ids)
             added += len(batch)
             if show_progress:
                 logger.info("Stored %s/%s chunks...", added, len(new_chunks))
 
         return added
+
+    def _store_sparse(self, ids: list[str], sparse_vectors: list[dict[int, float]]) -> None:
+        """Persist sparse vectors to SQLite alongside dense in ChromaDB."""
+        try:
+            import os
+
+            sqlite_path = self.settings.sqlite_path
+            if not sqlite_path or not os.path.exists(sqlite_path):
+                logger.debug("Sparse vectors available but no SQLite DB found, skipping storage.")
+                return
+
+            from .email_db import EmailDatabase
+
+            db = EmailDatabase(sqlite_path)
+            inserted = db.insert_sparse_batch(ids, sparse_vectors)
+            logger.debug("Stored %d sparse vectors in SQLite.", inserted)
+        except Exception:
+            logger.debug("Failed to store sparse vectors", exc_info=True)
 
     def count(self) -> int:
         """Total number of chunks in the database."""

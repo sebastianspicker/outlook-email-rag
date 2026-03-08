@@ -8,19 +8,62 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 
+def resolve_device(device: str = "auto") -> str:
+    """Resolve device string to the best available compute backend.
+
+    ``"auto"`` probes for MPS (Apple Silicon GPU), then CUDA, then falls
+    back to CPU.  Any other value is returned as-is.
+
+    When MPS is selected, sets ``PYTORCH_ENABLE_MPS_FALLBACK=1`` so ops
+    not yet implemented on MPS fall back to CPU transparently.
+    """
+    if device != "auto":
+        if device == "mps":
+            os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+        return device
+    try:
+        import torch
+
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
+
+
+def resolve_embedding_batch_size(device: str = "auto") -> int:
+    """Return a sensible default embedding batch size for the device.
+
+    MPS needs smaller batches to avoid memory pressure on unified memory.
+    """
+    resolved = device if device != "auto" else resolve_device(device)
+    if resolved == "mps":
+        return 8
+    if resolved == "cuda":
+        return 32
+    return 16
+
+
 @dataclass(frozen=True)
 class Settings:
     """Environment-backed settings for the email RAG application."""
 
     chromadb_path: str = "data/chromadb"
     sqlite_path: str = "data/email_metadata.db"
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "BAAI/bge-m3"
     collection_name: str = "emails"
     top_k: int = 10
     log_level: str = "INFO"
     rerank_enabled: bool = False
-    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
     hybrid_enabled: bool = False
+    device: str = "auto"
+    sparse_enabled: bool = False
+    colbert_rerank_enabled: bool = False
+    embedding_batch_size: int = 0  # 0 = auto-detect via resolve_embedding_batch_size
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -35,6 +78,10 @@ class Settings:
             rerank_enabled=os.getenv("RERANK_ENABLED", "").lower() in ("1", "true", "yes"),
             rerank_model=os.getenv("RERANK_MODEL", cls.rerank_model),
             hybrid_enabled=os.getenv("HYBRID_ENABLED", "").lower() in ("1", "true", "yes"),
+            device=os.getenv("DEVICE", cls.device),
+            sparse_enabled=os.getenv("SPARSE_ENABLED", "").lower() in ("1", "true", "yes"),
+            colbert_rerank_enabled=os.getenv("COLBERT_RERANK_ENABLED", "").lower() in ("1", "true", "yes"),
+            embedding_batch_size=_int_from_env("EMBEDDING_BATCH_SIZE", cls.embedding_batch_size, min_value=0, max_value=256),
         )
 
 
@@ -62,6 +109,10 @@ def resolve_runtime_settings(
         rerank_enabled=base.rerank_enabled,
         rerank_model=base.rerank_model,
         hybrid_enabled=base.hybrid_enabled,
+        device=base.device,
+        sparse_enabled=base.sparse_enabled,
+        colbert_rerank_enabled=base.colbert_rerank_enabled,
+        embedding_batch_size=base.embedding_batch_size,
     )
 
 

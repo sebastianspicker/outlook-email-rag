@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Optional  # noqa: F401 — used by tool type hints
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -28,11 +27,6 @@ from mcp.types import ToolAnnotations
 
 from .config import get_settings
 from .mcp_models import (
-    ActionItemsInput,
-    BrowseInput,
-    ClusterEmailsInput,
-    CommunicationBetweenInput,
-    DecisionsInput,
     EmailIngestInput,
     EmailSearchByDateInput,
     EmailSearchByRecipientInput,
@@ -40,30 +34,7 @@ from .mcp_models import (
     EmailSearchInput,
     EmailSearchStructuredInput,
     EmailSearchThreadInput,
-    EntityNetworkInput,
-    EntitySearchInput,
-    EntityTimelineInput,
-    ExportNetworkInput,
-    ExportSingleInput,
-    ExportThreadInput,
-    FindDuplicatesInput,
-    FindPeopleInput,
-    FindSimilarInput,
-    GenerateReportInput,
-    GetFullEmailInput,
-    ListEntitiesInput,
     ListSendersInput,
-    NetworkAnalysisInput,
-    QuerySuggestionsInput,
-    ReingestBodiesInput,
-    ResponseTimesInput,
-    SearchByTopicInput,
-    SmartSearchInput,
-    ThreadSummaryInput,
-    TopContactsInput,
-    TopKeywordsInput,
-    VolumeOverTimeInput,
-    WritingAnalysisInput,
 )
 from .sanitization import sanitize_untrusted_text
 
@@ -123,7 +94,8 @@ def get_email_db():
 
 _FILTER_FIELDS = [
     "sender", "subject", "folder", "cc", "to", "bcc",
-    "has_attachments", "priority", "date_from", "date_to", "min_score",
+    "has_attachments", "priority", "email_type",
+    "date_from", "date_to", "min_score",
     "topic_id", "cluster_id",
 ]
 _BOOL_FIELDS = ["rerank", "hybrid", "expand_query"]
@@ -150,23 +122,11 @@ def _build_search_kwargs(params: EmailSearchStructuredInput) -> dict:
     annotations=_tool_annotations("Search Emails"),
 )
 async def email_search(params: EmailSearchInput) -> str:
-    """Search through the email archive using natural language.
+    """Search the email archive using natural language.
 
-    Performs semantic search across all indexed emails and returns the most
-    relevant results with full email context (sender, date, subject, body).
-
-    Use specific, descriptive queries for best results. For example:
-    - "server migration plan from IT department"
-    - "invoice from Acme Corp over $10,000"
-    - "meeting notes about product roadmap"
-
-    Args:
-        params (EmailSearchInput): Search parameters containing:
-            - query (str): Natural language search query
-            - top_k (int): Number of results to return (default: 10)
-
-    Returns:
-        str: Formatted email results with metadata and relevance scores.
+    Use for quick natural language queries without metadata filters.
+    For filtered searches (by sender, date, folder, etc.), use email_search_structured.
+    For auto-intent detection, use email_smart_search.
     """
     retriever = get_retriever()
     results = retriever.search(params.query, top_k=params.top_k)
@@ -279,7 +239,13 @@ async def email_stats() -> str:
     annotations=_tool_annotations("Search Emails (Structured JSON)"),
 )
 async def email_search_structured(params: EmailSearchStructuredInput) -> str:
-    """Search emails and return stable JSON output for automation clients."""
+    """The most powerful search tool — combines semantic query with metadata filters.
+
+    Supports filters: sender, date range, folder, to, cc, bcc, attachments,
+    priority, topic, cluster. Returns structured JSON. Also supports reranking,
+    hybrid BM25 search, and query expansion. For simple unfiltered queries,
+    email_search is faster.
+    """
     retriever = get_retriever()
     search_kwargs = _build_search_kwargs(params)
 
@@ -295,6 +261,7 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         "bcc": params.bcc,
         "has_attachments": params.has_attachments,
         "priority": params.priority,
+        "email_type": params.email_type,
         "date_from": params.date_from,
         "date_to": params.date_to,
         "min_score": params.min_score,
@@ -378,7 +345,9 @@ async def email_ingest(params: EmailIngestInput) -> str:
             - olm_path (str): Absolute path to the .olm file
             - max_emails (int, optional): Cap on emails to parse
             - dry_run (bool): If true, parse without writing (default: False)
+            - extract_attachments (bool): If true, extract text from attachments
             - extract_entities (bool): If true, extract entities into SQLite
+            - embed_images (bool): If true, embed image attachments via Visualized-BGE-M3
 
     Returns:
         str: JSON summary of the ingestion run.
@@ -390,7 +359,9 @@ async def email_ingest(params: EmailIngestInput) -> str:
             olm_path=params.olm_path,
             max_emails=params.max_emails,
             dry_run=params.dry_run,
+            extract_attachments=params.extract_attachments,
             extract_entities=params.extract_entities,
+            embed_images=params.embed_images,
         )
     except FileNotFoundError as exc:
         return json.dumps({"error": str(exc)})
@@ -429,859 +400,108 @@ async def email_search_thread(params: EmailSearchThreadInput) -> str:
     return sanitize_untrusted_text(retriever.format_results_for_claude(results))
 
 
-# ── Network Analysis Tools ────────────────────────────────────
+# ── Write Tool Annotations ────────────────────────────────────
 
 
-@mcp.tool(name="email_top_contacts", annotations=_tool_annotations("Top Email Contacts"))
-async def email_top_contacts(params: TopContactsInput) -> str:
-    """Find top communication partners for an email address.
+def _write_tool_annotations(title: str) -> ToolAnnotations:
+    """Tool annotations for write operations."""
+    return ToolAnnotations(
+        title=title,
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    )
 
-    Returns contacts ranked by total bidirectional email frequency
-    (emails sent to + received from each partner).
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    contacts = db.top_contacts(params.email_address, limit=params.limit)
-    return json.dumps(contacts, indent=2)
+
+# ── Tool Module Registration ──────────────────────────────────
+
+
+class ToolDeps:
+    """Dependencies injected into tool modules to avoid circular imports."""
+
+    get_retriever = staticmethod(get_retriever)
+    get_email_db = staticmethod(get_email_db)
+    tool_annotations = staticmethod(_tool_annotations)
+    write_tool_annotations = staticmethod(_write_tool_annotations)
+    build_search_kwargs = staticmethod(_build_search_kwargs)
+    DB_UNAVAILABLE = _DB_UNAVAILABLE
+    sanitize = staticmethod(sanitize_untrusted_text)
+
+
+from .tools import register_all  # noqa: E402
+
+register_all(mcp, ToolDeps)
+
+
+# ── Diagnostic Tools ──────────────────────────────────────────
 
 
 @mcp.tool(
-    name="email_communication_between",
-    annotations=_tool_annotations("Communication Between Two Contacts"),
+    name="email_model_info",
+    annotations=_tool_annotations("Embedding Model Info"),
 )
-async def email_communication_between(params: CommunicationBetweenInput) -> str:
-    """Get bidirectional communication stats between two email addresses."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    result = db.communication_between(params.email_a, params.email_b)
-    return json.dumps(result, indent=2)
+async def email_model_info() -> str:
+    """Return information about the active embedding backend and configuration.
 
-
-@mcp.tool(name="email_network_analysis", annotations=_tool_annotations("Email Network Analysis"))
-async def email_network_analysis(params: NetworkAnalysisInput) -> str:
-    """Analyze the communication network: centrality, communities, bridge nodes."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .network_analysis import CommunicationNetwork
-
-    net = CommunicationNetwork(db)
-    result = net.network_analysis(top_n=params.top_n)
-    return json.dumps(result, indent=2)
-
-
-# ── Temporal Analysis Tools ───────────────────────────────────
-
-
-@mcp.tool(name="email_volume_over_time", annotations=_tool_annotations("Email Volume Over Time"))
-async def email_volume_over_time(params: VolumeOverTimeInput) -> str:
-    """Get email volume grouped by time period (day/week/month)."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .temporal_analysis import TemporalAnalyzer
-
-    analyzer = TemporalAnalyzer(db)
-    result = analyzer.volume_over_time(
-        period=params.period,
-        date_from=params.date_from,
-        date_to=params.date_to,
-        sender=params.sender,
-    )
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool(name="email_activity_pattern", annotations=_tool_annotations("Email Activity Heatmap"))
-async def email_activity_pattern() -> str:
-    """Get email activity heatmap: hour-of-day x day-of-week counts."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .temporal_analysis import TemporalAnalyzer
-
-    analyzer = TemporalAnalyzer(db)
-    result = analyzer.activity_heatmap()
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool(name="email_response_times", annotations=_tool_annotations("Email Response Times"))
-async def email_response_times(params: ResponseTimesInput) -> str:
-    """Get average response times per sender (in hours)."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .temporal_analysis import TemporalAnalyzer
-
-    analyzer = TemporalAnalyzer(db)
-    result = analyzer.response_times(sender=params.sender, limit=params.limit)
-    return json.dumps(result, indent=2)
-
-
-# ── Entity Tools ──────────────────────────────────────────────
-
-
-@mcp.tool(name="email_search_by_entity", annotations=_tool_annotations("Search by Entity"))
-async def email_search_by_entity(params: EntitySearchInput) -> str:
-    """Find emails mentioning a specific entity (organization, URL, phone, etc.)."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.search_by_entity(params.entity, entity_type=params.entity_type, limit=params.limit)
-    return json.dumps(results, indent=2)
-
-
-@mcp.tool(name="email_list_entities", annotations=_tool_annotations("List Top Entities"))
-async def email_list_entities(params: ListEntitiesInput) -> str:
-    """List most frequently mentioned entities in the email archive."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.top_entities(entity_type=params.entity_type, limit=params.limit)
-    return json.dumps(results, indent=2)
-
-
-@mcp.tool(name="email_entity_network", annotations=_tool_annotations("Entity Co-occurrences"))
-async def email_entity_network(params: EntityNetworkInput) -> str:
-    """Find entities that co-occur with the given entity in the same emails."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.entity_co_occurrences(params.entity, limit=params.limit)
-    return json.dumps(results, indent=2)
-
-
-# ── NLP Entity Tools ──────────────────────────────────────────
-
-
-@mcp.tool(name="email_find_people", annotations=_tool_annotations("Find People in Emails"))
-async def email_find_people(params: FindPeopleInput) -> str:
-    """Search emails by person name mentioned in the email body.
-
-    Uses NLP-extracted person entities (names like 'John Smith', 'Dr. Mueller').
-    Requires entity extraction during ingestion.
-
-    Args:
-        params: name (str) - person name to search, limit (int).
-
-    Returns:
-        JSON list of emails mentioning that person.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.people_in_emails(params.name, limit=params.limit)
-    return json.dumps(results, indent=2)
-
-
-@mcp.tool(name="email_entity_timeline", annotations=_tool_annotations("Entity Mention Timeline"))
-async def email_entity_timeline(params: EntityTimelineInput) -> str:
-    """Show how often an entity appears over time.
-
-    Track mention frequency of any entity (person, organization, etc.)
-    across the email archive, grouped by day/week/month.
-
-    Args:
-        params: entity (str) - entity to track, period (str) - 'day'/'week'/'month'.
-
-    Returns:
-        JSON list of {period, count} entries.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.entity_timeline(params.entity, period=params.period)
-    return json.dumps(results, indent=2)
-
-
-# ── Thread Intelligence Tools ────────────────────────────────
-
-
-@mcp.tool(name="email_thread_summary", annotations=_tool_annotations("Summarize Thread"))
-async def email_thread_summary(params: ThreadSummaryInput) -> str:
-    """Summarize a conversation thread using extractive summarization.
-
-    Selects the most important sentences from the thread based on
-    TF-IDF scoring with position bias.
-
-    Args:
-        params: conversation_id (str), max_sentences (int).
-
-    Returns:
-        JSON with thread summary text.
+    Shows which embedding model is loaded, whether sparse and ColBERT features
+    are available, the compute device, and batch size settings.
     """
     retriever = get_retriever()
-    results = retriever.search_by_thread(
-        conversation_id=params.conversation_id, top_k=50
-    )
-    if not results:
-        return json.dumps({"error": "No emails found for this thread."})
+    settings = get_settings()
 
-    emails = [
-        {"clean_body": r.text, "sender_email": r.metadata.get("sender_email", ""),
-         "sender_name": r.metadata.get("sender_name", ""), "date": r.metadata.get("date", ""),
-         "uid": r.metadata.get("uid", ""), "subject": r.metadata.get("subject", "")}
-        for r in results
-    ]
+    info: dict = {
+        "embedding_model": settings.embedding_model,
+        "device": str(getattr(retriever.embedder, "device", "unknown")),
+        "backend": type(getattr(retriever.embedder, "_model", retriever.embedder)).__name__,
+        "sparse_enabled": getattr(settings, "sparse_enabled", False),
+        "colbert_rerank_enabled": getattr(settings, "colbert_rerank_enabled", False),
+        "batch_size": getattr(settings, "embedding_batch_size", 0),
+    }
 
-    from .thread_summarizer import summarize_thread
+    # Check multi-vector capabilities
+    multi = getattr(retriever, "embedder", None)
+    if multi:
+        info["has_sparse"] = getattr(multi, "has_sparse", False)
+        info["has_colbert"] = getattr(multi, "has_colbert", False)
 
-    summary = summarize_thread(emails, max_sentences=params.max_sentences)
-    return json.dumps({"conversation_id": params.conversation_id, "summary": summary})
-
-
-@mcp.tool(name="email_action_items", annotations=_tool_annotations("Extract Action Items"))
-async def email_action_items(params: ActionItemsInput) -> str:
-    """Extract action items from a thread or across recent emails.
-
-    Detects patterns like 'please do X', 'need to', 'I will', 'by Friday'.
-
-    Args:
-        params: conversation_id or days, limit.
-
-    Returns:
-        JSON list of action items with assignee and deadline.
-    """
-    from .thread_intelligence import ThreadAnalyzer
-
-    analyzer = ThreadAnalyzer()
-
-    if params.conversation_id:
-        retriever = get_retriever()
-        results = retriever.search_by_thread(
-            conversation_id=params.conversation_id, top_k=50
-        )
-        if not results:
-            return json.dumps({"error": "No emails found for this thread."})
-
-        all_items = []
-        for r in results:
-            items = analyzer.extract_action_items(
-                r.text,
-                sender=r.metadata.get("sender_email", ""),
-                source_uid=r.metadata.get("uid", ""),
-            )
-            all_items.extend(items)
-
-        return json.dumps(
-            [{"text": a.text, "assignee": a.assignee, "deadline": a.deadline,
-              "is_urgent": a.is_urgent} for a in all_items[:params.limit]],
-            indent=2,
-        )
-
-    return json.dumps({"error": "Provide conversation_id to extract action items."})
-
-
-@mcp.tool(name="email_decisions", annotations=_tool_annotations("Extract Decisions"))
-async def email_decisions(params: DecisionsInput) -> str:
-    """Extract decisions from email threads.
-
-    Detects patterns like 'we decided', 'agreed to', 'approved', 'go ahead with'.
-
-    Args:
-        params: conversation_id or days.
-
-    Returns:
-        JSON list of decisions with who made them and when.
-    """
-    from .thread_intelligence import ThreadAnalyzer
-
-    analyzer = ThreadAnalyzer()
-
-    if params.conversation_id:
-        retriever = get_retriever()
-        results = retriever.search_by_thread(
-            conversation_id=params.conversation_id, top_k=50
-        )
-        if not results:
-            return json.dumps({"error": "No emails found for this thread."})
-
-        all_decisions = []
-        for r in results:
-            decisions = analyzer.extract_decisions(
-                r.text,
-                sender=r.metadata.get("sender_email", ""),
-                date=r.metadata.get("date", ""),
-                source_uid=r.metadata.get("uid", ""),
-            )
-            all_decisions.extend(decisions)
-
-        return json.dumps(
-            [{"text": d.text, "made_by": d.made_by, "date": d.date}
-             for d in all_decisions],
-            indent=2,
-        )
-
-    return json.dumps({"error": "Provide conversation_id to extract decisions."})
-
-
-# ── Smart Search Tool ────────────────────────────────────────
+    return json.dumps(info, indent=2)
 
 
 @mcp.tool(
-    name="email_smart_search",
-    annotations=_tool_annotations("Smart Search"),
+    name="email_sparse_status",
+    annotations=_tool_annotations("Sparse Index Status"),
 )
-async def email_smart_search(params: SmartSearchInput) -> str:
-    """Intelligent search that auto-routes based on query analysis.
+async def email_sparse_status() -> str:
+    """Return the status of the sparse vector index.
 
-    Automatically detects query intent and applies relevant filters:
-    - Person names -> searches person entities + semantic search
-    - Topic keywords -> adds topic filter if matching topic found
-    - Uses query expansion for better recall
-
-    Combines results from multiple search paths with deduplication.
-
-    Args:
-        params: query (str), top_k (int).
-
-    Returns:
-        JSON with search results and detected intent.
+    Shows whether sparse vectors are stored, the count, and whether
+    the in-memory sparse index is built.
     """
-    retriever = get_retriever()
-    query = params.query
-    detected_intent: dict = {}
-
-    # Strategy 1: Always do expanded semantic search
-    results = retriever.search_filtered(
-        query=query, top_k=params.top_k, expand_query=True,
-    )
-    detected_intent["expand_query"] = True
-
-    # Strategy 2: If we have entity DB, also search person entities
+    settings = get_settings()
     db = get_email_db()
+
+    status: dict = {
+        "sparse_enabled": getattr(settings, "sparse_enabled", False),
+        "sparse_vector_count": 0,
+        "index_built": False,
+    }
+
     if db:
-        try:
-            person_results = db.people_in_emails(query, limit=5)
-            if person_results:
-                detected_intent["person_matches"] = len(person_results)
-        except Exception:
-            pass
+        count_method = getattr(db, "sparse_vector_count", None)
+        if count_method:
+            status["sparse_vector_count"] = count_method()
 
-        # Strategy 3: Check if query matches a known topic
-        try:
-            topic_dist = db.topic_distribution()
-            for topic in topic_dist:
-                label = topic.get("label", "").lower()
-                if any(w in label for w in query.lower().split() if len(w) > 3):
-                    detected_intent["topic_match"] = {
-                        "id": topic["topic_id"],
-                        "label": topic["label"],
-                    }
-                    break
-        except Exception:
-            pass
-
-    formatted = retriever.format_results_for_claude(results)
-    return json.dumps({
-        "query": query,
-        "count": len(results),
-        "detected_intent": detected_intent,
-        "formatted_results": formatted,
-    })
-
-
-# ── Cluster Tools ─────────────────────────────────────────────
-
-
-@mcp.tool(name="email_clusters", annotations=_tool_annotations("List Email Clusters"))
-async def email_clusters_tool() -> str:
-    """List all email clusters with sizes, representative subjects, and labels.
-
-    Clusters group similar emails together based on embedding similarity.
-    Requires clustering during ingestion.
-
-    Returns:
-        JSON list of cluster summaries.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.cluster_summary()
-    if not results:
-        return json.dumps({"error": "No clusters available. Run ingestion with --cluster."})
-    return json.dumps(results, indent=2)
-
-
-@mcp.tool(name="email_find_similar", annotations=_tool_annotations("Find Similar Emails"))
-async def email_find_similar(params: FindSimilarInput) -> str:
-    """Find emails most similar to a given email or query text.
-
-    Provide either uid (to find emails similar to a specific email) or
-    query (to find emails similar to a text description).
-
-    Args:
-        params: uid or query, top_k.
-
-    Returns:
-        JSON list of similar emails with similarity scores.
-    """
-    if not params.uid and not params.query:
-        return json.dumps({"error": "Provide either uid or query."})
-
-    retriever = get_retriever()
-    if params.query:
-        results = retriever.search(params.query, top_k=params.top_k)
-        return sanitize_untrusted_text(retriever.format_results_for_claude(results))
-
-    return json.dumps({"error": "UID-based similarity requires embeddings. Use query instead."})
-
-
-@mcp.tool(name="email_cluster_emails", annotations=_tool_annotations("Emails in Cluster"))
-async def email_cluster_emails(params: ClusterEmailsInput) -> str:
-    """Get emails in a specific cluster, sorted by proximity to centroid.
-
-    Args:
-        params: cluster_id (int), limit (int).
-
-    Returns:
-        JSON list of emails in the cluster.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.emails_in_cluster(params.cluster_id, limit=params.limit)
-    return json.dumps(results, indent=2)
-
-
-# ── Keyword & Topic Tools ────────────────────────────────────
-
-
-@mcp.tool(name="email_topics", annotations=_tool_annotations("List Discovered Topics"))
-async def email_topics() -> str:
-    """List all discovered topics with labels, top words, and email counts.
-
-    Topics are discovered via NMF topic modeling during ingestion.
-    Each topic has an auto-generated label from its top words.
-
-    Returns:
-        JSON list of {id, label, top_words, email_count} entries.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.topic_distribution()
-    if not results:
-        return json.dumps({"error": "No topics available. Run ingestion with --extract-keywords."})
-    return json.dumps(results, indent=2)
-
-
-@mcp.tool(name="email_search_by_topic", annotations=_tool_annotations("Search Emails by Topic"))
-async def email_search_by_topic(params: SearchByTopicInput) -> str:
-    """Find emails assigned to a specific topic, ranked by relevance.
-
-    Args:
-        params: topic_id (int) - ID from email_topics, limit (int).
-
-    Returns:
-        JSON list of emails with topic weight.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.emails_by_topic(params.topic_id, limit=params.limit)
-    return json.dumps(results, indent=2)
-
-
-@mcp.tool(name="email_keywords", annotations=_tool_annotations("Top Keywords"))
-async def email_keywords(params: TopKeywordsInput) -> str:
-    """Top keywords across the archive or filtered by sender/folder.
-
-    Keywords are extracted via TF-IDF during ingestion.
-
-    Args:
-        params: sender (optional), folder (optional), limit (int).
-
-    Returns:
-        JSON list of {keyword, avg_score, email_count} entries.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    results = db.top_keywords(sender=params.sender, folder=params.folder, limit=params.limit)
-    if not results:
-        return json.dumps({"error": "No keywords available. Run ingestion with --extract-keywords."})
-    return json.dumps(results, indent=2)
-
-
-# ── Query Suggestions ─────────────────────────────────────────
-
-
-@mcp.tool(name="email_query_suggestions", annotations=_tool_annotations("Query Suggestions"))
-async def email_query_suggestions(params: QuerySuggestionsInput) -> str:
-    """Get search suggestions based on indexed email data.
-
-    Returns categorized suggestions including top senders, folders,
-    and entities to help discover relevant search queries.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .query_suggestions import QuerySuggester
-
-    suggester = QuerySuggester(db)
-    result = suggester.suggest(limit=params.limit)
-    return json.dumps(result, indent=2)
-
-
-# ── Data Intelligence Tools ───────────────────────────────────
-
-
-@mcp.tool(name="email_find_duplicates", annotations=_tool_annotations("Find Duplicate Emails"))
-async def email_find_duplicates(params: FindDuplicatesInput) -> str:
-    """Find near-duplicate emails using character n-gram similarity."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .dedup_detector import DuplicateDetector
-
-    detector = DuplicateDetector(db, threshold=params.threshold)
-    duplicates = detector.find_duplicates(limit=params.limit)
-    return json.dumps({"count": len(duplicates), "duplicates": duplicates}, indent=2)
-
-
-@mcp.tool(name="email_language_stats", annotations=_tool_annotations("Email Language Statistics"))
-async def email_language_stats() -> str:
-    """Get language distribution across all indexed emails."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-
-    # Query detected_language if available
+    # Check if retriever has a built sparse index
     try:
-        rows = db.conn.execute(
-            """
-            SELECT detected_language, COUNT(*) as cnt
-            FROM emails
-            WHERE detected_language IS NOT NULL AND detected_language != ''
-            GROUP BY detected_language
-            ORDER BY cnt DESC
-            """
-        ).fetchall()
-        if rows:
-            stats = [{"language": row["detected_language"], "count": row["cnt"]} for row in rows]
-            return json.dumps({"languages": stats}, indent=2)
-    except Exception:
+        retriever = get_retriever()
+        sparse_idx = getattr(retriever, "_sparse_index", None)
+        if sparse_idx:
+            status["index_built"] = getattr(sparse_idx, "_built", False)
+    except Exception:  # noqa: BLE001
         pass
-    return json.dumps({"error": "No language data available. Re-ingest with language detection enabled."})
 
-
-@mcp.tool(name="email_sentiment_overview", annotations=_tool_annotations("Email Sentiment Overview"))
-async def email_sentiment_overview() -> str:
-    """Get sentiment distribution across indexed emails."""
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-
-    try:
-        rows = db.conn.execute(
-            """
-            SELECT sentiment_label, COUNT(*) as cnt,
-                   ROUND(AVG(sentiment_score), 4) as avg_score
-            FROM emails
-            WHERE sentiment_label IS NOT NULL AND sentiment_label != ''
-            GROUP BY sentiment_label
-            ORDER BY cnt DESC
-            """
-        ).fetchall()
-        if rows:
-            stats = [
-                {"sentiment": row["sentiment_label"], "count": row["cnt"], "avg_score": row["avg_score"]}
-                for row in rows
-            ]
-            return json.dumps({"sentiments": stats}, indent=2)
-    except Exception:
-        pass
-    return json.dumps({"error": "No sentiment data available. Re-ingest with sentiment analysis enabled."})
-
-
-# ── Reporting & Export Tools ──────────────────────────────────
-
-
-@mcp.tool(
-    name="email_generate_report",
-    annotations=ToolAnnotations(
-        title="Generate Archive Report",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
-    ),
-)
-async def email_generate_report(params: GenerateReportInput) -> str:
-    """Generate a self-contained HTML report of the email archive.
-
-    The report includes: archive overview, top senders, folder distribution,
-    monthly volume, top entities, and response times.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .report_generator import ReportGenerator
-
-    generator = ReportGenerator(db)
-    generator.generate(title=params.title, output_path=params.output_path)
-    return json.dumps({"status": "ok", "output_path": params.output_path})
-
-
-@mcp.tool(
-    name="email_export_network",
-    annotations=ToolAnnotations(
-        title="Export Communication Network",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
-    ),
-)
-async def email_export_network(params: ExportNetworkInput) -> str:
-    """Export the communication network as GraphML for external visualization.
-
-    The GraphML format is supported by Gephi, Cytoscape, and other
-    network analysis tools.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-    from .network_analysis import CommunicationNetwork
-
-    net = CommunicationNetwork(db)
-    result = net.export_graphml(params.output_path)
-    return json.dumps(result, indent=2)
-
-
-# ── Writing Analysis Tools ────────────────────────────────────
-
-
-@mcp.tool(
-    name="email_writing_analysis",
-    annotations=_tool_annotations("Writing Style Analysis"),
-)
-async def email_writing_analysis(params: WritingAnalysisInput) -> str:
-    """Analyze writing style and readability across senders.
-
-    Computes metrics like readability score, average sentence length,
-    vocabulary richness, and formality for each sender's emails.
-
-    If a specific sender is given, returns their detailed profile.
-    If omitted, compares the top senders by volume.
-
-    Args:
-        params: sender (optional str), limit (int).
-
-    Returns:
-        JSON with writing style metrics per sender.
-    """
-    from .writing_analyzer import WritingAnalyzer
-
-    retriever = get_retriever()
-    db = get_email_db()
-    analyzer = WritingAnalyzer()
-
-    def _get_sender_texts(sender_filter: str, max_texts: int = 50) -> list[str]:
-        """Get email texts for a sender via semantic search."""
-        try:
-            results = retriever.search_filtered(
-                query="*", top_k=max_texts, sender=sender_filter,
-            )
-            return [r.text for r in results if r.text]
-        except Exception:
-            return []
-
-    if params.sender:
-        texts = _get_sender_texts(params.sender, max_texts=params.limit)
-        if not texts:
-            return json.dumps(
-                {"error": f"No emails found for sender: {params.sender}"}
-            )
-        profile = analyzer.analyze_sender_profile(texts, params.sender)
-        if not profile:
-            return json.dumps(
-                {"error": f"Not enough content to analyze: {params.sender}"}
-            )
-        return json.dumps(profile, indent=2)
-
-    # Compare top senders
-    if not db:
-        return json.dumps({"error": "SQLite database not available."})
-
-    try:
-        senders = db.top_senders(limit=params.limit)
-    except Exception:
-        return json.dumps({"error": "Could not fetch sender list."})
-
-    profiles = []
-    for s in senders:
-        email_addr = s.get("sender_email", "")
-        if not email_addr:
-            continue
-        texts = _get_sender_texts(email_addr, max_texts=30)
-        profile = analyzer.analyze_sender_profile(texts, email_addr)
-        if profile:
-            profiles.append(profile)
-
-    return json.dumps(profiles, indent=2)
-
-
-# ── Export & Browse ────────────────────────────────────────────
-
-
-@mcp.tool(
-    name="email_export_thread",
-    annotations=_tool_annotations("Export Thread as HTML/PDF"),
-)
-async def email_export_thread(params: ExportThreadInput) -> str:
-    """Export a conversation thread as formatted HTML/PDF.
-
-    Produces a mail-client-style printout with full headers (From, To, CC,
-    BCC, Date, Subject), body text, and attachment listings for every email
-    in the thread.
-
-    Args:
-        params: conversation_id, optional output_path, format ('html'/'pdf').
-
-    Returns:
-        JSON with output_path/html content, email_count, and subject.
-    """
-    from .email_exporter import EmailExporter
-
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-
-    exporter = EmailExporter(db)
-    if params.output_path:
-        result = exporter.export_thread_file(
-            params.conversation_id, params.output_path, fmt=params.format
-        )
-    else:
-        result = exporter.export_thread_html(params.conversation_id)
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool(
-    name="email_export_single",
-    annotations=_tool_annotations("Export Single Email as HTML/PDF"),
-)
-async def email_export_single(params: ExportSingleInput) -> str:
-    """Export a single email as formatted HTML/PDF.
-
-    Args:
-        params: uid, optional output_path, format ('html'/'pdf').
-
-    Returns:
-        JSON with output_path/html content, email_count, and subject.
-    """
-    from .email_exporter import EmailExporter
-
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-
-    exporter = EmailExporter(db)
-    if params.output_path:
-        result = exporter.export_single_file(
-            params.uid, params.output_path, fmt=params.format
-        )
-    else:
-        result = exporter.export_single_html(params.uid)
-    return json.dumps(result, indent=2)
-
-
-@mcp.tool(
-    name="email_browse",
-    annotations=_tool_annotations("Browse Emails Sequentially"),
-)
-async def email_browse(params: BrowseInput) -> str:
-    """Browse emails sequentially in pages for systematic review.
-
-    Returns a page of emails with full body text, ordered by date.
-    Use offset/limit for pagination. Optionally filter by folder or sender.
-
-    Args:
-        params: offset, limit, folder, sender, sort_order, include_body.
-
-    Returns:
-        JSON with emails list, total count, offset, and limit.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-
-    page = db.list_emails_paginated(
-        offset=params.offset,
-        limit=params.limit,
-        folder=params.folder,
-        sender=params.sender,
-        sort_order=params.sort_order.upper(),
-    )
-
-    if params.include_body:
-        for email in page["emails"]:
-            full = db.get_email_full(email["uid"])
-            if full:
-                email["body_text"] = full.get("body_text", "")
-
-    return json.dumps(page, indent=2)
-
-
-@mcp.tool(
-    name="email_get_full",
-    annotations=_tool_annotations("Get Full Email"),
-)
-async def email_get_full(params: GetFullEmailInput) -> str:
-    """Get a single email with its complete body text.
-
-    Use this after finding an email via search to read its full content,
-    including all headers, recipients, and the complete body.
-
-    Args:
-        params: uid — the email UID from search results.
-
-    Returns:
-        JSON with full email data including body_text and body_html.
-    """
-    db = get_email_db()
-    if not db:
-        return _DB_UNAVAILABLE
-
-    email = db.get_email_full(params.uid)
-    if not email:
-        return json.dumps({"error": f"Email not found: {params.uid}"})
-
-    return json.dumps(email, indent=2)
-
-
-# ── Body Re-ingestion ──────────────────────────────────────────
-
-
-@mcp.tool(
-    name="email_reingest_bodies",
-    annotations=_tool_annotations("Re-ingest Email Bodies"),
-)
-async def email_reingest_bodies(params: ReingestBodiesInput) -> str:
-    """Re-parse OLM to backfill body_text/body_html for existing SQLite rows.
-
-    Required after upgrading from an older database that did not store
-    full email bodies. Re-reads the OLM file and updates rows where
-    body_text is NULL.
-
-    Args:
-        params: olm_path (str) — path to the .olm file.
-
-    Returns:
-        JSON with update count and status message.
-    """
-    from .ingest import reingest_bodies
-
-    try:
-        result = reingest_bodies(params.olm_path)
-        return json.dumps(result, indent=2)
-    except FileNotFoundError:
-        return json.dumps({"error": f"OLM file not found: {params.olm_path}"})
-    except Exception as exc:
-        return json.dumps({"error": str(exc)})
+    return json.dumps(status, indent=2)
 
 
 # ── Entry Point ────────────────────────────────────────────────

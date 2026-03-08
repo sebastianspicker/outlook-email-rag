@@ -227,3 +227,49 @@ def test_format_ingestion_summary_for_dry_run_hides_db_totals():
     assert "Database write disabled (dry-run)." in lines
     assert not any(line.startswith("Chunks added:") for line in lines)
     assert not any(line.startswith("Total in DB:") for line in lines)
+
+
+def test_ingest_embed_images_enables_extract_attachments(monkeypatch):
+    """embed_images=True should auto-enable extract_attachments."""
+    import src.ingest as ingest_mod
+
+    class _Email:
+        def __init__(self, idx):
+            self.idx = idx
+            self.uid = f"uid-{idx}"
+            self.attachment_contents = []
+
+        def to_dict(self):
+            return {"id": self.idx, "uid": self.uid}
+
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **kw: [_Email(1)])
+    monkeypatch.setattr(
+        ingest_mod,
+        "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+
+    # When embed_images=True, dry_run works without needing the embedder
+    stats = ingest_mod.ingest("data/mock.olm", dry_run=True, embed_images=True)
+    assert stats["extract_attachments"] is True
+    assert stats["image_embeddings"] == 0
+
+
+def test_ingest_embed_images_param_accepted(monkeypatch):
+    """Verify embed_images param is accepted by ingest() function."""
+    import src.ingest as ingest_mod
+
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: [])
+
+    stats = ingest_mod.ingest("data/mock.olm", dry_run=True, embed_images=False)
+    assert stats["image_embeddings"] == 0
+
+
+def test_ingest_stats_include_image_embeddings(monkeypatch):
+    """Verify image_embeddings key exists in ingestion stats."""
+    import src.ingest as ingest_mod
+
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: [])
+
+    stats = ingest_mod.ingest("data/mock.olm", dry_run=True)
+    assert "image_embeddings" in stats

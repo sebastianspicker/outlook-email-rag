@@ -5,14 +5,16 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("EMBEDDING_MODEL", raising=False)
     monkeypatch.delenv("COLLECTION_NAME", raising=False)
     monkeypatch.delenv("TOP_K", raising=False)
+    monkeypatch.delenv("DEVICE", raising=False)
 
     from src.config import Settings
 
     settings = Settings.from_env()
     assert settings.chromadb_path == "data/chromadb"
-    assert settings.embedding_model == "all-MiniLM-L6-v2"
+    assert settings.embedding_model == "BAAI/bge-m3"
     assert settings.collection_name == "emails"
     assert settings.top_k == 10
+    assert settings.device == "auto"
 
 
 def test_settings_top_k_rejects_invalid_env(monkeypatch):
@@ -42,7 +44,7 @@ def test_resolve_runtime_settings_uses_defaults(monkeypatch):
 
     settings = resolve_runtime_settings()
     assert settings.chromadb_path == "data/chromadb"
-    assert settings.embedding_model == "all-MiniLM-L6-v2"
+    assert settings.embedding_model == "BAAI/bge-m3"
     assert settings.collection_name == "emails"
 
 
@@ -57,6 +59,89 @@ def test_resolve_runtime_settings_applies_overrides():
     assert settings.chromadb_path == "/tmp/db"
     assert settings.embedding_model == "mini-test-model"
     assert settings.collection_name == "mail-test"
+
+
+def test_settings_device_from_env(monkeypatch):
+    monkeypatch.setenv("DEVICE", "cpu")
+
+    from src.config import Settings
+
+    settings = Settings.from_env()
+    assert settings.device == "cpu"
+
+
+# --- resolve_device tests ---
+
+
+def test_resolve_device_explicit_passthrough():
+    from src.config import resolve_device
+
+    assert resolve_device("cpu") == "cpu"
+    assert resolve_device("mps") == "mps"
+    assert resolve_device("cuda") == "cuda"
+
+
+def test_resolve_device_auto_mps(monkeypatch):
+    """resolve_device('auto') should return 'mps' when MPS is available."""
+    import types
+
+    mock_torch = types.ModuleType("torch")
+    mock_backends = types.ModuleType("torch.backends")
+    mock_mps = types.SimpleNamespace(is_available=lambda: True)
+    mock_backends.mps = mock_mps
+    mock_torch.backends = mock_backends
+    mock_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", mock_torch)
+
+    from src.config import resolve_device
+
+    assert resolve_device("auto") == "mps"
+
+
+def test_resolve_device_auto_cuda(monkeypatch):
+    """resolve_device('auto') should return 'cuda' when only CUDA is available."""
+    import types
+
+    mock_torch = types.ModuleType("torch")
+    mock_backends = types.ModuleType("torch.backends")
+    mock_mps = types.SimpleNamespace(is_available=lambda: False)
+    mock_backends.mps = mock_mps
+    mock_torch.backends = mock_backends
+    mock_torch.cuda = types.SimpleNamespace(is_available=lambda: True)
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", mock_torch)
+
+    from src.config import resolve_device
+
+    assert resolve_device("auto") == "cuda"
+
+
+def test_resolve_device_auto_cpu_fallback(monkeypatch):
+    """resolve_device('auto') should fall back to 'cpu' when nothing is available."""
+    import types
+
+    mock_torch = types.ModuleType("torch")
+    mock_backends = types.ModuleType("torch.backends")
+    mock_mps = types.SimpleNamespace(is_available=lambda: False)
+    mock_backends.mps = mock_mps
+    mock_torch.backends = mock_backends
+    mock_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+
+    monkeypatch.setitem(__import__("sys").modules, "torch", mock_torch)
+
+    from src.config import resolve_device
+
+    assert resolve_device("auto") == "cpu"
+
+
+def test_resolve_device_auto_no_torch(monkeypatch):
+    """resolve_device('auto') should return 'cpu' when torch is not installed."""
+    monkeypatch.setitem(__import__("sys").modules, "torch", None)
+
+    from src.config import resolve_device
+
+    assert resolve_device("auto") == "cpu"
 
 
 def test_iter_collection_ids_returns_all_pages():

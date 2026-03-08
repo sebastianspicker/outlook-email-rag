@@ -235,34 +235,34 @@ class TestKeywordTopicSQLite:
 
 class TestMCPTopicTools:
     def test_topics_tool_importable(self):
-        from src.mcp_server import email_topics
+        from src.tools import topics
 
-        assert callable(email_topics)
+        assert callable(topics.register)
 
     def test_search_by_topic_tool_importable(self):
-        from src.mcp_server import email_search_by_topic
+        from src.tools import topics
 
-        assert callable(email_search_by_topic)
+        assert callable(topics.register)
 
     def test_keywords_tool_importable(self):
-        from src.mcp_server import email_keywords
+        from src.tools import topics
 
-        assert callable(email_keywords)
+        assert callable(topics.register)
 
     def test_search_by_topic_input(self):
-        from src.mcp_server import SearchByTopicInput
+        from src.mcp_models import SearchByTopicInput
 
         inp = SearchByTopicInput(topic_id=3, limit=10)
         assert inp.topic_id == 3
 
     def test_top_keywords_input(self):
-        from src.mcp_server import TopKeywordsInput
+        from src.mcp_models import TopKeywordsInput
 
         inp = TopKeywordsInput(sender="alice@co.com", folder="Inbox", limit=20)
         assert inp.sender == "alice@co.com"
 
     def test_top_keywords_input_defaults(self):
-        from src.mcp_server import TopKeywordsInput
+        from src.mcp_models import TopKeywordsInput
 
         inp = TopKeywordsInput()
         assert inp.sender is None

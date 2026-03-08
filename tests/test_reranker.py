@@ -99,7 +99,7 @@ def test_rerank_negative_score():
 
 def test_reranker_default_model_name():
     reranker = CrossEncoderReranker()
-    assert "cross-encoder" in reranker.model_name
+    assert "bge-reranker" in reranker.model_name
 
 
 def test_reranker_custom_model_name():

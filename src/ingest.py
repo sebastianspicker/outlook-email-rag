@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
 import time
@@ -19,6 +20,15 @@ from .validation import positive_int as _shared_positive_int
 logger = logging.getLogger(__name__)
 
 
+def _hash_file_sha256(filepath: str) -> str:
+    """Compute SHA-256 hash of a file using streaming reads."""
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def ingest(
     olm_path: str,
     chromadb_path: str | None = None,
@@ -29,10 +39,15 @@ def ingest(
     extract_attachments: bool = False,
     extract_entities: bool = False,
     incremental: bool = False,
+    embed_images: bool = False,
 ) -> dict:
     """Parse an OLM file and ingest all emails into the vector database."""
     settings = get_settings()
     start_time = time.time()
+
+    # embed_images requires attachments to be extracted
+    if embed_images:
+        extract_attachments = True
 
     logger.info("Email RAG ingestion started")
     logger.info("Source: %s", olm_path)
@@ -92,16 +107,43 @@ def ingest(
 
         attachment_extractor = extract_text
 
-    # Record ingestion start
+    # Image embedder (optional, requires Visualized-BGE-M3 weights)
+    image_embedder_fn = None
+    if embed_images and not dry_run:
+        from .attachment_extractor import extract_image_embedding, is_image_attachment
+
+        image_embedder_fn = extract_image_embedding
+        # Test availability up front to log a warning
+        from .image_embedder import ImageEmbedder
+
+        probe = ImageEmbedder()
+        if not probe.is_available:
+            logger.warning(
+                "Image embedding requested but Visualized-BGE weights not found. "
+                "Image attachments will be skipped."
+            )
+            image_embedder_fn = None
+
+    # Record ingestion start with OLM file hash for chain of custody
     ingestion_run_id = None
+    olm_sha256 = None
+    olm_file_size = None
     if email_db:
-        ingestion_run_id = email_db.record_ingestion_start(olm_path)
+        if os.path.isfile(olm_path):
+            olm_sha256 = _hash_file_sha256(olm_path)
+            olm_file_size = os.path.getsize(olm_path)
+        ingestion_run_id = email_db.record_ingestion_start(
+            olm_path,
+            olm_sha256=olm_sha256,
+            file_size_bytes=olm_file_size,
+        )
 
     total_emails = 0
     total_chunks_created = 0
     total_chunks_added = 0
     total_batches_written = 0
     total_attachment_chunks = 0
+    total_image_embeddings = 0
     total_skipped_incremental = 0
     sqlite_inserted = 0
     pending_chunks = []
@@ -127,6 +169,30 @@ def ingest(
         # Process attachment contents if enabled
         if attachment_extractor and email.attachment_contents:
             for att_name, att_bytes in email.attachment_contents:
+                # Image embedding (separate path from text extraction)
+                if image_embedder_fn and is_image_attachment(att_name):
+                    img_embedding = image_embedder_fn(att_name, att_bytes)
+                    if img_embedding and embedder:
+                        img_chunk = {
+                            "chunk_id": f"{email.uid}::img::{att_name}",
+                            "text": f"[Image attachment: {att_name}]",
+                            "embedding": img_embedding,
+                            "metadata": {
+                                "uid": email.uid,
+                                "subject": email_dict.get("subject", ""),
+                                "sender_name": email_dict.get("sender_name", ""),
+                                "sender_email": email_dict.get("sender_email", ""),
+                                "date": email_dict.get("date", ""),
+                                "folder": email_dict.get("folder", ""),
+                                "chunk_type": "image",
+                                "filename": att_name,
+                            },
+                        }
+                        pending_chunks.append(img_chunk)
+                        total_chunks_created += 1
+                        total_image_embeddings += 1
+                    continue
+
                 att_text = attachment_extractor(att_name, att_bytes)
                 if att_text:
                     att_chunks = chunk_attachment(
@@ -192,6 +258,7 @@ def ingest(
         "emails_parsed": total_emails,
         "chunks_created": total_chunks_created,
         "attachment_chunks": total_attachment_chunks,
+        "image_embeddings": total_image_embeddings,
         "chunks_added": total_chunks_added,
         "chunks_skipped": (total_chunks_created - total_chunks_added) if embedder else 0,
         "batches_written": total_batches_written,
@@ -244,6 +311,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--extract-attachments",
         action="store_true",
         help="Extract and index text content from attachments (PDF, DOCX, XLSX, text).",
+    )
+    parser.add_argument(
+        "--embed-images",
+        action="store_true",
+        help="Embed image attachments (JPG, PNG, etc.) using Visualized-BGE-M3.",
     )
     parser.add_argument(
         "--extract-entities",
@@ -308,6 +380,7 @@ def main(argv: list[str] | None = None) -> None:
             extract_attachments=args.extract_attachments,
             extract_entities=args.extract_entities,
             incremental=args.incremental,
+            embed_images=args.embed_images,
         )
     except FileNotFoundError as exc:
         print(str(exc))

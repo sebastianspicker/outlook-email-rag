@@ -95,19 +95,19 @@ class TestQueryExpander:
 
 class TestMCPSmartSearch:
     def test_smart_search_tool_importable(self):
-        from src.mcp_server import email_smart_search
+        from src.tools import threads  # email_smart_search lives in threads module
 
-        assert callable(email_smart_search)
+        assert callable(threads.register)
 
     def test_smart_search_input(self):
-        from src.mcp_server import SmartSearchInput
+        from src.mcp_models import SmartSearchInput
 
         inp = SmartSearchInput(query="budget discussion", top_k=5)
         assert inp.query == "budget discussion"
         assert inp.top_k == 5
 
     def test_structured_search_has_topic_id(self):
-        from src.mcp_server import EmailSearchStructuredInput
+        from src.mcp_models import EmailSearchStructuredInput
 
         inp = EmailSearchStructuredInput(
             query="test", topic_id=3, cluster_id=5, expand_query=True
@@ -117,7 +117,7 @@ class TestMCPSmartSearch:
         assert inp.expand_query is True
 
     def test_structured_search_defaults(self):
-        from src.mcp_server import EmailSearchStructuredInput
+        from src.mcp_models import EmailSearchStructuredInput
 
         inp = EmailSearchStructuredInput(query="test")
         assert inp.topic_id is None

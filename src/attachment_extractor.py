@@ -6,6 +6,7 @@ Supported formats:
 - PDF: .pdf (requires PyPDF2, optional)
 - Word: .docx (requires python-docx, optional)
 - Excel: .xlsx (requires openpyxl, optional)
+- Images: .jpg, .png, .bmp, .tiff, .webp (via ImageEmbedder, optional)
 
 Unsupported/binary formats return None.
 """
@@ -13,6 +14,8 @@ Unsupported/binary formats return None.
 from __future__ import annotations
 
 import logging
+
+from .image_embedder import _IMAGE_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +29,45 @@ _TEXT_EXTENSIONS = frozenset({
 _SKIP_EXTENSIONS = frozenset({
     ".eml", ".msg", ".zip", ".gz", ".tar", ".rar", ".7z",
     ".exe", ".dll", ".bin", ".dat", ".iso",
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".ico", ".svg", ".webp",
+    ".gif", ".ico", ".svg",
     ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv", ".flac",
     ".pptx", ".ppt",
 })
+
+
+def is_image_attachment(filename: str) -> bool:
+    """Check if a filename is a supported image format for embedding."""
+    if not filename:
+        return False
+    return _get_extension(filename) in _IMAGE_EXTENSIONS
+
+
+def extract_image_embedding(filename: str, content: bytes) -> list[float] | None:
+    """Encode an image attachment into a 1024-d embedding vector.
+
+    Requires Visualized-BGE-M3 (FlagEmbedding + weight file).
+    Returns None if not available or encoding fails.
+
+    Args:
+        filename: The attachment filename.
+        content: The raw image bytes.
+
+    Returns:
+        1024-d embedding list, or None.
+    """
+    if not is_image_attachment(filename) or not content:
+        return None
+
+    try:
+        from .image_embedder import ImageEmbedder
+
+        embedder = ImageEmbedder()
+        if not embedder.is_available:
+            return None
+        return embedder.encode_image(content)
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to encode image attachment: %s", filename, exc_info=True)
+        return None
 
 
 def extract_text(filename: str, content: bytes) -> str | None:
@@ -47,7 +85,7 @@ def extract_text(filename: str, content: bytes) -> str | None:
 
     ext = _get_extension(filename)
 
-    if ext in _SKIP_EXTENSIONS:
+    if ext in _SKIP_EXTENSIONS or ext in _IMAGE_EXTENSIONS:
         return None
 
     if ext in _TEXT_EXTENSIONS:

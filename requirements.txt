@@ -23,6 +23,9 @@ jinja2>=3.0.0
 spacy>=3.7.0
 textstat>=0.7.0
 
+# Multi-vector retrieval (optional — falls back to SentenceTransformer dense-only)
+# FlagEmbedding>=1.3.0
+
 # PDF export (optional — exporter falls back to HTML without it)
 # weasyprint>=62.0
 

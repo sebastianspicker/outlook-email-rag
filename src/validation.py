@@ -33,3 +33,11 @@ def positive_int(value: str) -> int:
     if parsed <= 0:
         raise ValueError("Value must be a positive integer.")
     return parsed
+
+
+def score_float(value: str) -> float:
+    """Parse and return a float bounded to [0.0, 1.0]."""
+    parsed = float(value)
+    if not (0.0 <= parsed <= 1.0):
+        raise ValueError("Value must be between 0.0 and 1.0.")
+    return parsed
