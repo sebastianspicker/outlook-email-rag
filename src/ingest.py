@@ -29,6 +29,41 @@ def _hash_file_sha256(filepath: str) -> str:
     return h.hexdigest()
 
 
+_SPACY_MODELS = ["en_core_web_sm", "de_core_news_sm"]
+
+
+def _auto_download_spacy_models() -> None:
+    """Download spaCy language models if not already installed."""
+    if os.environ.get("SPACY_AUTO_DOWNLOAD", "1") == "0":
+        logger.debug("spaCy auto-download disabled via SPACY_AUTO_DOWNLOAD=0")
+        return
+
+    try:
+        import spacy  # noqa: F811
+    except ImportError:
+        logger.debug("spaCy not installed, skipping model download")
+        return
+
+    import subprocess
+    import sys
+
+    for model_name in _SPACY_MODELS:
+        try:
+            spacy.load(model_name)
+            logger.debug("spaCy model already installed: %s", model_name)
+        except OSError:
+            logger.info("Downloading spaCy model: %s ...", model_name)
+            try:
+                subprocess.check_call(
+                    [sys.executable, "-m", "spacy", "download", model_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info("spaCy model installed: %s", model_name)
+            except subprocess.CalledProcessError:
+                logger.warning("Failed to download spaCy model: %s", model_name)
+
+
 def ingest(
     olm_path: str,
     chromadb_path: str | None = None,
@@ -87,6 +122,13 @@ def ingest(
         try:
             from .nlp_entity_extractor import extract_nlp_entities, is_spacy_available
 
+            if not is_spacy_available():
+                _auto_download_spacy_models()
+                # Re-check after download attempt
+                from .nlp_entity_extractor import reset_model_cache
+
+                reset_model_cache()
+
             if is_spacy_available():
                 entity_extractor_fn = extract_nlp_entities
                 logger.info("Entity extraction: spaCy NLP + regex (enhanced)")
@@ -94,7 +136,7 @@ def ingest(
                 from .entity_extractor import extract_entities as _extract_entities
 
                 entity_extractor_fn = _extract_entities
-                logger.info("Entity extraction: regex-only (spaCy not available)")
+                logger.info("Entity extraction: regex-only (spaCy models not available)")
         except ImportError:
             from .entity_extractor import extract_entities as _extract_entities
 

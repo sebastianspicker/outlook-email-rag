@@ -37,7 +37,7 @@ def _setup_module_with_fake_nlp():
     import src.nlp_entity_extractor as mod
 
     mod.reset_model_cache()
-    mod._nlp_model = _fake_nlp
+    mod._nlp_models["en"] = _fake_nlp
     mod._nlp_load_attempted = True
     return mod
 
@@ -107,7 +107,7 @@ class TestExtractSpacyEntities:
                 _FakeEnt("JOHN SMITH", "PERSON"),
             ])
 
-        mod._nlp_model = _dup_nlp
+        mod._nlp_models["en"] = _dup_nlp
         entities = mod.extract_spacy_entities("John Smith John Smith")
         people = [e for e in entities if e.entity_type == "person"]
         assert len(people) == 1
@@ -121,7 +121,7 @@ class TestExtractSpacyEntities:
                 _FakeEnt("Prof. Johnson", "PERSON"),
             ])
 
-        mod._nlp_model = _title_nlp
+        mod._nlp_models["en"] = _title_nlp
         entities = mod.extract_spacy_entities("Dr. Mueller and Prof. Johnson")
         people = [e for e in entities if e.entity_type == "person"]
         assert len(people) == 2
@@ -139,7 +139,7 @@ class TestFallbackToRegex:
         import src.nlp_entity_extractor as mod
 
         mod.reset_model_cache()
-        mod._nlp_model = None
+        mod._nlp_models.clear()
         mod._nlp_load_attempted = True
 
         entities = mod.extract_nlp_entities(
@@ -154,7 +154,7 @@ class TestFallbackToRegex:
         import src.nlp_entity_extractor as mod
 
         mod.reset_model_cache()
-        mod._nlp_model = None
+        mod._nlp_models.clear()
         mod._nlp_load_attempted = True
 
         entities = mod.extract_nlp_entities(
@@ -167,7 +167,7 @@ class TestFallbackToRegex:
         import src.nlp_entity_extractor as mod
 
         mod.reset_model_cache()
-        mod._nlp_model = None
+        mod._nlp_models.clear()
         mod._nlp_load_attempted = True
         assert mod.is_spacy_available() is False
 
@@ -210,7 +210,7 @@ class TestMergeSpacyAndRegex:
                 _FakeEnt("acme-corp.com", "ORG"),
             ])
 
-        mod._nlp_model = _overlap_nlp
+        mod._nlp_models["en"] = _overlap_nlp
         entities = mod.extract_nlp_entities(
             "Hello", sender_email="john@acme-corp.com"
         )

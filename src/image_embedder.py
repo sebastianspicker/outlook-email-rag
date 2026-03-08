@@ -6,7 +6,7 @@ text queries can find relevant image attachments and vice versa.
 
 Requirements:
 - FlagEmbedding >= 1.3.0 with visual support
-- Weight file: Visualized_m3.pth (~2.3 GB, downloaded separately)
+- Weight file: Visualized_m3.pth (~2.3 GB, auto-downloaded on first use)
 
 When Visualized-BGE is not available, falls back gracefully to None.
 """
@@ -14,6 +14,7 @@ When Visualized-BGE is not available, falls back gracefully to None.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,10 @@ _WEIGHT_SEARCH_PATHS = [
     Path("models/Visualized_m3.pth"),
     Path.home() / ".cache" / "bge-visualized" / "Visualized_m3.pth",
 ]
+
+# HuggingFace Hub repo and filename for auto-download
+_HF_REPO_ID = "BAAI/bge-visualized"
+_HF_FILENAME = "Visualized_m3.pth"
 
 
 def is_image_file(filename: str) -> bool:
@@ -107,7 +112,7 @@ class ImageEmbedder:
         return [self.encode_image(img) for img in images]
 
     def _resolve_weight_path(self, explicit_path: str | None) -> str | None:
-        """Find the Visualized-BGE weight file."""
+        """Find or auto-download the Visualized-BGE weight file."""
         if explicit_path:
             p = Path(explicit_path)
             if p.exists():
@@ -120,12 +125,52 @@ class ImageEmbedder:
                 logger.info("Found Visualized-BGE weights: %s", candidate)
                 return str(candidate)
 
+        # Auto-download if not disabled
+        if os.environ.get("IMAGE_EMBED_AUTO_DOWNLOAD", "1") == "0":
+            logger.info(
+                "Visualized-BGE weight file not found and auto-download disabled. "
+                "Set IMAGE_EMBED_AUTO_DOWNLOAD=1 or download manually to: %s",
+                _WEIGHT_SEARCH_PATHS[0],
+            )
+            return None
+
+        return self._auto_download()
+
+    def _auto_download(self) -> str | None:
+        """Download Visualized_m3.pth from HuggingFace Hub."""
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError:
+            logger.info(
+                "huggingface_hub not installed — cannot auto-download Visualized-BGE weights. "
+                "Install it or download manually to: %s",
+                _WEIGHT_SEARCH_PATHS[0],
+            )
+            return None
+
+        target_dir = _WEIGHT_SEARCH_PATHS[1].parent  # ~/.cache/bge-visualized/
         logger.info(
-            "Visualized-BGE weight file not found. Image embedding disabled. "
-            "Download from HuggingFace and place at: %s",
-            _WEIGHT_SEARCH_PATHS[0],
+            "Auto-downloading Visualized-BGE weights (~2.3 GB) from %s/%s ...",
+            _HF_REPO_ID,
+            _HF_FILENAME,
         )
-        return None
+        try:
+            downloaded = hf_hub_download(
+                repo_id=_HF_REPO_ID,
+                filename=_HF_FILENAME,
+                local_dir=str(target_dir),
+            )
+            logger.info("Visualized-BGE weights downloaded to: %s", downloaded)
+            return downloaded
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to download Visualized-BGE weights. "
+                "Download manually from https://huggingface.co/%s and place at: %s",
+                _HF_REPO_ID,
+                _WEIGHT_SEARCH_PATHS[0],
+                exc_info=True,
+            )
+            return None
 
     def _try_load(self, model_name: str) -> None:
         """Attempt to load the Visualized-BGE model."""
