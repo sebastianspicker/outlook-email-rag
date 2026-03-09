@@ -100,6 +100,7 @@ class _EmbedPipeline:
         if self._email_db and emails:
             t0 = time.monotonic()
             self.sqlite_inserted += self._email_db.insert_emails_batch(emails)
+            has_entities = False
             if self._entity_extractor_fn:
                 for em in emails:
                     entities = self._entity_extractor_fn(em.clean_body, em.sender_email)
@@ -107,12 +108,18 @@ class _EmbedPipeline:
                         self._email_db.insert_entities_batch(
                             em.uid,
                             [(e.text, e.entity_type, e.normalized_form) for e in entities],
+                            commit=False,
                         )
+                        has_entities = True
             # Insert Exchange-extracted entities (always available from XML)
             for em in emails:
                 exchange_entities = _exchange_entities_from_email(em)
                 if exchange_entities:
-                    self._email_db.insert_entities_batch(em.uid, exchange_entities)
+                    self._email_db.insert_entities_batch(em.uid, exchange_entities, commit=False)
+                    has_entities = True
+            # Single commit for all entity inserts in this batch
+            if has_entities:
+                self._email_db.conn.commit()
             dt_write = time.monotonic() - t0
             self.write_seconds += dt_write
 

@@ -165,6 +165,9 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     email_type = email_dict.get("email_type", "original")
     header = build_email_header(email_dict)
     subject = email_dict.get("subject", "")
+    sender_name = email_dict.get("sender_name", "")
+    sender_email = email_dict.get("sender_email", "")
+    date = email_dict.get("date", "")
 
     # Strip quoted content from replies/forwards
     body, quoted_lines = strip_quoted_content(body, email_type)
@@ -174,16 +177,23 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     body, had_signature = strip_signature(body)
     sig_note = "\n[Signature stripped]" if had_signature else ""
 
+    # Pre-compute joined strings once for metadata
+    to_str = ", ".join(email_dict.get("to", []))
+    cc_str = ", ".join(email_dict.get("cc", []))
+    bcc_str = ", ".join(email_dict.get("bcc", []))
+    att_names = email_dict.get("attachment_names", [])
+    att_names_str = ", ".join(att_names)
+
     # Metadata stored in ChromaDB (not embedded, but returned with results)
     base_metadata = {
         "uid": uid,
         "message_id": email_dict.get("message_id", ""),
         "subject": subject,
-        "sender_name": email_dict.get("sender_name", ""),
-        "sender_email": email_dict.get("sender_email", ""),
-        "to": ", ".join(email_dict.get("to", [])),
-        "cc": ", ".join(email_dict.get("cc", [])),
-        "date": email_dict.get("date", ""),
+        "sender_name": sender_name,
+        "sender_email": sender_email,
+        "to": to_str,
+        "cc": cc_str,
+        "date": date,
         "folder": email_dict.get("folder", ""),
         "has_attachments": str(email_dict.get("has_attachments", False)),
         "conversation_id": email_dict.get("conversation_id", ""),
@@ -191,9 +201,9 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         "email_type": email_type,
         "base_subject": email_dict.get("base_subject", ""),
         "priority": str(email_dict.get("priority", 0)),
-        "bcc": ", ".join(email_dict.get("bcc", [])),
-        "attachment_names": ", ".join(email_dict.get("attachment_names", [])),
-        "attachment_count": str(len(email_dict.get("attachment_names", []))),
+        "bcc": bcc_str,
+        "attachment_names": att_names_str,
+        "attachment_count": str(len(att_names)),
         "has_signature": str(had_signature),
         "categories": ", ".join(email_dict.get("categories", []) or []),
         "is_calendar_message": str(email_dict.get("is_calendar_message", False)),
@@ -207,8 +217,7 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     calendar_tag = "\n[Calendar/Meeting]" if email_dict.get("is_calendar_message") else ""
 
     # Embed attachment names in search text for semantic retrieval
-    attachment_names = email_dict.get("attachment_names", [])
-    attachment_line = f"\nAttachments: {', '.join(attachment_names)}" if attachment_names else ""
+    attachment_line = f"\nAttachments: {att_names_str}" if att_names else ""
 
     extra_lines = f"{calendar_tag}{categories_line}{attachment_line}"
 
@@ -235,9 +244,6 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         else:
             # Continuation chunks get context header for embedding quality
             context_parts = []
-            sender_name = email_dict.get("sender_name", "")
-            sender_email = email_dict.get("sender_email", "")
-            date = email_dict.get("date", "")
             if sender_name and sender_email:
                 context_parts.append(f"From: {sender_name} <{sender_email}>")
             elif sender_email:

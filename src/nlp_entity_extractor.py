@@ -27,6 +27,8 @@ _SPACY_SKIP_TYPES = frozenset({"DATE", "TIME", "CARDINAL", "ORDINAL", "QUANTITY"
 
 _nlp_models: dict[str, object] = {}
 _nlp_load_attempted = False
+_LANG_CACHE_MAX = 256
+_sender_lang_cache: dict[str, str | None] = {}
 
 # Models to try loading, in order. First match becomes the default.
 _SPACY_MODELS = {
@@ -167,13 +169,22 @@ def extract_nlp_entities(
     Returns:
         Deduplicated list of ExtractedEntity objects.
     """
-    # Auto-detect language if not provided
+    # Auto-detect language if not provided, with per-sender cache
     if lang is None and is_spacy_available():
-        from .language_detector import detect_language
+        cache_key = sender_email.lower().strip() if sender_email else None
+        if cache_key and cache_key in _sender_lang_cache:
+            lang = _sender_lang_cache[cache_key]
+        else:
+            from .language_detector import detect_language
 
-        lang = detect_language(text)
-        if lang == "unknown":
-            lang = None
+            lang = detect_language(text)
+            if lang == "unknown":
+                lang = None
+            if cache_key:
+                if len(_sender_lang_cache) >= _LANG_CACHE_MAX:
+                    # Evict oldest entry (first inserted)
+                    _sender_lang_cache.pop(next(iter(_sender_lang_cache)))
+                _sender_lang_cache[cache_key] = lang
 
     # Always get regex entities (URLs, phones, mentions, emails, org-from-domain)
     regex_entities = extract_entities(text, sender_email)
@@ -210,3 +221,4 @@ def reset_model_cache() -> None:
     global _nlp_load_attempted
     _nlp_models.clear()
     _nlp_load_attempted = False
+    _sender_lang_cache.clear()
