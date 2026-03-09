@@ -277,3 +277,29 @@ def test_generate_with_persons_of_interest(db):
     result = gen.generate(persons_of_interest=["sender1@test.com"])
 
     assert "sender1@test.com" in result["html"]
+
+
+# ── dotted conditionals in loops ─────────────────────────────
+
+
+def test_dotted_conditionals_in_loop(db):
+    """{% if email.to %} inside {% for %} should render when field is truthy."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # To field was populated via recipients table — should appear
+    assert "<strong>To:</strong>" in html
+    # Literal template tags should NOT survive
+    assert "{% if email.to %}" not in html
+
+
+def test_dotted_conditional_false_branch(db):
+    """{% if email.cc %} should not render CC line when cc is empty."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # CC was not populated in fixtures → CC line should be absent
+    assert "<strong>CC:</strong>" not in html
+    assert "{% if email.cc %}" not in html

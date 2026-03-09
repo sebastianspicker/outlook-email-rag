@@ -243,10 +243,14 @@ def _process_conditionals(template: str, variables: dict[str, Any]) -> str:
 
     # Handle {% if var %} ... {% else %} ... {% endif %}
     # and {% if var %} ... {% endif %}
-    # Match innermost conditionals first (bodies must not contain {% if WORD %},
-    # but allow {% if dotted.name %} which are loop-scoped and processed later)
+    # Match innermost conditionals first. Body must not contain {% if WORD %}
+    # (non-dotted), but CAN contain complete {% if x.y %}...{% endif %} blocks
+    # (dotted conditionals processed later inside loops).
+    dotted_block = r"\{%\s*if\s+\w+\.\w+\s*%\}.*?\{%\s*endif\s*%\}"
+    safe_char = r"(?!\{%\s*if\s+\w+\s*%\})."
+    body = f"(?:{dotted_block}|{safe_char})*?"
     pattern = re.compile(
-        r"\{%\s*if\s+(\w+)\s*%\}((?:(?!\{%\s*if\s+\w+\s*%\}).)*?)(?:\{%\s*else\s*%\}((?:(?!\{%\s*if\s+\w+\s*%\}).)*?))?\{%\s*endif\s*%\}",
+        r"\{%\s*if\s+(\w+)\s*%\}(" + body + r")(?:\{%\s*else\s*%\}(" + body + r"))?\{%\s*endif\s*%\}",
         re.DOTALL,
     )
 
@@ -326,6 +330,10 @@ def _process_loops(template: str, variables: dict[str, Any]) -> str:
                         escaped_val,
                     )
 
+            # Resolve {% if item_name.field %}...{% endif %} inside loop body
+            if isinstance(item, dict):
+                rendered = _resolve_dotted_conditionals(rendered, item_name, item)
+
             # Handle {{ item }} for simple values
             rendered = rendered.replace("{{ " + item_name + " }}", _escape_html(str(item)))
 
@@ -372,6 +380,10 @@ def _process_loops(template: str, variables: dict[str, Any]) -> str:
                                     "{{ " + f"{sub_item_name}.{sk}" + " }}",
                                     escaped_sv,
                                 )
+                        if isinstance(sub_item, dict):
+                            sub_rendered = _resolve_dotted_conditionals(
+                                sub_rendered, sub_item_name, sub_item,
+                            )
                         is_sub_last = sub_idx == len(sub_items) - 1
                         sub_rendered = re.sub(
                             r"\{%\s*if\s+not\s+loop\.last\s*%\}(.*?)\{%\s*endif\s*%\}",
@@ -396,6 +408,35 @@ def _process_loops(template: str, variables: dict[str, Any]) -> str:
         template = new_template
 
     return template
+
+
+def _resolve_dotted_conditionals(text: str, item_name: str, item: dict) -> str:
+    """Resolve {% if item_name.field %}...{% endif %} using item dict values."""
+    import re
+
+    pattern = re.compile(
+        r"\{%\s*if\s+" + re.escape(item_name) + r"\.(\w+)\s*%\}"
+        r"(.*?)"
+        r"(?:\{%\s*else\s*%\}(.*?))?"
+        r"\{%\s*endif\s*%\}",
+        re.DOTALL,
+    )
+
+    def _replacer(match: re.Match) -> str:
+        field_name = match.group(1)
+        true_block = match.group(2)
+        false_block = match.group(3) or ""
+        value = item.get(field_name)
+        return true_block if value else false_block
+
+    # Multiple passes for nested conditionals
+    for _ in range(5):
+        new_text = pattern.sub(_replacer, text)
+        if new_text == text:
+            break
+        text = new_text
+
+    return text
 
 
 def _escape_html(text: str) -> str:
