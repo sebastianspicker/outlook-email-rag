@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from . import (
     browse,
+    categories,
     data_quality,
     entities,
     evidence,
@@ -36,6 +37,7 @@ _MODULES = [
     reporting,
     browse,
     evidence,
+    categories,
 ]
 
 

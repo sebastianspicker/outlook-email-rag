@@ -1254,6 +1254,7 @@ class EmailDatabase:
         sort_order: str = "DESC",
         folder: str | None = None,
         sender: str | None = None,
+        category: str | None = None,
     ) -> dict:
         """Return a page of emails with metadata for browsing.
 
@@ -1264,6 +1265,7 @@ class EmailDatabase:
             sort_order: ASC or DESC.
             folder: Optional folder filter (exact match).
             sender: Optional sender filter (LIKE match).
+            category: Optional category filter (exact match via JOIN).
 
         Returns:
             {"emails": [...], "total": int, "offset": int, "limit": int}
@@ -1273,8 +1275,13 @@ class EmailDatabase:
             sort_by = "date"
         sort_order = "ASC" if sort_order.upper() == "ASC" else "DESC"
 
+        join = ""
         conditions = []
         params: list = []
+        if category:
+            join = " JOIN email_categories ec ON emails.uid = ec.email_uid"
+            conditions.append("ec.category = ?")
+            params.append(category)
         if folder:
             conditions.append("folder = ?")
             params.append(folder)
@@ -1285,15 +1292,15 @@ class EmailDatabase:
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM emails{where}", params
+            f"SELECT COUNT(*) AS c FROM emails{join}{where}", params
         ).fetchone()
         total = total_row["c"]
 
         rows = self.conn.execute(
-            f"""SELECT uid, subject, sender_name, sender_email, date, folder,
+            f"""SELECT emails.uid, subject, sender_name, sender_email, date, folder,
                        email_type, has_attachments, attachment_count, body_length,
                        conversation_id
-                FROM emails{where}
+                FROM emails{join}{where}
                 ORDER BY {sort_by} {sort_order}
                 LIMIT ? OFFSET ?""",
             [*params, limit, offset],

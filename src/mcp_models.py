@@ -182,6 +182,14 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
         default=False,
         description="Expand query with semantically related terms for better recall.",
     )
+    category: Optional[str] = Field(
+        default=None,
+        description="Filter by Outlook category name (partial match). E.g., 'Meeting'.",
+    )
+    is_calendar: Optional[bool] = Field(
+        default=None,
+        description="Filter by calendar/meeting messages. True = only calendar, False = exclude.",
+    )
 
 
 class EmailSearchThreadInput(StrictInput):
@@ -548,6 +556,7 @@ class BrowseInput(PlainInput):
     limit: int = Field(default=20, ge=1, le=50, description="Emails per page.")
     folder: Optional[str] = Field(default=None, description="Filter by folder (exact match).")
     sender: Optional[str] = Field(default=None, description="Filter by sender (partial match).")
+    category: Optional[str] = Field(default=None, description="Filter by category (exact match).")
     sort_order: str = Field(
         default="desc",
         description="Sort order: 'asc' (oldest first) or 'desc' (newest first).",

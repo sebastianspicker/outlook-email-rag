@@ -97,6 +97,7 @@ _FILTER_FIELDS = [
     "has_attachments", "priority", "email_type",
     "date_from", "date_to", "min_score",
     "topic_id", "cluster_id",
+    "category", "is_calendar",
 ]
 _BOOL_FIELDS = ["rerank", "hybrid", "expand_query"]
 

@@ -96,6 +96,7 @@ def register(mcp, deps) -> None:
             limit=params.limit,
             folder=params.folder,
             sender=params.sender,
+            category=params.category,
             sort_order=params.sort_order.upper(),
         )
 

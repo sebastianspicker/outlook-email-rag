@@ -114,6 +114,7 @@ class EmailRetriever:
                 sparse_enabled=self.settings.sparse_enabled,
                 colbert_enabled=self.settings.colbert_rerank_enabled,
                 batch_size=self.settings.embedding_batch_size,
+                mps_float16=self.settings.mps_float16,
             )
         return self._embedder
 
@@ -209,6 +210,8 @@ class EmailRetriever:
         topic_id: int | None = None,
         cluster_id: int | None = None,
         expand_query: bool = False,
+        category: str | None = None,
+        is_calendar: bool | None = None,
     ) -> list[SearchResult]:
         """Search with optional filters.
 
@@ -243,6 +246,7 @@ class EmailRetriever:
         email_type = _normalize_filter(email_type)
         if email_type:
             email_type = email_type.lower()
+        category = _normalize_filter(category)
 
         if top_k <= 0:
             raise ValueError("top_k must be a positive integer.")
@@ -255,6 +259,7 @@ class EmailRetriever:
             sender or date_from or date_to or subject or folder or cc
             or to or bcc or has_attachments is not None or priority is not None
             or min_score is not None or email_type or allowed_uids is not None
+            or category or is_calendar is not None
         )
 
         # Determine effective rerank/hybrid from args or config
@@ -306,6 +311,8 @@ class EmailRetriever:
                     and self._matches_priority(result, priority)
                     and self._matches_min_score(result, min_score)
                     and self._matches_allowed_uids(result, allowed_uids)
+                    and self._matches_category(result, category)
+                    and self._matches_is_calendar(result, is_calendar)
                 ]
             else:
                 filtered = raw_candidates
@@ -745,6 +752,20 @@ class EmailRetriever:
             return True
         uid = str(result.metadata.get("uid", "")).strip()
         return uid in allowed_uids
+
+    @staticmethod
+    def _matches_category(result: SearchResult, category: str | None) -> bool:
+        if not category:
+            return True
+        value = str(result.metadata.get("categories", "") or "").lower()
+        return category.lower() in value
+
+    @staticmethod
+    def _matches_is_calendar(result: SearchResult, is_calendar: bool | None) -> bool:
+        if is_calendar is None:
+            return True
+        value = str(result.metadata.get("is_calendar_message", "False"))
+        return (value.lower() in ("true", "1")) == is_calendar
 
     def _resolve_semantic_uids(
         self,
