@@ -24,6 +24,21 @@ logger = logging.getLogger(__name__)
 _ADDR_RE = re.compile(r"^(.*?)\s*<([^>]+)>$")
 
 
+def _safe_json_parse(raw: str | None, default=None):
+    """Parse a JSON string, returning default (or []) on failure."""
+    if not raw or not isinstance(raw, str):
+        return default if default is not None else []
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default if default is not None else []
+
+
+def _format_recipient(name: str | None, addr: str) -> str:
+    """Format a recipient as 'Name <addr>' or bare addr."""
+    return f"{name} <{addr}>" if name else addr
+
+
 def _parse_address(raw: str) -> tuple[str, str]:
     """Parse 'Display Name <email>' into (name, email).
 
@@ -617,10 +632,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         ).fetchall()
         result: dict[str, list[str]] = {"to": [], "cc": [], "bcc": []}
         for r in rows:
-            addr = r["address"]
-            name = r["display_name"]
-            formatted = f"{name} <{addr}>" if name else addr
-            result[r["type"]].append(formatted)
+            result[r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def _recipients_for_uids(self, uids: list[str]) -> dict[str, dict[str, list[str]]]:
@@ -637,10 +649,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             uid = r["email_uid"]
             if uid not in result:
                 result[uid] = {"to": [], "cc": [], "bcc": []}
-            addr = r["address"]
-            name = r["display_name"]
-            formatted = f"{name} <{addr}>" if name else addr
-            result[uid][r["type"]].append(formatted)
+            result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def get_email_full(self, uid: str) -> dict | None:
@@ -655,19 +664,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         email["to"] = recipients["to"]
         email["cc"] = recipients["cc"]
         email["bcc"] = recipients["bcc"]
-        # Parse JSON fields
-        cat_raw = email.get("categories")
-        if cat_raw and isinstance(cat_raw, str):
-            try:
-                email["categories"] = json.loads(cat_raw)
-            except (json.JSONDecodeError, TypeError):
-                email["categories"] = []
-        refs_raw = email.get("references_json")
-        if refs_raw and isinstance(refs_raw, str):
-            try:
-                email["references"] = json.loads(refs_raw)
-            except (json.JSONDecodeError, TypeError):
-                email["references"] = []
+        email["categories"] = _safe_json_parse(email.get("categories"))
+        email["references"] = _safe_json_parse(email.get("references_json"))
         # Attachments from normalized table
         email["attachments"] = self.attachments_for_email(uid)
         return email
@@ -711,19 +709,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             email["to"] = recips["to"]
             email["cc"] = recips["cc"]
             email["bcc"] = recips["bcc"]
-            # Parse JSON fields
-            cat_raw = email.get("categories")
-            if cat_raw and isinstance(cat_raw, str):
-                try:
-                    email["categories"] = json.loads(cat_raw)
-                except (json.JSONDecodeError, TypeError):
-                    email["categories"] = []
-            refs_raw = email.get("references_json")
-            if refs_raw and isinstance(refs_raw, str):
-                try:
-                    email["references"] = json.loads(refs_raw)
-                except (json.JSONDecodeError, TypeError):
-                    email["references"] = []
+            email["categories"] = _safe_json_parse(email.get("categories"))
+            email["references"] = _safe_json_parse(email.get("references_json"))
             email["attachments"] = attachments_by_uid.get(uid, [])
             result[uid] = email
         return result
