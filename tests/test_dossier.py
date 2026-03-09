@@ -7,6 +7,7 @@ import pytest
 
 from src.dossier_generator import DossierGenerator
 from src.email_db import EmailDatabase
+from src.evidence_exporter import strip_html_tags
 
 
 @pytest.fixture()
@@ -537,3 +538,51 @@ def test_notes_shown_when_present(db):
 
     assert "Important context about this incident." in html
     assert "<strong>Notes:</strong>" in html
+
+
+# ── Commit 1: JS elimination — server-side rendering ─────────
+
+
+def test_verified_badge_text(db):
+    """Verified badges should show 'Verified'/'Unverified' text, not raw values."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Verified" in html
+    assert "data-verified" not in html
+
+
+def test_no_javascript_in_output(db):
+    """No <script> tags should appear in the generated HTML."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "<script>" not in html
+    assert "<script " not in html
+
+
+def test_strip_html_tags_removes_style_content():
+    """strip_html_tags should remove <style> blocks including CSS text."""
+    text = '<style>.foo { color: red; }</style><p>Hello</p>'
+    result = strip_html_tags(text)
+    assert "color: red" not in result
+    assert "Hello" in result
+
+
+def test_strip_html_tags_removes_script_content():
+    """strip_html_tags should remove <script> blocks including JS code."""
+    text = '<script>var x = 1; alert("hi");</script><p>Content</p>'
+    result = strip_html_tags(text)
+    assert "alert" not in result
+    assert "Content" in result
+
+
+def test_strip_html_tags_removes_html_comments():
+    """strip_html_tags should remove HTML comments like <!--[if gte mso 9]-->."""
+    text = '<!--[if gte mso 9]><xml><o:OfficeDocumentSettings></o:OfficeDocumentSettings></xml><![endif]-->Hello world'
+    result = strip_html_tags(text)
+    assert "<!--" not in result
+    assert "mso" not in result
+    assert "Hello world" in result

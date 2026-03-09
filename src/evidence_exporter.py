@@ -44,8 +44,12 @@ def strip_html_tags(text: str | None) -> str:
     # Text with entities but no tags — just decode entities
     if "<" not in text:
         return unescape(text)
+    # Remove <style>...</style> and <script>...</script> blocks including their text content
+    result = re.sub(r"<(style|script)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Strip HTML comment fragments (<!--[if gte mso 9]-->, <!-- ... -->)
+    result = re.sub(r"<!--[\s\S]*?-->", "", result)
     # Replace <br>, <br/>, <br /> with newlines
-    result = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    result = re.sub(r"<br\s*/?>", "\n", result, flags=re.IGNORECASE)
     # Replace block-level closing tags with newlines for readability
     result = re.sub(
         r"</(?:p|div|tr|li|h[1-6]|blockquote|pre|table|thead|tbody|tfoot)>",

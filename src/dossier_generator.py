@@ -125,6 +125,10 @@ class DossierGenerator:
             raw_notes = item.get("notes") or ""
             item["notes"] = raw_notes if raw_notes and raw_notes != "None" else ""
             item["has_notes"] = "1" if item["notes"] else ""
+            # Compute verified badge text server-side (JS won't run in PDF)
+            is_verified = bool(item.get("verified"))
+            item["verified_text"] = "Verified" if is_verified else "Unverified"
+            item["verified_class"] = "badge-verified" if is_verified else "badge-unverified"
 
         # Gather source emails (deduplicated)
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})

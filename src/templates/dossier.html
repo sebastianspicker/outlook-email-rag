@@ -358,7 +358,7 @@
     <span>
       <span class="badge badge-{{ item.category }}">{{ item.category }}</span>
       <span class="badge badge-relevance">Relevance: {{ item.relevance }}/5</span>
-      <span class="badge" data-verified="{{ item.verified }}">{{ item.verified }}</span>
+      <span class="badge {{ item.verified_class }}">{{ item.verified_text }}</span>
     </span>
   </div>
   <div class="evidence-quote">&ldquo;{{ item.key_quote }}&rdquo;</div>
@@ -476,37 +476,6 @@
   Generated {{ generated_at }} by Outlook Email RAG
 </div>
 
-<script>
-// Strip HTML from email bodies for readable display
-document.querySelectorAll('.email-card-body').forEach(function(el) {
-  var text = el.textContent || '';
-  if (text.indexOf('<') !== -1) {
-    var tmp = document.createElement('div');
-    tmp.innerHTML = text;
-    // Remove style, script, head elements — their text is CSS/JS, not email content
-    tmp.querySelectorAll('style, script, head, link, meta').forEach(function(n) { n.remove(); });
-    var clean = tmp.textContent || tmp.innerText || '';
-    // Strip HTML comment fragments (<!--[if ...]-->, <!-- ... -->)
-    clean = clean.replace(/<!--[\s\S]*?-->/g, '');
-    // Collapse excessive whitespace
-    clean = clean.replace(/\n{3,}/g, '\n\n');
-    el.textContent = clean.trim();
-  }
-});
-
-// Fix verified badges: show "Verified"/"Unverified" with proper styling
-document.querySelectorAll('[data-verified]').forEach(function(el) {
-  var v = el.getAttribute('data-verified');
-  if (v === 'True' || v === '1' || v === 'true') {
-    el.textContent = 'Verified';
-    el.className = 'badge badge-verified';
-  } else {
-    el.textContent = 'Unverified';
-    el.className = 'badge badge-unverified';
-  }
-});
-
-</script>
 
 </body>
 </html>
