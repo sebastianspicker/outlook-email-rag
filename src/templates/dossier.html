@@ -269,20 +269,20 @@
 {% for item in evidence_items %}
 <div class="evidence-item relevance-{{ item.relevance }}">
   <div class="evidence-header">
-    <span class="evidence-date">{{ item.date or 'No date' }}</span>
+    <span class="evidence-date">{{ item.date }}</span>
     <span>
       <span class="badge badge-category">{{ item.category }}</span>
       <span class="badge badge-relevance">Relevance: {{ item.relevance }}/5</span>
-      {% if item.verified %}<span class="badge badge-verified">Verified</span>{% else %}<span class="badge badge-unverified">Unverified</span>{% endif %}
+      <span class="badge" data-verified="{{ item.verified }}">{{ item.verified }}</span>
     </span>
   </div>
   <div class="evidence-quote">"{{ item.key_quote }}"</div>
   <div class="evidence-meta">
     <strong>Summary:</strong> {{ item.summary }}<br>
     <strong>From:</strong> {{ item.sender_name }} &lt;{{ item.sender_email }}&gt;<br>
-    <strong>Subject:</strong> {{ item.subject or '' }}<br>
-    <strong>Email UID:</strong> {{ item.email_uid }}
-    {% if item.notes %}<br><strong>Notes:</strong> {{ item.notes }}{% endif %}
+    <strong>Subject:</strong> {{ item.subject }}<br>
+    <strong>Email UID:</strong> {{ item.email_uid }}<br>
+    <strong>Notes:</strong> <span class="item-notes">{{ item.notes }}</span>
   </div>
 </div>
 {% endfor %}
@@ -299,11 +299,11 @@
   <div class="email-card-header">
     <strong>UID:</strong> {{ email.uid }} |
     <strong>From:</strong> {{ email.sender_name }} &lt;{{ email.sender_email }}&gt; |
-    <strong>Date:</strong> {{ email.date or 'Unknown' }} |
-    <strong>Subject:</strong> {{ email.subject or '(No subject)' }}
-    {% if email.content_sha256 %}<br><strong>Content Hash:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256 }}</span>{% endif %}
+    <strong>Date:</strong> {{ email.date }} |
+    <strong>Subject:</strong> {{ email.subject }}
+    <br><strong>Content Hash:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256 }}</span>
   </div>
-  <div class="email-card-body">{{ email.body_text or '(No body text available)' }}</div>
+  <div class="email-card-body">{{ email.body_text }}</div>
 </div>
 {% endfor %}
 {% else %}
@@ -355,7 +355,7 @@
       <td>{{ event.action }}</td>
       <td>{{ event.actor }}</td>
       <td>{{ event.target_type }}:{{ event.target_id }}</td>
-      <td class="hash">{{ event.content_hash or '' }}</td>
+      <td class="hash">{{ event.content_hash }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -369,6 +369,44 @@
 <div style="margin-top: 40px; padding-top: 12px; border-top: 1px solid #ccc; text-align: center; font-size: 10px; color: #999;">
   Dossier SHA-256: {{ dossier_hash }} | Generated {{ generated_at }}
 </div>
+
+<script>
+// Strip HTML from email bodies for readable display
+document.querySelectorAll('.email-card-body').forEach(function(el) {
+  var text = el.textContent || '';
+  if (text.indexOf('<') !== -1) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = text;
+    // Remove style, script, head elements — their text is CSS/JS, not email content
+    tmp.querySelectorAll('style, script, head, link, meta').forEach(function(n) { n.remove(); });
+    var clean = tmp.textContent || tmp.innerText || '';
+    // Strip HTML comment fragments (<!--[if ...]-->, <!-- ... -->)
+    clean = clean.replace(/<!--[\s\S]*?-->/g, '');
+    // Collapse excessive whitespace
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+    el.textContent = clean.trim();
+  }
+});
+
+// Fix verified badges: show "Verified"/"Unverified" with proper styling
+document.querySelectorAll('[data-verified]').forEach(function(el) {
+  var v = el.getAttribute('data-verified');
+  if (v === 'True' || v === '1' || v === 'true') {
+    el.textContent = 'Verified';
+    el.className = 'badge badge-verified';
+  } else {
+    el.textContent = 'Unverified';
+    el.className = 'badge badge-unverified';
+  }
+});
+
+// Hide empty notes
+document.querySelectorAll('.item-notes').forEach(function(el) {
+  if (!el.textContent.trim() || el.textContent.trim() === 'None') {
+    el.parentNode.style.display = 'none';
+  }
+});
+</script>
 
 </body>
 </html>

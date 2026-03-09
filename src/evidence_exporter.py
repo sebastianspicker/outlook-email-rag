@@ -9,6 +9,8 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
+from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +23,43 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 
+# Regex to strip HTML tags (handles multi-line tags)
+_HTML_TAG_RE = re.compile(r"<[^>]+>", re.DOTALL)
+# Collapse runs of whitespace (but preserve paragraph breaks)
+_MULTI_BLANK_RE = re.compile(r"\n{3,}")
+
+
+def strip_html_tags(text: str | None) -> str:
+    """Strip HTML tags from text, returning clean plain text.
+
+    Handles common HTML email patterns: converts <br> and block elements
+    to newlines, strips all remaining tags, and decodes HTML entities.
+    """
+    if not text:
+        return ""
+    # Quick check: if there are no HTML tags or entities, return as-is
+    if "<" not in text and "&" not in text:
+        return text
+    # Text with entities but no tags — just decode entities
+    if "<" not in text:
+        return unescape(text)
+    # Replace <br>, <br/>, <br /> with newlines
+    result = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    # Replace block-level closing tags with newlines for readability
+    result = re.sub(
+        r"</(?:p|div|tr|li|h[1-6]|blockquote|pre|table|thead|tbody|tfoot)>",
+        "\n",
+        result,
+        flags=re.IGNORECASE,
+    )
+    # Strip all remaining HTML tags
+    result = _HTML_TAG_RE.sub("", result)
+    # Decode HTML entities (&amp; → &, &lt; → <, &#8230; → …, etc.)
+    result = unescape(result)
+    # Collapse excessive blank lines
+    result = _MULTI_BLANK_RE.sub("\n\n", result)
+    return result.strip()
+
 
 class EvidenceExporter:
     """Export evidence items as HTML reports or CSV files."""
@@ -31,6 +70,7 @@ class EvidenceExporter:
             loader=FileSystemLoader(str(_TEMPLATE_DIR)),
             autoescape=True,
         )
+        self._env.filters["strip_html"] = strip_html_tags
 
     # ── Public API ────────────────────────────────────────────
 

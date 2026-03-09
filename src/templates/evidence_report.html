@@ -399,7 +399,7 @@
         </tr>
       </table>
     </div>
-    <div class="appendix-body">{{ entry.email.body_text or '(no body text available)' }}</div>
+    <div class="appendix-body">{{ (entry.email.body_text or '(no body text available)') | strip_html }}</div>
   </div>
   {% endfor %}
 </div>

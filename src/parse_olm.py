@@ -104,8 +104,11 @@ class Email:
 
     @property
     def clean_body(self) -> str:
-        """Best available plain text body."""
+        """Best available plain text body, with HTML stripped."""
         if self.body_text and self.body_text.strip():
+            # OLM sometimes puts HTML in the "plain text" body field
+            if _looks_like_html(self.body_text):
+                return _html_to_text(self.body_text)
             return _clean_text(self.body_text)
         if self.body_html:
             return _html_to_text(self.body_html)
@@ -254,8 +257,12 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     message_id = _find_text(root, "OPFMessageCopyMessageID", ns)
     subject = _find_text(root, "OPFMessageCopySubject", ns)
     date = _find_text(root, "OPFMessageCopySentTime", ns)
-    body_text = _find_text(root, "OPFMessageCopyBody", ns)
-    body_html = _find_text(root, "OPFMessageCopyHTMLBody", ns)
+    # Use itertext() for body fields — el.text only returns text before the
+    # first child element, silently truncating bodies that contain <br/> etc.
+    body_text_el = _find(root, "OPFMessageCopyBody", ns)
+    body_text = "".join(body_text_el.itertext()) if body_text_el is not None else ""
+    body_html_el = _find(root, "OPFMessageCopyHTMLBody", ns)
+    body_html = "".join(body_html_el.itertext()) if body_html_el is not None else ""
 
     sender_el = _find(root, "OPFMessageCopySenderAddress", ns)
     sender_name_el = _find(root, "OPFMessageCopySenderName", ns)
@@ -662,6 +669,23 @@ def _extract_folder(path: str) -> str:
         if folder_parts:
             return "/".join(folder_parts)
     return "Unknown"
+
+
+def _looks_like_html(text: str) -> bool:
+    """Detect whether a string contains HTML markup.
+
+    OLM sometimes puts HTML content in the 'plain text' body field.
+    This catches those cases so we can route them through _html_to_text().
+    """
+    if not text:
+        return False
+    # Quick check for common HTML indicators
+    lowered = text[:2000].lower()  # only check the beginning for speed
+    html_indicators = (
+        "<!doctype", "<html", "<head", "<body", "<div", "<table",
+        "<style", "<p>", "<p ", "<br>", "<br/", "<br ", "<span",
+    )
+    return any(tag in lowered for tag in html_indicators)
 
 
 def _html_to_text(html: str) -> str:

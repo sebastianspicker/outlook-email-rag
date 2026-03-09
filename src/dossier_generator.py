@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .evidence_exporter import strip_html_tags
+
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
     from .network_analysis import CommunicationNetwork
@@ -100,7 +102,10 @@ class DossierGenerator:
                 (uid,),
             ).fetchone()
             if row:
-                source_emails.append(dict(row))
+                email = dict(row)
+                # Strip HTML tags from body_text for readable display
+                email["body_text"] = strip_html_tags(email.get("body_text"))
+                source_emails.append(email)
 
         # Gather relationship data
         relationship_data = []
@@ -256,6 +261,26 @@ def _process_conditionals(template: str, variables: dict[str, Any]) -> str:
     return template
 
 
+def _replace_with_or_fallback(template: str, var_name: str, value: str) -> str:
+    """Replace {{ var_name or 'fallback' }} patterns.
+
+    If value is non-empty, uses value. Otherwise uses the fallback string.
+    Handles both single and double quotes around the fallback.
+    """
+    import re
+
+    pattern = re.compile(
+        r"\{\{\s*" + re.escape(var_name) + r"\s+or\s+['\"]([^'\"]*?)['\"]\s*\}\}"
+    )
+
+    def replacer(match: re.Match) -> str:
+        fallback = match.group(1)
+        # value is already escaped by caller; fallback is a literal string from template
+        return value if value else fallback
+
+    return pattern.sub(replacer, template)
+
+
 def _process_loops(template: str, variables: dict[str, Any]) -> str:
     """Process {% for item in items %}...{% endfor %} blocks."""
     import re
@@ -278,12 +303,18 @@ def _process_loops(template: str, variables: dict[str, Any]) -> str:
         for idx, item in enumerate(items):
             rendered = body
 
-            # Handle {{ item.field }} access
+            # Handle {{ item.field }} and {{ item.field or 'default' }} access
             if isinstance(item, dict):
                 for field_key, field_val in item.items():
+                    escaped_val = _escape_html(str(field_val)) if field_val is not None else ""
+                    # First replace {{ item.field or 'fallback' }} patterns
+                    rendered = _replace_with_or_fallback(
+                        rendered, f"{item_name}.{field_key}", escaped_val,
+                    )
+                    # Then replace simple {{ item.field }}
                     rendered = rendered.replace(
                         "{{ " + f"{item_name}.{field_key}" + " }}",
-                        _escape_html(str(field_val)) if field_val is not None else "",
+                        escaped_val,
                     )
 
             # Handle {{ item }} for simple values
@@ -324,9 +355,13 @@ def _process_loops(template: str, variables: dict[str, Any]) -> str:
                         sub_rendered = sub_body
                         if isinstance(sub_item, dict):
                             for sk, sv in sub_item.items():
+                                escaped_sv = _escape_html(str(sv)) if sv is not None else ""
+                                sub_rendered = _replace_with_or_fallback(
+                                    sub_rendered, f"{sub_item_name}.{sk}", escaped_sv,
+                                )
                                 sub_rendered = sub_rendered.replace(
                                     "{{ " + f"{sub_item_name}.{sk}" + " }}",
-                                    _escape_html(str(sv)) if sv is not None else "",
+                                    escaped_sv,
                                 )
                         is_sub_last = sub_idx == len(sub_items) - 1
                         sub_rendered = re.sub(
