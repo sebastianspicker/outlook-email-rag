@@ -147,7 +147,7 @@ def _extract_html(content: bytes) -> str | None:
         except UnicodeDecodeError:
             return None
 
-    from .parse_olm import _html_to_text
+    from .html_converter import html_to_text as _html_to_text
 
     text = _html_to_text(html).strip()
     return _truncate(text) if text else None
