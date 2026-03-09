@@ -451,10 +451,12 @@
   <div class="evidence-meta">
     <strong>Summary:</strong> {{ item.summary }}<br>
     <strong>From:</strong> {{ item.sender_name }} &lt;{{ item.sender_email }}&gt;<br>
+    {% if item.recipients %}<strong>To:</strong> {{ item.recipients }}<br>{% endif %}
     <strong>Subject:</strong> {{ item.subject }}<br>
     {% if item.appendix_ref %}<strong>Source:</strong> Appendix <a href="#appendix-{{ item.appendix_ref }}">{{ item.appendix_ref }}</a><br>{% endif %}
     {% if item.thread_topic %}<strong>Thread:</strong> {{ item.thread_topic }}<br>{% endif %}
     {% if item.created_at_formatted %}<strong>Collected:</strong> {{ item.created_at_formatted }}<br>{% endif %}
+    {% if item.has_updated %}<strong>Updated:</strong> {{ item.updated_at_formatted }}<br>{% endif %}
     <strong>Email UID:</strong> <span style="font-family: monospace; font-size: 10px;">{{ item.email_uid }}</span>
     {% if item.has_notes %}<br><strong>Notes:</strong> {{ item.notes }}{% endif %}
   </div>
@@ -477,6 +479,8 @@
     <strong>Subject:</strong> {{ email.subject }}
     {% if email.to %}<br><strong>To:</strong> {{ email.to }}{% endif %}
     {% if email.cc %}<br><strong>CC:</strong> {{ email.cc }}{% endif %}
+    {% if email.bcc %}<br><strong>BCC:</strong> {{ email.bcc }}{% endif %}
+    {% if email.folder %}<br><strong>Folder:</strong> {{ email.folder }}{% endif %}
     {% if email.evidence_refs_str %}<br><strong>Evidence:</strong> {{ email.evidence_refs_str }}{% endif %}
     <br><strong>UID:</strong> <span style="font-family:monospace;font-size:10px">{{ email.uid }}</span> &middot;
     <strong>SHA-256:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256_display }}</span>
@@ -491,7 +495,10 @@
   <div class="email-card-body">{{ email.body_text }}</div>
   {% if email.has_attachments %}
   <div class="attachment-bar">
-    <strong>Attachments ({{ email.attachment_count }}):</strong> {{ email.attachment_names }}
+    <strong>Attachments ({{ email.attachment_count }}):</strong>
+    {% for att in email.attachment_list %}
+      {{ att.name }}{% if att.mime_type %} ({{ att.mime_type }}){% endif %}{% if att.size_display %} — {{ att.size_display }}{% endif %}{% if not loop.last %}, {% endif %}
+    {% endfor %}
   </div>
   {% endif %}
 </div>

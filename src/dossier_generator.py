@@ -132,6 +132,13 @@ class DossierGenerator:
             # Star-glyph relevance (readable in B&W print)
             rel = int(item.get("relevance") or 0)
             item["relevance_stars"] = "\u2605" * rel + "\u2606" * (5 - rel)
+            # Updated-at display (show only when different from created_at)
+            updated_raw = item.get("updated_at") or ""
+            created_raw = item.get("created_at") or ""
+            item["updated_at_formatted"] = _format_date(updated_raw) if updated_raw else ""
+            item["has_updated"] = "1" if updated_raw and updated_raw != created_raw else ""
+            # Recipients from source email
+            item["recipients"] = item.get("recipients") or ""
 
         # Gather source emails (deduplicated)
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
@@ -153,6 +160,8 @@ class DossierGenerator:
                     "content_sha256_display": raw_sha or "(not available)",
                     "to": ", ".join(full.get("to", [])),
                     "cc": ", ".join(full.get("cc", [])),
+                    "bcc": ", ".join(full.get("bcc", [])),
+                    "folder": full.get("folder", ""),
                 }
                 source_emails.append(email)
 
@@ -186,9 +195,14 @@ class DossierGenerator:
             full = self._db.get_email_full(uid)
             attachments = full.get("attachments", []) if full else []
             email["attachment_count"] = str(len(attachments))
-            email["attachment_names"] = ", ".join(
-                a.get("name", "") for a in attachments if a.get("name")
-            )
+            email["attachment_list"] = [
+                {
+                    "name": a.get("name", "unnamed"),
+                    "mime_type": a.get("mime_type", ""),
+                    "size_display": _format_file_size(a.get("size")),
+                }
+                for a in attachments
+            ]
             email["has_attachments"] = "1" if attachments else ""
 
         # Gather relationship data
@@ -604,6 +618,17 @@ def _escape_html(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def _format_file_size(size_bytes: int | None) -> str:
+    """Format file size in human-readable units."""
+    if not size_bytes:
+        return ""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 
 def _format_date(iso_date: str | None) -> str:

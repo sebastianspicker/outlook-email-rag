@@ -662,3 +662,81 @@ def test_print_css_bw_badges(db):
     html = result["html"]
 
     assert "border: 1px solid #666" in html
+
+
+# ── Commit 4: Richer source email metadata ───────────────────
+
+
+def test_bcc_shown_in_appendix(db):
+    """BCC recipients should appear in source email header."""
+    db.conn.execute(
+        "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
+        ("uid-1", "secret@test.com", "Secret Person", "bcc"),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "secret@test.com" in html
+    assert "<strong>BCC:</strong>" in html
+
+
+def test_folder_shown_in_appendix(db):
+    """Folder should appear in source email header when set."""
+    db.conn.execute(
+        "UPDATE emails SET folder = ? WHERE uid = ?",
+        ("Inbox/Important", "uid-1"),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Inbox/Important" in html
+    assert "<strong>Folder:</strong>" in html
+
+
+def test_attachment_details_shown(db):
+    """Attachments should show name, mime_type, and size."""
+    db.conn.execute(
+        "INSERT INTO attachments (email_uid, name, mime_type, size) VALUES (?, ?, ?, ?)",
+        ("uid-1", "contract.pdf", "application/pdf", 1048576),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "contract.pdf" in html
+    assert "application/pdf" in html
+    assert "1.0 MB" in html
+
+
+def test_format_file_size():
+    """_format_file_size should produce human-readable sizes."""
+    from src.dossier_generator import _format_file_size
+
+    assert _format_file_size(None) == ""
+    assert _format_file_size(0) == ""
+    assert _format_file_size(500) == "500 B"
+    assert _format_file_size(1536) == "1.5 KB"
+    assert _format_file_size(2097152) == "2.0 MB"
+
+
+def test_updated_at_shown_when_different(db):
+    """Updated date should appear when different from created_at."""
+    db.conn.execute(
+        "UPDATE evidence_items SET updated_at = ? WHERE id = 1",
+        ("2024-06-15T10:00:00",),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "<strong>Updated:</strong>" in html
