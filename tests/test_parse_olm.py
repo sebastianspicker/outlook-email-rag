@@ -650,8 +650,16 @@ def test_attachment_metadata_extracted():
     parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
     assert parsed is not None
     assert len(parsed.attachments) == 2
-    assert parsed.attachments[0] == {"name": "report.pdf", "mime_type": "application/pdf", "size": 12345}
-    assert parsed.attachments[1] == {"name": "image.png", "mime_type": "image/png", "size": 0}
+    att0 = parsed.attachments[0]
+    assert att0["name"] == "report.pdf"
+    assert att0["mime_type"] == "application/pdf"
+    assert att0["size"] == 12345
+    assert att0["content_id"] == ""
+    assert att0["is_inline"] is False
+    att1 = parsed.attachments[1]
+    assert att1["name"] == "image.png"
+    assert att1["mime_type"] == "image/png"
+    assert att1["size"] == 0
 
 
 def test_to_dict_includes_attachment_count():
@@ -835,3 +843,156 @@ def test_sender_email_normalized_lowercase():
     </email>"""
     email = _parse_email_xml(xml, "test.xml")
     assert email.sender_email == "john.smith@example.com"
+
+
+# ── New OLM metadata field extraction ─────────────────────────
+
+
+def test_parse_categories_from_xml():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Category test</OPFMessageCopySubject>
+  <OPFMessageCopyCategoryList>
+    <category>Meeting</category>
+    <category>Project X</category>
+  </OPFMessageCopyCategoryList>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.categories == ["Meeting", "Project X"]
+
+
+def test_parse_categories_defaults_empty():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>No categories</OPFMessageCopySubject>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.categories == []
+
+
+def test_parse_thread_topic_and_index():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Thread test</OPFMessageCopySubject>
+  <OPFMessageCopyThreadTopic>Budget Discussion Q4</OPFMessageCopyThreadTopic>
+  <OPFMessageCopyThreadIndex>AQHbMnRk</OPFMessageCopyThreadIndex>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.thread_topic == "Budget Discussion Q4"
+    assert parsed.thread_index == "AQHbMnRk"
+
+
+def test_parse_inference_classification():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Focused test</OPFMessageCopySubject>
+  <OPFMessageCopyInferenceClassification>Focused</OPFMessageCopyInferenceClassification>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.inference_classification == "Focused"
+
+
+def test_parse_is_calendar_message():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Meeting invite</OPFMessageCopySubject>
+  <OPFMessageCopyIsCalendarMessage>true</OPFMessageCopyIsCalendarMessage>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.is_calendar_message is True
+
+
+def test_parse_is_calendar_message_default_false():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Normal email</OPFMessageCopySubject>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.is_calendar_message is False
+
+
+def test_parse_meeting_data():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Meeting data test</OPFMessageCopySubject>
+  <OPFMessageCopyMeetingData>
+    <location>Conference Room B</location>
+    <startTime>2025-01-15T10:00:00</startTime>
+    <endTime>2025-01-15T11:00:00</endTime>
+  </OPFMessageCopyMeetingData>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.meeting_data["location"] == "Conference Room B"
+    assert parsed.meeting_data["startTime"] == "2025-01-15T10:00:00"
+
+
+def test_parse_exchange_extracted_emails():
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Exchange extracted</OPFMessageCopySubject>
+  <OPFMessageGetExchangeExtractedEmails>
+    <email>alice@example.com</email>
+    <email>bob@example.com</email>
+  </OPFMessageGetExchangeExtractedEmails>
+  <OPFMessageGetExchangeExtractedContacts>
+    <contact>Alice Wonderland</contact>
+  </OPFMessageGetExchangeExtractedContacts>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.exchange_extracted_emails == ["alice@example.com", "bob@example.com"]
+    assert parsed.exchange_extracted_contacts == ["Alice Wonderland"]
+
+
+def test_parse_attachment_content_id():
+    """Attachments with content_id are marked as inline."""
+    xml = b"""<?xml version="1.0"?>
+<emails><email>
+  <OPFMessageCopySentTime>2025-01-01T00:00:00</OPFMessageCopySentTime>
+  <OPFMessageCopySubject>Inline image</OPFMessageCopySubject>
+  <OPFMessageCopyAttachmentList>
+    <messageAttachment OPFAttachmentName="logo.png"
+      OPFAttachmentContentType="image/png"
+      OPFAttachmentContentID="abc123@outlook.com" />
+    <messageAttachment OPFAttachmentName="report.pdf"
+      OPFAttachmentContentType="application/pdf" />
+  </OPFMessageCopyAttachmentList>
+</email></emails>"""
+    parsed = _parse_email_xml(xml, "Accounts/a/com.microsoft.__Messages/Inbox/msg.xml")
+    assert parsed is not None
+    assert parsed.attachments[0]["content_id"] == "abc123@outlook.com"
+    assert parsed.attachments[0]["is_inline"] is True
+    assert parsed.attachments[1]["content_id"] == ""
+    assert parsed.attachments[1]["is_inline"] is False
+
+
+def test_to_dict_includes_new_metadata_fields():
+    email = Email(
+        message_id="m1", subject="Test", sender_name="", sender_email="a@b.com",
+        to=[], cc=[], bcc=[], date="", body_text="", body_html="",
+        folder="Inbox", has_attachments=False,
+        categories=["Important", "Finance"],
+        thread_topic="Q4 Budget",
+        inference_classification="Focused",
+        is_calendar_message=True,
+    )
+    d = email.to_dict()
+    assert d["categories"] == ["Important", "Finance"]
+    assert d["thread_topic"] == "Q4 Budget"
+    assert d["inference_classification"] == "Focused"
+    assert d["is_calendar_message"] is True

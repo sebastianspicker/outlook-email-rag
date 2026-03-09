@@ -64,6 +64,16 @@ class Email:
     priority: int = 0  # 0 = normal
     is_read: bool = True
     attachment_contents: list[tuple[str, bytes]] = field(default_factory=list)
+    categories: list[str] = field(default_factory=list)
+    thread_topic: str = ""
+    thread_index: str = ""
+    inference_classification: str = ""  # "Focused" / "Other"
+    is_calendar_message: bool = False
+    meeting_data: dict = field(default_factory=dict)
+    exchange_extracted_links: list[dict] = field(default_factory=list)
+    exchange_extracted_emails: list[str] = field(default_factory=list)
+    exchange_extracted_contacts: list[str] = field(default_factory=list)
+    exchange_extracted_meetings: list[dict] = field(default_factory=list)
 
     @property
     def uid(self) -> str:
@@ -139,6 +149,16 @@ class Email:
             "is_read": self.is_read,
             "email_type": self.email_type,
             "base_subject": self.base_subject,
+            "categories": self.categories,
+            "thread_topic": self.thread_topic,
+            "thread_index": self.thread_index,
+            "inference_classification": self.inference_classification,
+            "is_calendar_message": self.is_calendar_message,
+            "meeting_data": self.meeting_data,
+            "exchange_extracted_links": self.exchange_extracted_links,
+            "exchange_extracted_emails": self.exchange_extracted_emails,
+            "exchange_extracted_contacts": self.exchange_extracted_contacts,
+            "exchange_extracted_meetings": self.exchange_extracted_meetings,
         }
 
 
@@ -298,6 +318,19 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     priority = _parse_int(_find_text(root, "OPFMessageGetPriority", ns), default=0)
     is_read = _find_text(root, "OPFMessageGetIsRead", ns).lower() != "false"
 
+    # ── New OLM metadata fields ───────────────────────────
+    categories = _extract_categories(root, ns)
+    thread_topic = _find_text(root, "OPFMessageCopyThreadTopic", ns)
+    thread_index = _find_text(root, "OPFMessageCopyThreadIndex", ns)
+    inference_classification = _find_text(root, "OPFMessageCopyInferenceClassification", ns)
+    is_calendar_raw = _find_text(root, "OPFMessageCopyIsCalendarMessage", ns)
+    is_calendar_message = is_calendar_raw.lower() == "true" if is_calendar_raw else False
+    meeting_data = _extract_meeting_data(root, ns)
+    exchange_extracted_links = _extract_exchange_smart_links(root, ns)
+    exchange_extracted_emails = _extract_exchange_list(root, ns, "OPFMessageGetExchangeExtractedEmails")
+    exchange_extracted_contacts = _extract_exchange_list(root, ns, "OPFMessageGetExchangeExtractedContacts")
+    exchange_extracted_meetings = _extract_exchange_meetings(root, ns)
+
     # ── Fallback: parse OPFMessageCopySource headers ───────
     raw_source_el = _find(root, "OPFMessageCopySource", ns)
     raw_source = "".join(raw_source_el.itertext()) if raw_source_el is not None else ""
@@ -376,6 +409,16 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
         references=references,
         priority=priority,
         is_read=is_read,
+        categories=categories,
+        thread_topic=thread_topic,
+        thread_index=thread_index,
+        inference_classification=inference_classification,
+        is_calendar_message=is_calendar_message,
+        meeting_data=meeting_data,
+        exchange_extracted_links=exchange_extracted_links,
+        exchange_extracted_emails=exchange_extracted_emails,
+        exchange_extracted_contacts=exchange_extracted_contacts,
+        exchange_extracted_meetings=exchange_extracted_meetings,
     )
 
 
@@ -481,7 +524,14 @@ def _extract_attachment_info(att: etree._Element, ns: dict[str, str]) -> dict:
     mime_type = _extract_attachment_field(att, ns, "OPFAttachmentContentType", attr_hint="contenttype")
     size_str = _extract_attachment_field(att, ns, "OPFAttachmentContentFileSize", attr_hint="filesize")
     size = _parse_int(size_str) if size_str else 0
-    return {"name": name, "mime_type": mime_type, "size": size}
+    content_id = _extract_attachment_field(att, ns, "OPFAttachmentContentID", attr_hint="contentid")
+    return {
+        "name": name,
+        "mime_type": mime_type,
+        "size": size,
+        "content_id": content_id,
+        "is_inline": bool(content_id),
+    }
 
 
 def _extract_attachment_field(
@@ -596,6 +646,87 @@ def _parse_references(raw: str) -> list[str]:
             seen.add(ref_id)
             result.append(ref_id)
     return result
+
+
+def _extract_categories(root: etree._Element, ns: dict[str, str]) -> list[str]:
+    """Extract category list from OPFMessageCopyCategoryList."""
+    container = _find(root, "OPFMessageCopyCategoryList", ns)
+    if container is None:
+        return []
+    categories: list[str] = []
+    for child in container:
+        text = child.text
+        if text and text.strip():
+            categories.append(text.strip())
+    return categories
+
+
+def _extract_meeting_data(root: etree._Element, ns: dict[str, str]) -> dict:
+    """Extract meeting data from OPFMessageCopyMeetingData."""
+    container = _find(root, "OPFMessageCopyMeetingData", ns)
+    if container is None:
+        return {}
+    data: dict = {}
+    for child in container:
+        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+        if child.text and child.text.strip():
+            data[tag] = child.text.strip()
+    return data
+
+
+def _extract_exchange_smart_links(root: etree._Element, ns: dict[str, str]) -> list[dict]:
+    """Extract Exchange-extracted smart links (URLs with metadata)."""
+    container = _find(root, "OPFMessageGetExchangeExtractedSmartLinks", ns)
+    if container is None:
+        return []
+    links: list[dict] = []
+    for child in container:
+        link: dict = {}
+        for attr_name, attr_value in child.attrib.items():
+            link[attr_name] = attr_value
+        if child.text and child.text.strip():
+            link["url"] = child.text.strip()
+        # Also check child elements
+        for sub in child:
+            tag = sub.tag.split("}")[-1] if "}" in sub.tag else sub.tag
+            if sub.text and sub.text.strip():
+                link[tag] = sub.text.strip()
+        if link:
+            links.append(link)
+    return links
+
+
+def _extract_exchange_list(
+    root: etree._Element, ns: dict[str, str], tag_name: str,
+) -> list[str]:
+    """Extract a list of text values from an Exchange-extracted container."""
+    container = _find(root, tag_name, ns)
+    if container is None:
+        return []
+    items: list[str] = []
+    for child in container:
+        if child.text and child.text.strip():
+            items.append(child.text.strip())
+    return items
+
+
+def _extract_exchange_meetings(root: etree._Element, ns: dict[str, str]) -> list[dict]:
+    """Extract Exchange-extracted meeting references."""
+    container = _find(root, "OPFMessageGetExchangeExtractedMeetings", ns)
+    if container is None:
+        return []
+    meetings: list[dict] = []
+    for child in container:
+        meeting: dict = {}
+        for attr_name, attr_value in child.attrib.items():
+            meeting[attr_name] = attr_value
+        for sub in child:
+            tag = sub.tag.split("}")[-1] if "}" in sub.tag else sub.tag
+            if sub.text and sub.text.strip():
+                meeting[tag] = sub.text.strip()
+        if meeting:
+            meetings.append(meeting)
+    return meetings
 
 
 def _extract_html_body(el: etree._Element) -> str:
