@@ -103,11 +103,22 @@ class EvidenceExporter:
                 appendix_emails.append({
                     "evidence_id": item["id"],
                     "email": full,
+                    "key_quote": item.get("key_quote", ""),
+                    "category": item.get("category", ""),
                 })
 
         stats = self._db.evidence_stats()
         verified_count = sum(1 for i in items if i.get("verified"))
         total_count = len(items)
+
+        # Date range from evidence items
+        dates = [i["date"] for i in items if i.get("date")]
+        date_range = {}
+        if dates:
+            date_range = {"earliest": min(dates)[:10], "latest": max(dates)[:10]}
+
+        from datetime import datetime, timezone
+        generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
         template = self._env.get_template("evidence_report.html")
         html = template.render(
@@ -116,6 +127,8 @@ class EvidenceExporter:
             appendix_emails=appendix_emails,
             verified_count=verified_count,
             total_count=total_count,
+            date_range=date_range,
+            generated_at=generated_at,
         )
         return {"html": html, "item_count": total_count}
 

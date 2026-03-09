@@ -150,6 +150,19 @@
     background: #fff3e0;
     color: #e65100;
   }
+
+  /* Category-specific badge colors */
+  .badge-discrimination { background: #ffcdd2; color: #b71c1c; }
+  .badge-harassment { background: #f8bbd0; color: #880e4f; }
+  .badge-sexual_harassment { background: #e1bee7; color: #6a1b9a; }
+  .badge-bossing { background: #ffccbc; color: #bf360c; }
+  .badge-retaliation { background: #d1c4e9; color: #4527a0; }
+  .badge-exclusion { background: #bbdefb; color: #0d47a1; }
+  .badge-micromanagement { background: #b2dfdb; color: #004d40; }
+  .badge-gaslighting { background: #f3e5f5; color: #4a148c; }
+  .badge-workload { background: #e3f2fd; color: #0d47a1; }
+  .badge-hostile_environment { background: #fff9c4; color: #f57f17; }
+  .badge-general { background: #f5f5f5; color: #616161; }
   .evidence-quote {
     font-style: italic;
     background: #fff;
@@ -271,18 +284,18 @@
   <div class="evidence-header">
     <span class="evidence-date">{{ item.date }}</span>
     <span>
-      <span class="badge badge-category">{{ item.category }}</span>
+      <span class="badge badge-{{ item.category }}">{{ item.category }}</span>
       <span class="badge badge-relevance">Relevance: {{ item.relevance }}/5</span>
       <span class="badge" data-verified="{{ item.verified }}">{{ item.verified }}</span>
     </span>
   </div>
-  <div class="evidence-quote">"{{ item.key_quote }}"</div>
+  <div class="evidence-quote">&ldquo;{{ item.key_quote }}&rdquo;</div>
   <div class="evidence-meta">
     <strong>Summary:</strong> {{ item.summary }}<br>
     <strong>From:</strong> {{ item.sender_name }} &lt;{{ item.sender_email }}&gt;<br>
     <strong>Subject:</strong> {{ item.subject }}<br>
-    <strong>Email UID:</strong> {{ item.email_uid }}<br>
-    <strong>Notes:</strong> <span class="item-notes">{{ item.notes }}</span>
+    <strong>Email UID:</strong> <span style="font-family: monospace; font-size: 10px;">{{ item.email_uid }}</span><br>
+    <span class="item-notes"><strong>Notes:</strong> {{ item.notes }}</span>
   </div>
 </div>
 {% endfor %}
@@ -297,11 +310,13 @@
 {% for email in source_emails %}
 <div class="email-card">
   <div class="email-card-header">
-    <strong>UID:</strong> {{ email.uid }} |
-    <strong>From:</strong> {{ email.sender_name }} &lt;{{ email.sender_email }}&gt; |
-    <strong>Date:</strong> {{ email.date }} |
+    <strong>From:</strong> {{ email.sender_name }} &lt;{{ email.sender_email }}&gt; &middot;
+    <strong>Date:</strong> {{ email.date }}<br>
     <strong>Subject:</strong> {{ email.subject }}
-    <br><strong>Content Hash:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256 }}</span>
+    {% if email.to %}<br><strong>To:</strong> {{ email.to }}{% endif %}
+    {% if email.cc %}<br><strong>CC:</strong> {{ email.cc }}{% endif %}
+    <br><strong>UID:</strong> <span style="font-family:monospace;font-size:10px">{{ email.uid }}</span> &middot;
+    <strong>SHA-256:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256 }}</span>
   </div>
   <div class="email-card-body">{{ email.body_text }}</div>
 </div>
@@ -366,8 +381,10 @@
 {% endif %}
 
 <!-- Footer -->
-<div style="margin-top: 40px; padding-top: 12px; border-top: 1px solid #ccc; text-align: center; font-size: 10px; color: #999;">
-  Dossier SHA-256: {{ dossier_hash }} | Generated {{ generated_at }}
+<div style="margin-top: 40px; padding-top: 12px; border-top: 2px solid #1a237e; text-align: center; font-size: 10px; color: #999;">
+  <div style="font-weight: 600; color: #c62828; margin-bottom: 4px;">CONFIDENTIAL &mdash; FOR AUTHORIZED USE ONLY</div>
+  Dossier SHA-256: <span style="font-family: monospace;">{{ dossier_hash }}</span><br>
+  Generated {{ generated_at }} by Outlook Email RAG
 </div>
 
 <script>

@@ -97,14 +97,19 @@ class DossierGenerator:
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
         source_emails = []
         for uid in sorted(email_uids):
-            row = self._db.conn.execute(
-                "SELECT uid, sender_name, sender_email, date, subject, body_text, content_sha256 FROM emails WHERE uid = ?",
-                (uid,),
-            ).fetchone()
-            if row:
-                email = dict(row)
-                # Strip HTML tags from body_text for readable display
-                email["body_text"] = strip_html_tags(email.get("body_text"))
+            full = self._db.get_email_full(uid)
+            if full:
+                email = {
+                    "uid": full["uid"],
+                    "sender_name": full.get("sender_name", ""),
+                    "sender_email": full.get("sender_email", ""),
+                    "date": full.get("date", ""),
+                    "subject": full.get("subject", ""),
+                    "body_text": strip_html_tags(full.get("body_text")),
+                    "content_sha256": full.get("content_sha256", ""),
+                    "to": ", ".join(full.get("to", [])),
+                    "cc": ", ".join(full.get("cc", [])),
+                }
                 source_emails.append(email)
 
         # Gather relationship data

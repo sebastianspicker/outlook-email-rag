@@ -165,11 +165,15 @@
   .cat-retaliation { background: #d1c4e9; color: #4527a0; }
   .cat-exclusion { background: #bbdefb; color: #0d47a1; }
   .cat-microaggression { background: #c8e6c9; color: #1b5e20; }
+  .cat-micromanagement { background: #b2dfdb; color: #004d40; }
+  .cat-gaslighting { background: #f3e5f5; color: #4a148c; }
+  .cat-workload { background: #e3f2fd; color: #0d47a1; }
   .cat-hostile_environment { background: #fff9c4; color: #f57f17; }
+  .cat-general { background: #f5f5f5; color: #616161; }
   .cat-other { background: #e0e0e0; color: #424242; }
 
   /* Relevance stars */
-  .relevance-stars { color: #f9a825; letter-spacing: 1px; }
+  .relevance-stars { color: #f9a825; letter-spacing: 1px; font-size: 14px; }
 
   /* Verified checkmarks */
   .verified-yes { color: #2e7d32; font-weight: bold; }
@@ -261,6 +265,8 @@
   <h1>Evidence Report</h1>
   <div class="report-meta">
     {{ total_count }} evidence item{{ 's' if total_count != 1 else '' }} collected
+    {% if date_range %}&middot; {{ date_range.earliest }} &ndash; {{ date_range.latest }}{% endif %}
+    &middot; Generated {{ generated_at }}
   </div>
 </div>
 
@@ -339,7 +345,7 @@
         </td>
         <td class="col-quote">{{ item.key_quote }}</td>
         <td class="col-rel">
-          <span class="relevance-stars">{{ '*' * item.relevance }}</span>
+          <span class="relevance-stars">{{ '&#9733;' * item.relevance }}{{ '&#9734;' * (5 - item.relevance) }}</span>
         </td>
         <td class="col-ver">
           {% if item.verified %}
@@ -399,6 +405,12 @@
         </tr>
       </table>
     </div>
+    {% if entry.key_quote %}
+    <div class="appendix-evidence-note">
+      <strong>Evidence quote:</strong> <span class="highlight-quote">{{ entry.key_quote }}</span>
+      {% if entry.category %}<span class="cat-badge cat-{{ entry.category }}" style="margin-left: 8px;">{{ entry.category | replace('_', ' ') }}</span>{% endif %}
+    </div>
+    {% endif %}
     <div class="appendix-body">{{ (entry.email.body_text or '(no body text available)') | strip_html }}</div>
   </div>
   {% endfor %}
