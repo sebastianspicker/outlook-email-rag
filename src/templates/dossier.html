@@ -302,6 +302,24 @@
     color: #333;
   }
   .evidence-index-table td:first-child { text-align: center; }
+
+  /* Relevance stars */
+  .relevance-stars {
+    color: #f9a825;
+    letter-spacing: 1px;
+    font-size: 12px;
+  }
+  @media print {
+    .relevance-stars { color: #333; }
+    .badge-category, .badge-discrimination, .badge-harassment,
+    .badge-sexual_harassment, .badge-bossing, .badge-retaliation,
+    .badge-exclusion, .badge-micromanagement, .badge-gaslighting,
+    .badge-workload, .badge-hostile_environment, .badge-general {
+      border: 1px solid #666;
+      background: #fff;
+      color: #000;
+    }
+  }
 </style>
 </head>
 <body>
@@ -408,7 +426,7 @@
     <td>{{ ei.date_short }}</td>
     <td>{{ ei.sender_short }}</td>
     <td>{{ ei.summary_short }}</td>
-    <td>{{ ei.relevance }}/5</td>
+    <td class="relevance-stars">{{ ei.relevance_stars }}</td>
   </tr>
   {% endfor %}
   </tbody>
@@ -425,7 +443,7 @@
     <span class="evidence-date"><strong>{{ item.evidence_number }}</strong> &mdash; {{ item.date_formatted }}</span>
     <span>
       <span class="badge badge-{{ item.category }}">{{ item.category }}</span>
-      <span class="badge badge-relevance">Relevance: {{ item.relevance }}/5</span>
+      <span class="relevance-stars" title="Relevance: {{ item.relevance }}/5">{{ item.relevance_stars }}</span>
       <span class="badge {{ item.verified_class }}">{{ item.verified_text }}</span>
     </span>
   </div>

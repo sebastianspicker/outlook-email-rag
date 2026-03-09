@@ -631,3 +631,34 @@ def test_toc_includes_index(db):
     html = result["html"]
 
     assert "#evidence-index" in html
+
+
+# ── Commit 3: Star-glyph relevance + B&W safety ─────────────
+
+
+def test_relevance_stars(db):
+    """Relevance-5 item should show ★★★★★ stars."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "\u2605\u2605\u2605\u2605\u2605" in html  # 5 filled stars
+    assert "relevance-stars" in html  # Star span CSS class present
+
+
+def test_relevance_stars_mixed(db):
+    """Relevance-3 item should show ★★★☆☆."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "\u2605\u2605\u2605\u2606\u2606" in html  # 3 filled, 2 empty
+
+
+def test_print_css_bw_badges(db):
+    """Print CSS should make badges B&W safe."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "border: 1px solid #666" in html

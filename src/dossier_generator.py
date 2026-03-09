@@ -129,6 +129,9 @@ class DossierGenerator:
             is_verified = bool(item.get("verified"))
             item["verified_text"] = "Verified" if is_verified else "Unverified"
             item["verified_class"] = "badge-verified" if is_verified else "badge-unverified"
+            # Star-glyph relevance (readable in B&W print)
+            rel = int(item.get("relevance") or 0)
+            item["relevance_stars"] = "\u2605" * rel + "\u2606" * (5 - rel)
 
         # Gather source emails (deduplicated)
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
@@ -255,6 +258,7 @@ class DossierGenerator:
                 sender_short = sender_short[:27] + "..."
             summary_raw = item.get("summary", "")
             summary_short = summary_raw[:80] + "..." if len(summary_raw) > 80 else summary_raw
+            idx_rel = int(item.get("relevance") or 0)
             evidence_index.append({
                 "evidence_number": item.get("evidence_number", ""),
                 "category": item.get("category", ""),
@@ -262,6 +266,7 @@ class DossierGenerator:
                 "sender_short": sender_short,
                 "summary_short": summary_short,
                 "relevance": item.get("relevance", ""),
+                "relevance_stars": "\u2605" * idx_rel + "\u2606" * (5 - idx_rel),
             })
         has_evidence_index = "1" if evidence_index else ""
 
