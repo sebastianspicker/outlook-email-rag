@@ -118,3 +118,46 @@ def test_search_filtered_deduplicates():
     uids = [r.metadata.get("uid") for r in results]
     assert uids == ["email1", "email2", "email3"]
     assert results[0].chunk_id == "id1__0"  # Best chunk for email1
+
+
+# ── Query embedding cache ──────────────────────────────────────
+
+
+def test_query_cache_hit():
+    """_encode_query should return cached embedding on second call."""
+    retriever = EmailRetriever.__new__(EmailRetriever)
+    call_count = 0
+
+    class DummyEmbedder:
+        def encode_dense(self, texts):
+            nonlocal call_count
+            call_count += 1
+            return [[0.1, 0.2, 0.3]]
+
+    retriever._embedder = DummyEmbedder()
+    # First call encodes
+    e1 = retriever._encode_query("hello")
+    assert call_count == 1
+    # Second call hits cache
+    e2 = retriever._encode_query("hello")
+    assert call_count == 1  # not called again
+    assert e1 is e2
+
+
+def test_query_cache_eviction():
+    """Cache evicts oldest entries when exceeding max size."""
+    from src.retriever import _QUERY_CACHE_MAX
+
+    retriever = EmailRetriever.__new__(EmailRetriever)
+
+    class DummyEmbedder:
+        def encode_dense(self, texts):
+            return [[float(hash(texts[0]) % 100)]]
+
+    retriever._embedder = DummyEmbedder()
+
+    # Fill cache beyond max
+    for i in range(_QUERY_CACHE_MAX + 10):
+        retriever._encode_query(f"query_{i}")
+
+    assert len(retriever._query_cache) <= _QUERY_CACHE_MAX

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import logging
 import math
 import os
@@ -18,11 +19,14 @@ MAX_TOP_K = 1000
 
 # Overfetch multipliers for search_filtered to compensate for
 # post-retrieval filtering and deduplication.
-_FILTER_OVERFETCH = 8
+_FILTER_OVERFETCH = 4
 _DEDUP_OVERFETCH = 2
-_RERANK_OVERFETCH = 3
+_RERANK_OVERFETCH = 2
 _MAX_FETCH_SIZE = 10_000
 _MAX_FETCH_ATTEMPTS = 6
+
+# Query embedding cache — avoids re-encoding identical queries
+_QUERY_CACHE_MAX = 128
 
 
 def _normalize_filter(value: str | None) -> str | None:
@@ -86,6 +90,7 @@ class EmailRetriever:
         self._reranker: Any = None
         self._bm25_index: Any = None
         self._sparse_index: Any = None
+        self._query_cache: collections.OrderedDict[str, list] = collections.OrderedDict()
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
 
@@ -123,6 +128,20 @@ class EmailRetriever:
         """Backward-compatible alias for ``embedder``."""
         return self.embedder
 
+    def _encode_query(self, query: str) -> list:
+        """Encode a query string, using a bounded cache to avoid re-encoding."""
+        cache = getattr(self, "_query_cache", None)
+        if cache is None:
+            cache = self._query_cache = collections.OrderedDict()
+        if query in cache:
+            cache.move_to_end(query)
+            return cache[query]
+        embedding = self.embedder.encode_dense([query])
+        cache[query] = embedding
+        if len(cache) > _QUERY_CACHE_MAX:
+            cache.popitem(last=False)
+        return embedding
+
     def search(self, query: str, top_k: int | None = None, where: dict | None = None) -> list[SearchResult]:
         """Semantic search across all emails."""
         total = self.collection.count()
@@ -138,7 +157,7 @@ class EmailRetriever:
         if requested <= 0:
             requested = 10
 
-        query_embedding = self.embedder.encode_dense([query])
+        query_embedding = self._encode_query(query)
         return self._query_with_embedding(query_embedding, requested, where=where)
 
     def _query_with_embedding(
@@ -277,7 +296,7 @@ class EmailRetriever:
                 raw_candidates = self.search(query, top_k=fetch_size)
             else:
                 if query_embedding is None:
-                    query_embedding = self.embedder.encode_dense([query])
+                    query_embedding = self._encode_query(query)
                 raw_candidates = self._query_with_embedding(query_embedding, fetch_size)
 
             # Merge with BM25 results if hybrid mode is enabled
