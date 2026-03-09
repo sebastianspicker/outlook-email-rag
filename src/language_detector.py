@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+_TOKEN_RE = re.compile(r"[a-zA-Zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+")
+
 # Stopword sets for top 10 languages (ISO 639-1 codes)
 _STOPWORDS: dict[str, set[str]] = {
     "en": {
@@ -88,7 +90,7 @@ _STOPWORDS: dict[str, set[str]] = {
 
 def _tokenize(text: str) -> list[str]:
     """Simple word tokenizer: lowercase, split on non-alpha."""
-    return re.findall(r"[a-zA-Zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]+", text.lower())
+    return _TOKEN_RE.findall(text.lower())
 
 
 def detect_language(text: str) -> str:

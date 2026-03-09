@@ -14,6 +14,7 @@ OPFMessageCopySource), fields are extracted from the raw RFC 2822 headers.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import logging
 import os
@@ -38,6 +39,52 @@ _RE_FW_PREFIX = re.compile(
     r"^(RE|AW|FW|WG|SV|VS|Antw|Doorst)\s*:\s*",
     re.IGNORECASE,
 )
+
+# Pre-compiled regexes for _html_to_text() hot path
+_RE_STYLE = re.compile(r"<style[^>]*>.*?</style>", re.DOTALL | re.IGNORECASE)
+_RE_SCRIPT = re.compile(r"<script[^>]*>.*?</script>", re.DOTALL | re.IGNORECASE)
+_RE_HEADINGS = {
+    level: (
+        re.compile(rf"<h{level}[^>]*>(.*?)</h{level}>", re.DOTALL | re.IGNORECASE),
+        "#" * level + " ",
+    )
+    for level in range(1, 7)
+}
+_RE_BLOCKQUOTE = re.compile(r"<blockquote[^>]*>(.*?)</blockquote>", re.DOTALL | re.IGNORECASE)
+_RE_LI_OPEN = re.compile(r"<li[^>]*>", re.IGNORECASE)
+_RE_LI_CLOSE = re.compile(r"</li>", re.IGNORECASE)
+_RE_LIST_TAG = re.compile(r"</?[ou]l[^>]*>", re.IGNORECASE)
+_RE_TR_OPEN = re.compile(r"<tr[^>]*>", re.IGNORECASE)
+_RE_TR_CLOSE = re.compile(r"</tr>", re.IGNORECASE)
+_RE_TD_OPEN = re.compile(r"<t[dh][^>]*>", re.IGNORECASE)
+_RE_TD_CLOSE = re.compile(r"</t[dh]>", re.IGNORECASE)
+_RE_TABLE_TAG = re.compile(r"</?table[^>]*>", re.IGNORECASE)
+_RE_LINK = re.compile(r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', re.DOTALL | re.IGNORECASE)
+_RE_BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_RE_P_CLOSE = re.compile(r"</p>", re.IGNORECASE)
+_RE_DIV_CLOSE = re.compile(r"</div>", re.IGNORECASE)
+_RE_ALL_TAGS = re.compile(r"<[^>]+>")
+_RE_WHITESPACE_COLLAPSE = re.compile(r"\s+")
+_RE_ICAL_UNFOLD = re.compile(r"\r?\n[\t ]")
+_RE_MAILTO = re.compile(r"(?i)mailto:")
+
+
+@functools.lru_cache(maxsize=32)
+def _header_pattern(name: str) -> re.Pattern:
+    """Compile and cache a regex for extracting a named RFC 2822 header."""
+    return re.compile(
+        rf"^{re.escape(name)}:[ \t]*(.+?)(?=\n\S|\n\n|\Z)",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+
+
+@functools.lru_cache(maxsize=16)
+def _ical_pattern(name: str) -> re.Pattern:
+    """Compile and cache a regex for extracting a named iCalendar field."""
+    return re.compile(
+        rf"^{re.escape(name)}(?:;[^:]*)?:(.+?)(?=\r?\n[^\t ]|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
 
 
 @dataclass
@@ -870,14 +917,10 @@ def _calendar_to_text(ical_text: str) -> str:
 
     def _ical_field(name: str) -> str:
         # Handle folded lines and parameterized field names (e.g. DTSTART;VALUE=DATE:...)
-        pattern = re.compile(
-            rf"^{re.escape(name)}(?:;[^:]*)?:(.+?)(?=\r?\n[^\t ]|\Z)",
-            re.MULTILINE | re.DOTALL,
-        )
-        m = pattern.search(ical_text)
+        m = _ical_pattern(name).search(ical_text)
         if m:
             # Unfold continuation lines
-            return re.sub(r"\r?\n[\t ]", "", m.group(1)).strip()
+            return _RE_ICAL_UNFOLD.sub("", m.group(1)).strip()
         return ""
 
     summary = _ical_field("SUMMARY")
@@ -887,7 +930,7 @@ def _calendar_to_text(ical_text: str) -> str:
     organizer = _ical_field("ORGANIZER")
     if organizer:
         # Strip mailto: prefix
-        organizer = re.sub(r"(?i)mailto:", "", organizer)
+        organizer = _RE_MAILTO.sub("", organizer)
         parts.append(f"Organizer: {organizer}")
 
     location = _ical_field("LOCATION")
@@ -942,16 +985,12 @@ def _extract_header(source: str, header_name: str) -> str:
     Handles continuation lines (lines starting with whitespace).
     Stops at the blank line separating headers from body.
     """
-    pattern = re.compile(
-        rf"^{re.escape(header_name)}:[ \t]*(.+?)(?=\n\S|\n\n|\Z)",
-        re.IGNORECASE | re.MULTILINE | re.DOTALL,
-    )
-    match = pattern.search(source)
+    match = _header_pattern(header_name).search(source)
     if not match:
         return ""
     value = match.group(1).strip()
     # Collapse continuation whitespace
-    value = re.sub(r"\s+", " ", value)
+    value = _RE_WHITESPACE_COLLAPSE.sub(" ", value)
     return value
 
 
@@ -1048,54 +1087,47 @@ def _looks_like_html(text: str) -> bool:
 def _html_to_text(html: str) -> str:
     """Convert HTML to readable plain text, preserving semantic structure."""
     # Remove style and script blocks
-    text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = _RE_STYLE.sub("", html)
+    text = _RE_SCRIPT.sub("", text)
 
     # Headings → markdown-style
-    for level in range(1, 7):
-        prefix = "#" * level + " "
-        text = re.sub(
-            rf"<h{level}[^>]*>(.*?)</h{level}>",
+    for _level, (pattern, prefix) in _RE_HEADINGS.items():
+        text = pattern.sub(
             lambda m, p=prefix: f"\n{p}{m.group(1).strip()}\n",
             text,
-            flags=re.DOTALL | re.IGNORECASE,
         )
 
     # Blockquote
-    text = re.sub(
-        r"<blockquote[^>]*>(.*?)</blockquote>",
+    text = _RE_BLOCKQUOTE.sub(
         lambda m: "\n" + "\n".join(f"> {line}" for line in m.group(1).strip().splitlines()) + "\n",
         text,
-        flags=re.DOTALL | re.IGNORECASE,
     )
 
     # Lists: <li> → bullet
-    text = re.sub(r"<li[^>]*>", "\n- ", text, flags=re.IGNORECASE)
-    text = re.sub(r"</li>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"</?[ou]l[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = _RE_LI_OPEN.sub("\n- ", text)
+    text = _RE_LI_CLOSE.sub("", text)
+    text = _RE_LIST_TAG.sub("\n", text)
 
     # Tables: <tr> → newline, <td>/<th> → tab-separated
-    text = re.sub(r"<tr[^>]*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</tr>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<t[dh][^>]*>", "\t", text, flags=re.IGNORECASE)
-    text = re.sub(r"</t[dh]>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"</?table[^>]*>", "\n", text, flags=re.IGNORECASE)
+    text = _RE_TR_OPEN.sub("\n", text)
+    text = _RE_TR_CLOSE.sub("", text)
+    text = _RE_TD_OPEN.sub("\t", text)
+    text = _RE_TD_CLOSE.sub("", text)
+    text = _RE_TABLE_TAG.sub("\n", text)
 
     # Links: <a href="url">text</a> → text (url)
-    text = re.sub(
-        r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+    text = _RE_LINK.sub(
         lambda m: f"{m.group(2).strip()} ({m.group(1)})" if m.group(1).strip() else m.group(2).strip(),
         text,
-        flags=re.DOTALL | re.IGNORECASE,
     )
 
     # <br> and block-level elements → newlines
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</p>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</div>", "\n", text, flags=re.IGNORECASE)
+    text = _RE_BR.sub("\n", text)
+    text = _RE_P_CLOSE.sub("\n", text)
+    text = _RE_DIV_CLOSE.sub("\n", text)
 
     # Strip remaining tags
-    text = re.sub(r"<[^>]+>", "", text)
+    text = _RE_ALL_TAGS.sub("", text)
     text = unescape(text)
     return _clean_text(text)
 
