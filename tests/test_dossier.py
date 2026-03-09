@@ -64,12 +64,23 @@ def db_empty():
         database.close()
 
 
+@pytest.fixture()
+def gen(db):
+    """DossierGenerator with populated database."""
+    return DossierGenerator(db)
+
+
+@pytest.fixture()
+def gen_empty(db_empty):
+    """DossierGenerator with empty database."""
+    return DossierGenerator(db_empty)
+
+
 # ── preview ──────────────────────────────────────────────────
 
 
-def test_preview_returns_correct_counts(db):
+def test_preview_returns_correct_counts(gen):
     """Preview should return accurate counts."""
-    gen = DossierGenerator(db)
     result = gen.preview()
 
     assert result["evidence_count"] == 3
@@ -79,27 +90,24 @@ def test_preview_returns_correct_counts(db):
     assert "discrimination" in result["categories"]
 
 
-def test_preview_filters_by_relevance(db):
+def test_preview_filters_by_relevance(gen):
     """Preview should respect min_relevance filter."""
-    gen = DossierGenerator(db)
     result = gen.preview(min_relevance=4)
 
     assert result["evidence_count"] == 2  # relevance 4 and 5
 
 
-def test_preview_filters_by_category(db):
+def test_preview_filters_by_category(gen):
     """Preview should respect category filter."""
-    gen = DossierGenerator(db)
     result = gen.preview(category="harassment")
 
     assert result["evidence_count"] == 1
     assert result["categories"] == ["harassment"]
 
 
-def test_preview_empty_evidence(db_empty):
+def test_preview_empty_evidence(gen_empty):
     """Preview should handle no evidence gracefully."""
-    gen = DossierGenerator(db_empty)
-    result = gen.preview()
+    result = gen_empty.preview()
 
     assert result["evidence_count"] == 0
     assert result["email_count"] == 0
@@ -108,9 +116,8 @@ def test_preview_empty_evidence(db_empty):
 # ── generate ─────────────────────────────────────────────────
 
 
-def test_generate_returns_valid_html(db):
+def test_generate_returns_valid_html(gen):
     """Generate should return valid HTML."""
-    gen = DossierGenerator(db)
     result = gen.generate(title="Test Dossier")
 
     assert "html" in result
@@ -118,9 +125,8 @@ def test_generate_returns_valid_html(db):
     assert "Test Dossier" in result["html"]
 
 
-def test_generate_includes_evidence_items(db):
+def test_generate_includes_evidence_items(gen):
     """HTML should contain evidence items."""
-    gen = DossierGenerator(db)
     result = gen.generate()
 
     assert result["evidence_count"] == 3
@@ -128,9 +134,8 @@ def test_generate_includes_evidence_items(db):
     assert "discrimination" in result["html"]
 
 
-def test_generate_includes_source_emails(db):
+def test_generate_includes_source_emails(gen):
     """HTML should contain source email appendix."""
-    gen = DossierGenerator(db)
     result = gen.generate()
 
     assert result["email_count"] == 3
@@ -138,25 +143,22 @@ def test_generate_includes_source_emails(db):
     assert "uid-1" in result["html"]
 
 
-def test_generate_includes_case_reference(db):
+def test_generate_includes_case_reference(gen):
     """Case reference should appear on cover page."""
-    gen = DossierGenerator(db)
     result = gen.generate(case_reference="CASE-2024-001")
 
     assert "CASE-2024-001" in result["html"]
 
 
-def test_generate_includes_custodian(db):
+def test_generate_includes_custodian(gen):
     """Custodian should appear on cover page."""
-    gen = DossierGenerator(db)
     result = gen.generate(custodian="Evidence Manager")
 
     assert "Evidence Manager" in result["html"]
 
 
-def test_generate_has_dossier_hash(db):
+def test_generate_has_dossier_hash(gen):
     """Dossier should have a SHA-256 integrity hash."""
-    gen = DossierGenerator(db)
     result = gen.generate()
 
     assert "dossier_hash" in result
@@ -164,51 +166,45 @@ def test_generate_has_dossier_hash(db):
     assert result["dossier_hash"] in result["html"]
 
 
-def test_generate_filters_by_relevance(db):
+def test_generate_filters_by_relevance(gen):
     """Generate should respect min_relevance filter."""
-    gen = DossierGenerator(db)
     result = gen.generate(min_relevance=5)
 
     assert result["evidence_count"] == 1  # Only relevance 5
 
 
-def test_generate_filters_by_category(db):
+def test_generate_filters_by_category(gen):
     """Generate should respect category filter."""
-    gen = DossierGenerator(db)
     result = gen.generate(category="harassment")
 
     assert result["evidence_count"] == 1
 
 
-def test_generate_includes_custody_log(db):
+def test_generate_includes_custody_log(gen):
     """HTML should contain custody log when enabled."""
-    gen = DossierGenerator(db)
     result = gen.generate(include_custody=True)
 
     assert "Chain-of-Custody Log" in result["html"]
 
 
-def test_generate_excludes_custody_when_disabled(db):
+def test_generate_excludes_custody_when_disabled(gen):
     """HTML should not contain custody log when disabled."""
-    gen = DossierGenerator(db)
     result = gen.generate(include_custody=False)
 
     assert "Chain-of-Custody Log" not in result["html"]
 
 
-def test_generate_empty_evidence(db_empty):
+def test_generate_empty_evidence(gen_empty):
     """Should produce minimal dossier for empty evidence."""
-    gen = DossierGenerator(db_empty)
-    result = gen.generate(title="Empty Dossier")
+    result = gen_empty.generate(title="Empty Dossier")
 
     assert "html" in result
     assert result["evidence_count"] == 0
     assert "Empty Dossier" in result["html"]
 
 
-def test_generate_has_generated_at(db):
+def test_generate_has_generated_at(gen):
     """Result should include timestamp."""
-    gen = DossierGenerator(db)
     result = gen.generate()
 
     assert "generated_at" in result
@@ -218,10 +214,8 @@ def test_generate_has_generated_at(db):
 # ── generate_file ────────────────────────────────────────────
 
 
-def test_generate_file_writes_html(db):
+def test_generate_file_writes_html(gen):
     """generate_file should write HTML to disk."""
-    gen = DossierGenerator(db)
-
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "dossier.html")
         result = gen.generate_file(path, title="File Test")
@@ -234,10 +228,8 @@ def test_generate_file_writes_html(db):
         assert "File Test" in content
 
 
-def test_generate_file_creates_parent_dirs(db):
+def test_generate_file_creates_parent_dirs(gen):
     """generate_file should create parent directories."""
-    gen = DossierGenerator(db)
-
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "subdir", "deep", "dossier.html")
         result = gen.generate_file(path, title="Deep Test")
@@ -260,9 +252,8 @@ def test_generate_with_network(db):
     assert "Relationship Analysis" in result["html"]
 
 
-def test_generate_without_network(db):
+def test_generate_without_network(gen):
     """Should omit relationship section when no network."""
-    gen = DossierGenerator(db, network=None)
     result = gen.generate(include_relationships=True)
 
     # No network provided, so no relationship data
@@ -283,9 +274,8 @@ def test_generate_with_persons_of_interest(db):
 # ── dotted conditionals in loops ─────────────────────────────
 
 
-def test_dotted_conditionals_in_loop(db):
+def test_dotted_conditionals_in_loop(gen):
     """{% if email.to %} inside {% for %} should render when field is truthy."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -295,9 +285,8 @@ def test_dotted_conditionals_in_loop(db):
     assert "{% if email.to %}" not in html
 
 
-def test_dotted_conditional_false_branch(db):
+def test_dotted_conditional_false_branch(gen):
     """{% if email.cc %} should not render CC line when cc is empty."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -309,9 +298,8 @@ def test_dotted_conditional_false_branch(db):
 # ── evidence numbering and cross-references ──────────────────
 
 
-def test_evidence_numbering(db):
+def test_evidence_numbering(gen):
     """Evidence items should have E-1, E-2, E-3 numbers."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -320,9 +308,8 @@ def test_evidence_numbering(db):
     assert "E-3" in html
 
 
-def test_appendix_numbering(db):
+def test_appendix_numbering(gen):
     """Source emails should have A-1, A-2, A-3 numbers."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -331,9 +318,8 @@ def test_appendix_numbering(db):
     assert "A-3" in html
 
 
-def test_cross_references(db):
+def test_cross_references(gen):
     """Evidence items should link to their source appendix."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -345,9 +331,8 @@ def test_cross_references(db):
 # ── executive summary ────────────────────────────────────────
 
 
-def test_executive_summary_present(db):
+def test_executive_summary_present(gen):
     """Executive summary should appear when evidence exists."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -356,18 +341,16 @@ def test_executive_summary_present(db):
     assert "source emails" in html
 
 
-def test_executive_summary_absent_when_empty(db_empty):
+def test_executive_summary_absent_when_empty(gen_empty):
     """Executive summary should not appear with no evidence."""
-    gen = DossierGenerator(db_empty)
-    result = gen.generate()
+    result = gen_empty.generate()
     html = result["html"]
 
     assert "Executive Summary" not in html
 
 
-def test_category_breakdown_table(db):
+def test_category_breakdown_table(gen):
     """Category breakdown table should list categories with counts."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -377,9 +360,8 @@ def test_category_breakdown_table(db):
     assert "retaliation" in html
 
 
-def test_glossary_present(db):
+def test_glossary_present(gen):
     """Category glossary should appear with definitions."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -391,9 +373,8 @@ def test_glossary_present(db):
 # ── quote highlighting and attachments ───────────────────────
 
 
-def test_evidence_quote_banner(db):
+def test_evidence_quote_banner(gen):
     """Quote text should appear in source email section as banners."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -402,7 +383,7 @@ def test_evidence_quote_banner(db):
     assert "evidence content" in html
 
 
-def test_attachment_info_in_appendix(db):
+def test_attachment_info_in_appendix(db, gen):
     """Emails with attachments should show attachment bar."""
     # Insert an attachment for uid-1
     db.conn.execute(
@@ -411,7 +392,6 @@ def test_attachment_info_in_appendix(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -419,9 +399,8 @@ def test_attachment_info_in_appendix(db):
     assert "attachment-bar" in html
 
 
-def test_no_attachment_bar_when_none(db):
+def test_no_attachment_bar_when_none(gen):
     """Emails without attachments should not show attachment bar."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -432,9 +411,8 @@ def test_no_attachment_bar_when_none(db):
 # ── print/PDF and date formatting ────────────────────────────
 
 
-def test_date_formatting(db):
+def test_date_formatting(gen):
     """Dates should appear in human-readable format with month names."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -442,16 +420,15 @@ def test_date_formatting(db):
     assert "January" in html
 
 
-def test_created_at_shown(db):
+def test_created_at_shown(gen):
     """Evidence items should show when they were collected."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
     assert "Collected:" in html
 
 
-def test_content_sha256_fallback(db):
+def test_content_sha256_fallback(db, gen):
     """Empty SHA-256 should show fallback text."""
     # Insert email with empty hash
     db.conn.execute(
@@ -469,25 +446,22 @@ def test_content_sha256_fallback(db):
     db.conn.commit()
     db.add_evidence("uid-nohash", "general", "test quote", "Test", 1)
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
     assert "(not available)" in html
 
 
-def test_print_css_avoids_breaks(db):
+def test_print_css_avoids_breaks(gen):
     """Print CSS should prevent page breaks inside items."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
     assert "break-inside: avoid" in html
 
 
-def test_print_css_removes_scroll(db):
+def test_print_css_removes_scroll(gen):
     """Print CSS should remove scroll containers."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -497,7 +471,7 @@ def test_print_css_removes_scroll(db):
 # ── evidence details: thread topic, notes ────────────────────
 
 
-def test_thread_topic_shown(db):
+def test_thread_topic_shown(db, gen):
     """Thread topic should appear when populated on source email."""
     db.conn.execute(
         "UPDATE emails SET thread_topic = ? WHERE uid = ?",
@@ -505,7 +479,6 @@ def test_thread_topic_shown(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -513,9 +486,8 @@ def test_thread_topic_shown(db):
     assert "<strong>Thread:</strong>" in html
 
 
-def test_notes_hidden_when_empty(db):
+def test_notes_hidden_when_empty(gen):
     """Notes label should not appear for items with no notes."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -523,7 +495,7 @@ def test_notes_hidden_when_empty(db):
     assert "<strong>Notes:</strong>" not in html
 
 
-def test_notes_shown_when_present(db):
+def test_notes_shown_when_present(db, gen):
     """Notes text should appear when populated."""
     # Update the first evidence item to have notes
     db.conn.execute(
@@ -532,7 +504,6 @@ def test_notes_shown_when_present(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -543,9 +514,8 @@ def test_notes_shown_when_present(db):
 # ── Commit 1: JS elimination — server-side rendering ─────────
 
 
-def test_verified_badge_text(db):
+def test_verified_badge_text(gen):
     """Verified badges should show 'Verified'/'Unverified' text, not raw values."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -553,9 +523,8 @@ def test_verified_badge_text(db):
     assert "data-verified" not in html
 
 
-def test_no_javascript_in_output(db):
+def test_no_javascript_in_output(gen):
     """No <script> tags should appear in the generated HTML."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -591,9 +560,8 @@ def test_strip_html_tags_removes_html_comments():
 # ── Commit 2: Verification banner + evidence index table ─────
 
 
-def test_verification_banner_all_verified(db):
+def test_verification_banner_all_verified(gen):
     """Green banner should appear when all quotes are verified."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -601,11 +569,10 @@ def test_verification_banner_all_verified(db):
     assert "verification-banner" in html
 
 
-def test_verification_banner_partial(db):
+def test_verification_banner_partial(db, gen):
     """Warning banner should appear when some quotes are unverified."""
     # Add an evidence item with a quote that won't match the body
     db.add_evidence("uid-1", "general", "nonexistent quote xyz", "Unverifiable", 2)
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -613,9 +580,8 @@ def test_verification_banner_partial(db):
     assert "unverified" in html.lower()
 
 
-def test_evidence_index_table(db):
+def test_evidence_index_table(gen):
     """Evidence index table should appear with correct structure."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -624,9 +590,8 @@ def test_evidence_index_table(db):
     assert "E-1" in html
 
 
-def test_toc_includes_index(db):
+def test_toc_includes_index(gen):
     """TOC should contain link to evidence index."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -636,9 +601,8 @@ def test_toc_includes_index(db):
 # ── Commit 3: Star-glyph relevance + B&W safety ─────────────
 
 
-def test_relevance_stars(db):
+def test_relevance_stars(gen):
     """Relevance-5 item should show ★★★★★ stars."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -646,18 +610,16 @@ def test_relevance_stars(db):
     assert "relevance-stars" in html  # Star span CSS class present
 
 
-def test_relevance_stars_mixed(db):
+def test_relevance_stars_mixed(gen):
     """Relevance-3 item should show ★★★☆☆."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
     assert "\u2605\u2605\u2605\u2606\u2606" in html  # 3 filled, 2 empty
 
 
-def test_print_css_bw_badges(db):
+def test_print_css_bw_badges(gen):
     """Print CSS should make badges B&W safe."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -667,7 +629,7 @@ def test_print_css_bw_badges(db):
 # ── Commit 4: Richer source email metadata ───────────────────
 
 
-def test_bcc_shown_in_appendix(db):
+def test_bcc_shown_in_appendix(db, gen):
     """BCC recipients should appear in source email header."""
     db.conn.execute(
         "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
@@ -675,7 +637,6 @@ def test_bcc_shown_in_appendix(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -683,7 +644,7 @@ def test_bcc_shown_in_appendix(db):
     assert "<strong>BCC:</strong>" in html
 
 
-def test_folder_shown_in_appendix(db):
+def test_folder_shown_in_appendix(db, gen):
     """Folder should appear in source email header when set."""
     db.conn.execute(
         "UPDATE emails SET folder = ? WHERE uid = ?",
@@ -691,7 +652,6 @@ def test_folder_shown_in_appendix(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -699,7 +659,7 @@ def test_folder_shown_in_appendix(db):
     assert "<strong>Folder:</strong>" in html
 
 
-def test_attachment_details_shown(db):
+def test_attachment_details_shown(db, gen):
     """Attachments should show name, mime_type, and size."""
     db.conn.execute(
         "INSERT INTO attachments (email_uid, name, mime_type, size) VALUES (?, ?, ?, ?)",
@@ -707,7 +667,6 @@ def test_attachment_details_shown(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -725,7 +684,7 @@ def test_format_file_size():
     assert format_file_size(2097152) == "2.0 MB"
 
 
-def test_updated_at_shown_when_different(db):
+def test_updated_at_shown_when_different(db, gen):
     """Updated date should appear when different from created_at."""
     db.conn.execute(
         "UPDATE evidence_items SET updated_at = ? WHERE id = 1",
@@ -733,7 +692,6 @@ def test_updated_at_shown_when_different(db):
     )
     db.conn.commit()
 
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -743,9 +701,8 @@ def test_updated_at_shown_when_different(db):
 # ── Commit 5: Scope, prepared-by, legal disclaimer ──────────
 
 
-def test_prepared_by_on_cover(db):
+def test_prepared_by_on_cover(gen):
     """Prepared-by name should appear on cover page."""
-    gen = DossierGenerator(db)
     result = gen.generate(prepared_by="Jane Smith, Paralegal")
     html = result["html"]
 
@@ -753,9 +710,8 @@ def test_prepared_by_on_cover(db):
     assert "Prepared by:" in html
 
 
-def test_scope_section_no_filters(db):
+def test_scope_section_no_filters(gen):
     """Scope should show archive size and 'No filters applied'."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
@@ -763,18 +719,16 @@ def test_scope_section_no_filters(db):
     assert "3</strong> emails" in html  # 3 emails in fixture
 
 
-def test_scope_section_with_filters(db):
+def test_scope_section_with_filters(gen):
     """Scope should list active filters."""
-    gen = DossierGenerator(db)
     result = gen.generate(category="harassment")
     html = result["html"]
 
     assert "Category: harassment" in html
 
 
-def test_legal_disclaimer_present(db):
+def test_legal_disclaimer_present(gen):
     """Legal disclaimer with ESI language should appear."""
-    gen = DossierGenerator(db)
     result = gen.generate()
     html = result["html"]
 
