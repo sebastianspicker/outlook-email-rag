@@ -195,14 +195,25 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         "attachment_names": ", ".join(email_dict.get("attachment_names", [])),
         "attachment_count": str(len(email_dict.get("attachment_names", []))),
         "has_signature": str(had_signature),
+        "categories": ", ".join(email_dict.get("categories", []) or []),
+        "is_calendar_message": str(email_dict.get("is_calendar_message", False)),
+        "thread_topic": email_dict.get("thread_topic", "") or "",
+        "inference_classification": email_dict.get("inference_classification", "") or "",
     }
+
+    # Embed categories and calendar tag in search text
+    categories = email_dict.get("categories", []) or []
+    categories_line = f"\nCategories: {', '.join(categories)}" if categories else ""
+    calendar_tag = "\n[Calendar/Meeting]" if email_dict.get("is_calendar_message") else ""
 
     # Embed attachment names in search text for semantic retrieval
     attachment_names = email_dict.get("attachment_names", [])
     attachment_line = f"\nAttachments: {', '.join(attachment_names)}" if attachment_names else ""
 
+    extra_lines = f"{calendar_tag}{categories_line}{attachment_line}"
+
     if len(body) <= MAX_CHUNK_CHARS:
-        text = f"{header}{attachment_line}\n\n{body}{quoted_note}{sig_note}" if body else f"{header}{attachment_line}"
+        text = f"{header}{extra_lines}\n\n{body}{quoted_note}{sig_note}" if body else f"{header}{extra_lines}"
         return [
             EmailChunk(
                 uid=uid,
@@ -219,8 +230,8 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     chunks: list[EmailChunk] = []
     for i, segment in enumerate(body_segments):
         if i == 0:
-            # First chunk gets full header + attachment names
-            text = f"{header}{attachment_line}\n\n[Part 1/{len(body_segments)}]\n{segment}"
+            # First chunk gets full header + extra metadata lines
+            text = f"{header}{extra_lines}\n\n[Part 1/{len(body_segments)}]\n{segment}"
         else:
             # Continuation chunks get context header for embedding quality
             context_parts = []

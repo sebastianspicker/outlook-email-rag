@@ -48,3 +48,34 @@ def test_estimate_tokens():
     assert estimate_tokens("") == 1  # minimum 1
     assert estimate_tokens("a" * 100) == 25
     assert estimate_tokens("hello world") >= 1
+
+
+# ── Categories and calendar in headers ──────────────────────
+
+
+def test_email_header_shows_categories():
+    from src.formatting import build_email_header
+
+    header = build_email_header({
+        "subject": "Test", "categories": ["Meeting", "Finance"],
+    })
+    assert "Categories: Meeting, Finance" in header
+
+
+def test_email_header_shows_calendar_tag():
+    from src.formatting import build_email_header
+
+    header = build_email_header({
+        "subject": "Test", "is_calendar_message": True,
+    })
+    assert "[Calendar/Meeting]" in header
+
+
+def test_result_header_shows_categories():
+    header = build_result_header({"subject": "Test", "categories": "Finance, HR"})
+    assert "Categories: Finance, HR" in header
+
+
+def test_result_header_shows_calendar_tag():
+    header = build_result_header({"subject": "Test", "is_calendar_message": "True"})
+    assert "[Calendar/Meeting]" in header

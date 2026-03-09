@@ -414,3 +414,71 @@ def test_chunk_attachment_empty():
     assert chunks == []
     chunks = chunk_attachment("e3", "spaces.txt", "   ", {})
     assert chunks == []
+
+
+# ── Categories and calendar in chunk metadata ──────────────────
+
+
+def test_chunk_includes_categories_in_metadata():
+    email_dict = {
+        "uid": "cat1",
+        "message_id": "",
+        "subject": "Category test",
+        "sender_name": "Alice",
+        "sender_email": "alice@example.com",
+        "to": [],
+        "cc": [],
+        "bcc": [],
+        "date": "2025-01-01",
+        "body": "Test body",
+        "folder": "Inbox",
+        "has_attachments": False,
+        "attachment_names": [],
+        "conversation_id": "",
+        "in_reply_to": "",
+        "email_type": "original",
+        "base_subject": "Category test",
+        "priority": 0,
+        "categories": ["Meeting", "Finance"],
+        "is_calendar_message": False,
+        "thread_topic": "Budget Q4",
+        "inference_classification": "Focused",
+    }
+    chunks = chunk_email(email_dict)
+    assert len(chunks) >= 1
+    meta = chunks[0].metadata
+    assert meta["categories"] == "Meeting, Finance"
+    assert meta["thread_topic"] == "Budget Q4"
+    assert meta["inference_classification"] == "Focused"
+    assert meta["is_calendar_message"] == "False"
+
+
+def test_chunk_includes_categories_in_text():
+    email_dict = {
+        "uid": "cat2",
+        "message_id": "",
+        "subject": "Cat text test",
+        "sender_name": "",
+        "sender_email": "a@b.com",
+        "to": [],
+        "cc": [],
+        "bcc": [],
+        "date": "",
+        "body": "Body content",
+        "folder": "Inbox",
+        "has_attachments": False,
+        "attachment_names": [],
+        "conversation_id": "",
+        "in_reply_to": "",
+        "email_type": "original",
+        "base_subject": "Cat text test",
+        "priority": 0,
+        "categories": ["Project X"],
+        "is_calendar_message": True,
+        "thread_topic": "",
+        "inference_classification": "",
+    }
+    chunks = chunk_email(email_dict)
+    text = chunks[0].text
+    assert "Categories: Project X" in text
+    assert "[Calendar/Meeting]" in text

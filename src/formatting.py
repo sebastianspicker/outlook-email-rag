@@ -45,6 +45,13 @@ def build_email_header(email_dict: Mapping[str, Any]) -> str:
     if folder:
         parts.append(f"Folder: {folder}")
 
+    categories = email_dict.get("categories")
+    if categories and isinstance(categories, list) and categories:
+        parts.append(f"Categories: {', '.join(str(c) for c in categories[:5])}")
+
+    if email_dict.get("is_calendar_message"):
+        parts.append("[Calendar/Meeting]")
+
     if email_dict.get("has_attachments"):
         attachment_names = _as_list(email_dict.get("attachment_names"))
         if attachment_names:
@@ -93,6 +100,13 @@ def build_result_header(metadata: Mapping[str, Any]) -> str:
     priority = metadata.get("priority")
     if priority and str(priority) not in ("0", ""):
         parts.append(f"Priority: {priority}")
+
+    categories = metadata.get("categories")
+    if categories and str(categories).strip():
+        parts.append(f"Categories: {categories}")
+
+    if str(metadata.get("is_calendar_message", "")).lower() in ("true", "1"):
+        parts.append("[Calendar/Meeting]")
 
     attachment_names = metadata.get("attachment_names")
     if attachment_names and str(attachment_names).strip():
