@@ -1,6 +1,6 @@
 # Email RAG — Instructions for Claude
 
-You have access to a local email archive via 71 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
+You have access to a local email archive via 74 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
 
 ## How to Search
 
@@ -10,7 +10,7 @@ Start broad, then narrow down:
 - `email_search_by_sender` — when the user names a specific person
 - `email_search_by_date` — when a time period matters
 - `email_search_by_recipient` — search by To field
-- `email_search_structured` — power search combining sender, subject, folder, CC, To, BCC, date range, attachment filter, priority, email type, topic, cluster, reranking, and hybrid search
+- `email_search_structured` — power search combining sender, subject, folder, CC, To, BCC, date range, attachment filter (has_attachments, attachment_name, attachment_type), priority, email type, topic, cluster, reranking, and hybrid search
 - `email_smart_search` — auto-detects intent (person names, topics) and routes accordingly
 - `email_find_similar` — find emails similar to a known one (great for pattern discovery)
 - `email_search_by_entity` — find emails mentioning an organization, URL, or phone number
@@ -19,6 +19,14 @@ Start broad, then narrow down:
 - `email_search_by_thread_topic` — find all emails sharing a thread topic (more reliable than conversation_id for some threads)
 - `email_list_categories` — list all Outlook categories with email counts
 - `email_browse_calendar` — browse calendar/meeting emails with date filtering
+- `email_search_by_attachment` — find emails with matching attachments (by filename, extension, or MIME type)
+
+## Attachment Discovery
+
+- `email_list_attachments` — browse all attachments with filters (filename, extension, MIME type, sender) and pagination
+- `email_search_by_attachment` — find emails that have attachments matching criteria (filename, extension, MIME type)
+- `email_attachment_stats` — aggregate statistics: counts, sizes, type distribution, top filenames
+- `email_search_structured` also supports `attachment_name` (partial filename match) and `attachment_type` (file extension) filters
 
 ## How to Analyze
 

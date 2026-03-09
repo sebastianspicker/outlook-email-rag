@@ -15,19 +15,23 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
 from . import (
+    attachments,
     browse,
     categories,
     data_quality,
+    diagnostics,
     entities,
     evidence,
     network,
     reporting,
+    search,
     temporal,
     threads,
     topics,
 )
 
 _MODULES = [
+    search,
     network,
     temporal,
     entities,
@@ -38,6 +42,8 @@ _MODULES = [
     browse,
     evidence,
     categories,
+    diagnostics,
+    attachments,
 ]
 
 

@@ -355,6 +355,7 @@ async def test_email_sparse_status_returns_json(monkeypatch):
 def test_all_tool_modules_importable():
     """Smoke test: every tool module under src/tools/ imports cleanly."""
     from src.tools import (
+        attachments,
         browse,
         data_quality,
         entities,
@@ -367,7 +368,7 @@ def test_all_tool_modules_importable():
     )
 
     for module in [
-        browse, data_quality, entities, evidence, network,
+        attachments, browse, data_quality, entities, evidence, network,
         reporting, temporal, threads, topics,
     ]:
         assert callable(module.register), f"{module.__name__} missing register()"
