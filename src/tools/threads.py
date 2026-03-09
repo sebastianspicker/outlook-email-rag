@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from ..mcp_models import (
     ActionItemsInput,
     DecisionsInput,
@@ -11,6 +9,7 @@ from ..mcp_models import (
     ThreadSummaryInput,
     ThreadTopicSearchInput,
 )
+from .utils import json_error, json_response, run_with_db
 
 
 def register(mcp, deps) -> None:
@@ -32,10 +31,10 @@ def register(mcp, deps) -> None:
         def _run():
             retriever = deps.get_retriever()
             results = retriever.search_by_thread(
-                conversation_id=params.conversation_id, top_k=50
+                conversation_id=params.conversation_id, top_k=50,
             )
             if not results:
-                return json.dumps({"error": "No emails found for this thread."})
+                return json_error("No emails found for this thread.")
 
             emails = [
                 {"clean_body": r.text, "sender_email": r.metadata.get("sender_email", ""),
@@ -47,7 +46,7 @@ def register(mcp, deps) -> None:
             from ..thread_summarizer import summarize_thread
 
             summary = summarize_thread(emails, max_sentences=params.max_sentences)
-            return json.dumps({"conversation_id": params.conversation_id, "summary": summary})
+            return json_response({"conversation_id": params.conversation_id, "summary": summary})
         return await deps.offload(_run)
 
     @mcp.tool(name="email_action_items", annotations=deps.tool_annotations("Extract Action Items"))
@@ -70,10 +69,10 @@ def register(mcp, deps) -> None:
             if params.conversation_id:
                 retriever = deps.get_retriever()
                 results = retriever.search_by_thread(
-                    conversation_id=params.conversation_id, top_k=50
+                    conversation_id=params.conversation_id, top_k=50,
                 )
                 if not results:
-                    return json.dumps({"error": "No emails found for this thread."})
+                    return json_error("No emails found for this thread.")
 
                 all_items = []
                 for r in results:
@@ -84,13 +83,12 @@ def register(mcp, deps) -> None:
                     )
                     all_items.extend(items)
 
-                return json.dumps(
+                return json_response(
                     [{"text": a.text, "assignee": a.assignee, "deadline": a.deadline,
                       "is_urgent": a.is_urgent} for a in all_items[:params.limit]],
-                    indent=2,
                 )
 
-            return json.dumps({"error": "Provide conversation_id to extract action items."})
+            return json_error("Provide conversation_id to extract action items.")
         return await deps.offload(_run)
 
     @mcp.tool(name="email_decisions", annotations=deps.tool_annotations("Extract Decisions"))
@@ -113,10 +111,10 @@ def register(mcp, deps) -> None:
             if params.conversation_id:
                 retriever = deps.get_retriever()
                 results = retriever.search_by_thread(
-                    conversation_id=params.conversation_id, top_k=50
+                    conversation_id=params.conversation_id, top_k=50,
                 )
                 if not results:
-                    return json.dumps({"error": "No emails found for this thread."})
+                    return json_error("No emails found for this thread.")
 
                 all_decisions = []
                 for r in results:
@@ -128,13 +126,12 @@ def register(mcp, deps) -> None:
                     )
                     all_decisions.extend(decisions)
 
-                return json.dumps(
+                return json_response(
                     [{"text": d.text, "made_by": d.made_by, "date": d.date}
                      for d in all_decisions],
-                    indent=2,
                 )
 
-            return json.dumps({"error": "Provide conversation_id to extract decisions."})
+            return json_error("Provide conversation_id to extract decisions.")
         return await deps.offload(_run)
 
     @mcp.tool(
@@ -153,18 +150,13 @@ def register(mcp, deps) -> None:
         Returns:
             JSON with matching emails sorted by date.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
+        def _work(db):
             emails = db.thread_by_topic(params.thread_topic, limit=params.limit)
-            return json.dumps({
+            return json_response({
                 "thread_topic": params.thread_topic,
-                "emails": emails,
-                "count": len(emails),
-            }, indent=2)
-        return await deps.offload(_run)
+                "emails": emails, "count": len(emails),
+            })
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_smart_search",
@@ -214,9 +206,8 @@ def register(mcp, deps) -> None:
                     pass
 
             formatted = retriever.format_results_for_claude(results)
-            return json.dumps({
-                "query": query,
-                "count": len(results),
+            return json_response({
+                "query": query, "count": len(results),
                 "detected_intent": detected_intent,
                 "formatted_results": formatted,
             })
