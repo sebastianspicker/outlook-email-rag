@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
+from datetime import datetime
+from html import unescape
 from typing import Any
 
 
@@ -136,3 +139,85 @@ def _as_list(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value] if value.strip() else []
     return [str(value)]
+
+
+# ── Shared formatting utilities ───────────────────────────────
+
+
+def format_date(iso_date: str | None) -> str:
+    """Convert ISO date string to human-readable format.
+
+    '2024-01-15T10:30:00' → 'January 15, 2024, 10:30 AM'
+    '2024-01-15' → 'January 15, 2024'
+    Falls back to the original string on parse failure.
+    """
+    if not iso_date:
+        return ""
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%d",
+    ):
+        try:
+            dt = datetime.strptime(iso_date.strip(), fmt)
+            if dt.hour or dt.minute:
+                return dt.strftime("%B %d, %Y, %I:%M %p").replace(" 0", " ")
+            return dt.strftime("%B %d, %Y").replace(" 0", " ")
+        except ValueError:
+            continue
+    return iso_date
+
+
+def format_file_size(size_bytes: int | None) -> str:
+    """Format file size in human-readable units."""
+    if not size_bytes:
+        return ""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+# Regex to strip HTML tags (handles multi-line tags)
+_HTML_TAG_RE = re.compile(r"<[^>]+>", re.DOTALL)
+# Collapse runs of whitespace (but preserve paragraph breaks)
+_MULTI_BLANK_RE = re.compile(r"\n{3,}")
+
+
+def strip_html_tags(text: str | None) -> str:
+    """Strip HTML tags from text, returning clean plain text.
+
+    Handles common HTML email patterns: converts <br> and block elements
+    to newlines, strips all remaining tags, and decodes HTML entities.
+    """
+    if not text:
+        return ""
+    # Quick check: if there are no HTML tags or entities, return as-is
+    if "<" not in text and "&" not in text:
+        return text
+    # Text with entities but no tags — just decode entities
+    if "<" not in text:
+        return unescape(text)
+    # Remove <style>...</style> and <script>...</script> blocks including their text content
+    result = re.sub(r"<(style|script)[^>]*>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Strip HTML comment fragments (<!--[if gte mso 9]-->, <!-- ... -->)
+    result = re.sub(r"<!--[\s\S]*?-->", "", result)
+    # Replace <br>, <br/>, <br /> with newlines
+    result = re.sub(r"<br\s*/?>", "\n", result, flags=re.IGNORECASE)
+    # Replace block-level closing tags with newlines for readability
+    result = re.sub(
+        r"</(?:p|div|tr|li|h[1-6]|blockquote|pre|table|thead|tbody|tfoot)>",
+        "\n",
+        result,
+        flags=re.IGNORECASE,
+    )
+    # Strip all remaining HTML tags
+    result = _HTML_TAG_RE.sub("", result)
+    # Decode HTML entities (&amp; → &, &lt; → <, &#8230; → …, etc.)
+    result = unescape(result)
+    # Collapse excessive blank lines
+    result = _MULTI_BLANK_RE.sub("\n\n", result)
+    return result.strip()

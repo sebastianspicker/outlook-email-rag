@@ -7,7 +7,7 @@ import pytest
 
 from src.dossier_generator import DossierGenerator
 from src.email_db import EmailDatabase
-from src.evidence_exporter import strip_html_tags
+from src.formatting import format_file_size, strip_html_tags
 
 
 @pytest.fixture()
@@ -717,14 +717,12 @@ def test_attachment_details_shown(db):
 
 
 def test_format_file_size():
-    """_format_file_size should produce human-readable sizes."""
-    from src.dossier_generator import _format_file_size
-
-    assert _format_file_size(None) == ""
-    assert _format_file_size(0) == ""
-    assert _format_file_size(500) == "500 B"
-    assert _format_file_size(1536) == "1.5 KB"
-    assert _format_file_size(2097152) == "2.0 MB"
+    """format_file_size should produce human-readable sizes."""
+    assert format_file_size(None) == ""
+    assert format_file_size(0) == ""
+    assert format_file_size(500) == "500 B"
+    assert format_file_size(1536) == "1.5 KB"
+    assert format_file_size(2097152) == "2.0 MB"
 
 
 def test_updated_at_shown_when_different(db):

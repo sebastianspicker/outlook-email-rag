@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .evidence_exporter import strip_html_tags
+from .formatting import format_date, format_file_size, strip_html_tags
 
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
@@ -111,8 +111,8 @@ class DossierGenerator:
         # Number evidence items, format dates, enrich with thread topic and notes
         for idx, item in enumerate(enriched_items, 1):
             item["evidence_number"] = f"E-{idx}"
-            item["date_formatted"] = _format_date(item.get("date"))
-            item["created_at_formatted"] = _format_date(item.get("created_at"))
+            item["date_formatted"] = format_date(item.get("date"))
+            item["created_at_formatted"] = format_date(item.get("created_at"))
             # Fetch thread_topic from source email
             uid = item.get("email_uid")
             if uid:
@@ -136,7 +136,7 @@ class DossierGenerator:
             # Updated-at display (show only when different from created_at)
             updated_raw = item.get("updated_at") or ""
             created_raw = item.get("created_at") or ""
-            item["updated_at_formatted"] = _format_date(updated_raw) if updated_raw else ""
+            item["updated_at_formatted"] = format_date(updated_raw) if updated_raw else ""
             item["has_updated"] = "1" if updated_raw and updated_raw != created_raw else ""
             # Recipients from source email
             item["recipients"] = item.get("recipients") or ""
@@ -154,7 +154,7 @@ class DossierGenerator:
                     "sender_name": full.get("sender_name", ""),
                     "sender_email": full.get("sender_email", ""),
                     "date": raw_date,
-                    "date_formatted": _format_date(raw_date),
+                    "date_formatted": format_date(raw_date),
                     "subject": full.get("subject", ""),
                     "body_text": strip_html_tags(full.get("body_text")),
                     "content_sha256": raw_sha,
@@ -200,7 +200,7 @@ class DossierGenerator:
                 {
                     "name": a.get("name", "unnamed"),
                     "mime_type": a.get("mime_type", ""),
-                    "size_display": _format_file_size(a.get("size")),
+                    "size_display": format_file_size(a.get("size")),
                 }
                 for a in attachments
             ]
@@ -645,33 +645,3 @@ def _escape_html(text: str) -> str:
     )
 
 
-def _format_file_size(size_bytes: int | None) -> str:
-    """Format file size in human-readable units."""
-    if not size_bytes:
-        return ""
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    if size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    return f"{size_bytes / (1024 * 1024):.1f} MB"
-
-
-def _format_date(iso_date: str | None) -> str:
-    """Convert ISO date string to human-readable format.
-
-    '2024-01-15T10:30:00' → 'January 15, 2024, 10:30 AM'
-    '2024-01-15' → 'January 15, 2024'
-    Falls back to the original string on parse failure.
-    """
-    if not iso_date:
-        return ""
-    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S",
-                "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(iso_date.strip(), fmt)
-            if dt.hour or dt.minute:
-                return dt.strftime("%B %d, %Y, %I:%M %p").replace(" 0", " ")
-            return dt.strftime("%B %d, %Y").replace(" 0", " ")
-        except ValueError:
-            continue
-    return iso_date
