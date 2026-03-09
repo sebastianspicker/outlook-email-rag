@@ -105,3 +105,21 @@ class TestCommunicationNetwork:
         net = CommunicationNetwork(db)
         result = net.network_analysis()
         assert isinstance(result["communities"], list)
+
+    def test_network_analysis_cached(self):
+        """Second call with same top_n returns cached result."""
+        db = _populated_db()
+        net = CommunicationNetwork(db)
+        result1 = net.network_analysis(top_n=5)
+        result2 = net.network_analysis(top_n=5)
+        assert result1 is result2  # exact same dict object (cached)
+
+    def test_betweenness_cached(self):
+        """Betweenness centrality is computed once and reused."""
+        db = _populated_db()
+        net = CommunicationNetwork(db)
+        import networkx as nx
+        net._ensure_graph()
+        b1 = net._get_betweenness(nx)
+        b2 = net._get_betweenness(nx)
+        assert b1 is b2

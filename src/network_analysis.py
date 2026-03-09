@@ -18,6 +18,8 @@ class CommunicationNetwork:
     def __init__(self, email_db: EmailDatabase) -> None:
         self._db = email_db
         self._graph = None
+        self._analysis_cache: dict[tuple, dict[str, Any]] = {}
+        self._betweenness_cache: dict[int, dict[str, float]] = {}
 
     def top_contacts(self, email_address: str, limit: int = 20) -> list[dict[str, Any]]:
         """Top communication partners (bidirectional frequency)."""
@@ -42,16 +44,17 @@ class CommunicationNetwork:
                 "bridge_nodes": [],
             }
 
+        # Check result cache (keyed by edge count + top_n)
+        cache_key = (self._graph.number_of_edges(), top_n)
+        if cache_key in self._analysis_cache:
+            return self._analysis_cache[cache_key]
+
         # Degree centrality (most connected)
         degree = nx.degree_centrality(self._graph)
         most_connected = sorted(degree.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
-        # Betweenness centrality (bridge nodes)
-        try:
-            betweenness = nx.betweenness_centrality(self._graph, weight="weight")
-            bridge_nodes = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)[:top_n]
-        except Exception:
-            bridge_nodes = []
+        # Betweenness centrality (bridge nodes) — approximate for large graphs
+        bridge_nodes = self._get_bridge_nodes(nx, top_n)
 
         # Community detection
         communities: list[list[str]] = []
@@ -66,7 +69,7 @@ class CommunicationNetwork:
         except Exception:
             logger.debug("Community detection failed", exc_info=True)
 
-        return {
+        result = {
             "total_nodes": self._graph.number_of_nodes(),
             "total_edges": self._graph.number_of_edges(),
             "most_connected": [
@@ -77,6 +80,31 @@ class CommunicationNetwork:
                 {"email": email, "betweenness": round(score, 4)} for email, score in bridge_nodes
             ],
         }
+        self._analysis_cache[cache_key] = result
+        return result
+
+    def _get_betweenness(self, nx) -> dict[str, float]:
+        """Compute betweenness centrality with approximation for large graphs."""
+        edge_count = self._graph.number_of_edges()
+        if edge_count in self._betweenness_cache:
+            return self._betweenness_cache[edge_count]
+        try:
+            n_nodes = self._graph.number_of_nodes()
+            if n_nodes > 100:
+                betweenness = nx.betweenness_centrality(
+                    self._graph, weight="weight", k=min(n_nodes, 100)
+                )
+            else:
+                betweenness = nx.betweenness_centrality(self._graph, weight="weight")
+        except Exception:
+            betweenness = {}
+        self._betweenness_cache[edge_count] = betweenness
+        return betweenness
+
+    def _get_bridge_nodes(self, nx, top_n: int) -> list[tuple[str, float]]:
+        """Get top bridge nodes by betweenness centrality."""
+        betweenness = self._get_betweenness(nx)
+        return sorted(betweenness.items(), key=lambda x: x[1], reverse=True)[:top_n]
 
     def _ensure_graph(self):
         """Build the graph lazily if needed."""
@@ -227,9 +255,9 @@ class CommunicationNetwork:
         receive_count = 0
 
         if nx and self._graph.number_of_nodes() > 0 and email_address in self._graph:
-            # Bridge score
+            # Bridge score — reuse cached betweenness
             try:
-                betweenness = nx.betweenness_centrality(self._graph, weight="weight")
+                betweenness = self._get_betweenness(nx)
                 bridge_score = round(betweenness.get(email_address, 0.0), 4)
             except Exception:
                 pass
