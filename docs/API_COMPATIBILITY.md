@@ -79,124 +79,131 @@ The following CLI capabilities are stable for `0.1.x`:
 
 ## MCP Compatibility Contract
 
-The following 66 tool names are stable for `0.1.x`:
+The following 70 tool names are stable for `0.1.x`:
 
-### Core Search (8)
+### Core Search (5)
 
 1. `email_search`
-2. `email_search_by_sender`
-3. `email_search_by_date`
-4. `email_search_by_recipient`
-5. `email_search_structured`
-6. `email_search_thread`
-7. `email_smart_search`
-8. `email_find_similar`
+2. `email_search_structured`
+3. `email_search_thread`
+4. `email_smart_search`
+5. `email_find_similar`
 
 ### Archive Info (4)
 
-9. `email_list_senders`
-10. `email_list_folders`
-11. `email_stats`
-12. `email_query_suggestions`
+6. `email_list_senders`
+7. `email_list_folders`
+8. `email_stats`
+9. `email_query_suggestions`
 
 ### Ingestion (1)
 
-13. `email_ingest`
+10. `email_ingest`
 
 ### Network Analysis (3)
 
-14. `email_top_contacts`
-15. `email_communication_between`
-16. `email_network_analysis`
+11. `email_top_contacts`
+12. `email_communication_between`
+13. `email_network_analysis`
 
 ### Temporal Analysis (3)
 
-17. `email_volume_over_time`
-18. `email_activity_pattern`
-19. `email_response_times`
+14. `email_volume_over_time`
+15. `email_activity_pattern`
+16. `email_response_times`
 
 ### Entity & NLP (5)
 
-20. `email_search_by_entity`
-21. `email_list_entities`
-22. `email_entity_network`
-23. `email_find_people`
-24. `email_entity_timeline`
+17. `email_search_by_entity`
+18. `email_list_entities`
+19. `email_entity_network`
+20. `email_find_people`
+21. `email_entity_timeline`
 
-### Thread Intelligence (3)
+### Thread Intelligence (4)
 
-25. `email_thread_summary`
-26. `email_action_items`
-27. `email_decisions`
+22. `email_thread_summary`
+23. `email_action_items`
+24. `email_decisions`
+25. `email_search_by_thread_topic`
 
 ### Topics & Clusters (5)
 
-28. `email_topics`
-29. `email_search_by_topic`
-30. `email_keywords`
-31. `email_clusters`
-32. `email_cluster_emails`
+26. `email_topics`
+27. `email_search_by_topic`
+28. `email_keywords`
+29. `email_clusters`
+30. `email_cluster_emails`
 
 ### Data Quality (3)
 
-33. `email_find_duplicates`
-34. `email_language_stats`
-35. `email_sentiment_overview`
+31. `email_find_duplicates`
+32. `email_language_stats`
+33. `email_sentiment_overview`
 
 ### Reporting & Export (3)
 
-36. `email_generate_report`
-37. `email_export_network`
-38. `email_writing_analysis`
+34. `email_generate_report`
+35. `email_export_network`
+36. `email_writing_analysis`
 
-### Email Reading & Export (4)
+### Email Reading & Export (3)
 
-39. `email_get_full`
-40. `email_browse`
-41. `email_export_thread`
-42. `email_export_single`
+37. `email_get_full`
+38. `email_browse`
+39. `email_export`
 
-### Ingestion (additional) (1)
+### Categories & Calendar (2)
 
-43. `email_reingest_bodies`
+40. `email_list_categories`
+41. `email_browse_calendar`
+
+### Attachments (3)
+
+42. `email_search_by_attachment`
+43. `email_list_attachments`
+44. `email_attachment_stats`
+
+### Diagnostics (5)
+
+45. `email_diagnostics`
+46. `email_reembed`
+47. `email_reingest_bodies`
+48. `email_reingest_metadata`
+49. `email_reingest_analytics`
 
 ### Evidence Management (12)
 
-44. `evidence_add`
-45. `evidence_list`
-46. `evidence_get`
-47. `evidence_update`
-48. `evidence_remove`
-49. `evidence_verify`
-50. `evidence_export`
-51. `evidence_stats`
-52. `evidence_add_batch`
-53. `evidence_search`
-54. `evidence_timeline`
-55. `evidence_categories`
+50. `evidence_add`
+51. `evidence_list`
+52. `evidence_get`
+53. `evidence_update`
+54. `evidence_remove`
+55. `evidence_verify`
+56. `evidence_export`
+57. `evidence_stats`
+58. `evidence_add_batch`
+59. `evidence_search`
+60. `evidence_timeline`
+61. `evidence_categories`
 
 ### Chain of Custody (3)
 
-56. `custody_chain`
-57. `email_provenance`
-58. `evidence_provenance`
+62. `custody_chain`
+63. `email_provenance`
+64. `evidence_provenance`
 
 ### Relationship Analysis (4)
 
-59. `relationship_paths`
-60. `shared_recipients`
-61. `coordinated_timing`
-62. `relationship_summary`
+65. `relationship_paths`
+66. `shared_recipients`
+67. `coordinated_timing`
+68. `relationship_summary`
 
 ### Proof Dossier (2)
 
-63. `dossier_generate`
-64. `dossier_preview`
-
-### Diagnostics (2)
-
-65. `email_model_info`
-66. `email_sparse_status`
+69. `dossier_generate`
+70. `dossier_preview`
 
 ## Stable MCP Input Schema Summary
 
@@ -205,20 +212,7 @@ The following 66 tool names are stable for `0.1.x`:
 1. `email_search`
    1. `query: str` (required, 1-500 chars)
    2. `top_k: int` (optional, bounded 1-30)
-2. `email_search_by_sender`
-   1. `query: str` (required)
-   2. `sender: str` (required)
-   3. `top_k: int` (optional, bounded 1-30)
-3. `email_search_by_date`
-   1. `query: str` (required)
-   2. `date_from: str | null` (optional, ISO date)
-   3. `date_to: str | null` (optional, ISO date)
-   4. `top_k: int` (optional, bounded 1-30)
-4. `email_search_by_recipient`
-   1. `query: str` (required)
-   2. `recipient: str` (required)
-   3. `top_k: int` (optional, bounded 1-30)
-5. `email_search_structured`
+2. `email_search_structured`
    1. `query: str` (required)
    2. `top_k: int` (optional, bounded 1-30)
    3. `sender: str | null` (optional)
@@ -228,41 +222,43 @@ The following 66 tool names are stable for `0.1.x`:
    7. `to: str | null` (optional)
    8. `bcc: str | null` (optional)
    9. `has_attachments: bool | null` (optional)
-   10. `priority: int | null` (optional, ge=0)
-   11. `date_from: str | null` (optional, ISO date)
-   12. `date_to: str | null` (optional, ISO date)
-   13. `min_score: float | null` (optional, bounded 0.0-1.0)
-   14. `rerank: bool` (optional, default false)
-   15. `hybrid: bool` (optional, default false)
-   16. `topic_id: int | null` (optional, ge=0)
-   17. `cluster_id: int | null` (optional, ge=0)
-   18. `expand_query: bool` (optional, default false)
-   19. `email_type: str | null` (optional, one of reply/forward/original)
-6. `email_search_thread`
+   10. `attachment_name: str | null` (optional) — partial filename match
+   11. `attachment_type: str | null` (optional) — file extension filter
+   12. `priority: int | null` (optional, ge=0)
+   13. `date_from: str | null` (optional, ISO date)
+   14. `date_to: str | null` (optional, ISO date)
+   15. `min_score: float | null` (optional, bounded 0.0-1.0)
+   16. `rerank: bool` (optional, default false)
+   17. `hybrid: bool` (optional, default false)
+   18. `topic_id: int | null` (optional, ge=0)
+   19. `cluster_id: int | null` (optional, ge=0)
+   20. `expand_query: bool` (optional, default false)
+   21. `email_type: str | null` (optional, one of reply/forward/original)
+3. `email_search_thread`
    1. `conversation_id: str` (required)
    2. `top_k: int` (optional, bounded 1-100)
-7. `email_smart_search`
+4. `email_smart_search`
    1. `query: str` (required, 1-500 chars)
    2. `top_k: int` (optional, bounded 1-30)
-8. `email_find_similar`
+5. `email_find_similar`
    1. `text: str` (required)
    2. `top_k: int` (optional, bounded 1-30)
 
 ### Archive Info
 
-9. `email_list_senders`
+6. `email_list_senders`
    1. `limit: int` (optional, bounded 1-200)
-10. `email_list_folders`
+7. `email_list_folders`
     1. no parameters
-11. `email_stats`
+8. `email_stats`
     1. no parameters
-12. `email_query_suggestions`
+9. `email_query_suggestions`
     1. `query: str` (optional)
     2. `top_k: int` (optional)
 
 ### Ingestion
 
-13. `email_ingest`
+10. `email_ingest`
     1. `olm_path: str` (required) — absolute path to `.olm` file
     2. `max_emails: int | null` (optional, ge=1)
     3. `dry_run: bool` (optional, default false)
@@ -272,198 +268,233 @@ The following 66 tool names are stable for `0.1.x`:
 
 ### Network Analysis
 
-14. `email_top_contacts`
+11. `email_top_contacts`
     1. `email: str` (required)
     2. `top_k: int` (optional)
-15. `email_communication_between`
+12. `email_communication_between`
     1. `email_a: str` (required)
     2. `email_b: str` (required)
-16. `email_network_analysis`
+13. `email_network_analysis`
     1. `top_k: int` (optional)
 
 ### Temporal Analysis
 
-17. `email_volume_over_time`
+14. `email_volume_over_time`
     1. `granularity: str` (optional, one of day/week/month)
-18. `email_activity_pattern`
+15. `email_activity_pattern`
     1. no parameters
-19. `email_response_times`
+16. `email_response_times`
     1. `top_k: int` (optional)
 
 ### Entity & NLP
 
-20. `email_search_by_entity`
+17. `email_search_by_entity`
     1. `entity: str` (required)
     2. `entity_type: str | null` (optional)
     3. `top_k: int` (optional)
-21. `email_list_entities`
+18. `email_list_entities`
     1. `entity_type: str | null` (optional)
     2. `top_k: int` (optional)
-22. `email_entity_network`
+19. `email_entity_network`
     1. `entity: str` (required)
     2. `top_k: int` (optional)
-23. `email_find_people`
+20. `email_find_people`
     1. `name: str` (required)
     2. `top_k: int` (optional)
-24. `email_entity_timeline`
+21. `email_entity_timeline`
     1. `entity: str` (required)
     2. `granularity: str` (optional, one of day/week/month)
 
 ### Thread Intelligence
 
-25. `email_thread_summary`
+22. `email_thread_summary`
     1. `query: str` (required)
     2. `top_k: int` (optional)
-26. `email_action_items`
+23. `email_action_items`
     1. `query: str | null` (optional)
     2. `top_k: int` (optional)
-27. `email_decisions`
+24. `email_decisions`
     1. `query: str | null` (optional)
+    2. `top_k: int` (optional)
+25. `email_search_by_thread_topic`
+    1. `thread_topic: str` (required) — thread topic string to search for
     2. `top_k: int` (optional)
 
 ### Topics & Clusters
 
-28. `email_topics`
+26. `email_topics`
     1. no parameters
-29. `email_search_by_topic`
+27. `email_search_by_topic`
     1. `topic_id: int` (required, ge=0)
     2. `top_k: int` (optional)
-30. `email_keywords`
+28. `email_keywords`
     1. `sender: str | null` (optional)
     2. `folder: str | null` (optional)
     3. `top_k: int` (optional)
-31. `email_clusters`
+29. `email_clusters`
     1. no parameters
-32. `email_cluster_emails`
+30. `email_cluster_emails`
     1. `cluster_id: int` (required, ge=0)
     2. `top_k: int` (optional)
 
 ### Data Quality
 
-33. `email_find_duplicates`
+31. `email_find_duplicates`
     1. `threshold: float` (optional, bounded 0.0-1.0)
     2. `top_k: int` (optional)
-34. `email_language_stats`
+32. `email_language_stats`
     1. no parameters
-35. `email_sentiment_overview`
+33. `email_sentiment_overview`
     1. no parameters
 
 ### Reporting & Export
 
-36. `email_generate_report`
+34. `email_generate_report`
     1. `output_path: str | null` (optional)
-37. `email_export_network`
+35. `email_export_network`
     1. `output_path: str | null` (optional)
-38. `email_writing_analysis`
+36. `email_writing_analysis`
     1. `sender: str | null` (optional)
     2. `top_k: int` (optional)
 
 ### Email Reading & Export
 
-39. `email_get_full`
+37. `email_get_full`
     1. `uid: str` (required)
-40. `email_browse`
+38. `email_browse`
     1. `offset: int` (optional, default 0, ge=0)
     2. `limit: int` (optional, default 20, bounded 1-50)
     3. `folder: str | null` (optional, exact match)
     4. `sender: str | null` (optional, partial match)
     5. `sort_order: str` (optional, default "desc", one of asc/desc)
     6. `include_body: bool` (optional, default true)
-41. `email_export_thread`
-    1. `conversation_id: str` (required)
-    2. `output_path: str | null` (optional)
-    3. `format: str` (optional, default "html", one of html/pdf)
-42. `email_export_single`
-    1. `uid: str` (required)
-    2. `output_path: str | null` (optional)
-    3. `format: str` (optional, default "html", one of html/pdf)
+39. `email_export`
+    1. `uid: str | null` (optional) — export a single email by UID
+    2. `conversation_id: str | null` (optional) — export a thread by conversation ID
+    3. `output_path: str | null` (optional)
+    4. `format: str` (optional, default "html", one of html/pdf)
 
-### Ingestion (additional)
+### Categories & Calendar
 
-43. `email_reingest_bodies`
+40. `email_list_categories`
+    1. no parameters
+41. `email_browse_calendar`
+    1. `date_from: str | null` (optional, ISO date)
+    2. `date_to: str | null` (optional, ISO date)
+    3. `limit: int` (optional, default 20, bounded 1-50)
+    4. `offset: int` (optional, default 0, ge=0)
+
+### Attachments
+
+42. `email_search_by_attachment`
+    1. `filename: str | null` (optional) — partial filename match
+    2. `extension: str | null` (optional) — file extension (e.g. "pdf", "docx")
+    3. `mime_type: str | null` (optional) — MIME type filter
+    4. `top_k: int` (optional)
+43. `email_list_attachments`
+    1. `filename: str | null` (optional) — partial filename match
+    2. `extension: str | null` (optional) — file extension filter
+    3. `mime_type: str | null` (optional) — MIME type filter
+    4. `sender: str | null` (optional) — sender filter
+    5. `limit: int` (optional, default 20, bounded 1-100)
+    6. `offset: int` (optional, default 0, ge=0)
+44. `email_attachment_stats`
+    1. no parameters
+
+### Diagnostics
+
+45. `email_diagnostics`
+    1. no parameters
+46. `email_reembed`
+    1. no parameters
+47. `email_reingest_bodies`
     1. `olm_path: str` (required) — absolute path to `.olm` file
+48. `email_reingest_metadata`
+    1. `olm_path: str` (required) — absolute path to `.olm` file
+49. `email_reingest_analytics`
+    1. no parameters
 
 ### Evidence Management
 
-44. `evidence_add`
+50. `evidence_add`
     1. `email_uid: str` (required)
     2. `category: str` (required)
     3. `key_quote: str` (required) — must appear verbatim in email body
     4. `summary: str` (required)
     5. `relevance: int` (required, bounded 1-5)
     6. `notes: str` (optional, default "")
-45. `evidence_list`
+51. `evidence_list`
     1. `category: str | null` (optional)
     2. `min_relevance: int | null` (optional, bounded 1-5)
     3. `email_uid: str | null` (optional)
     4. `limit: int` (optional, default 100, bounded 1-500)
     5. `offset: int` (optional, default 0, ge=0)
-46. `evidence_get`
+52. `evidence_get`
     1. `evidence_id: int` (required, ge=1)
-47. `evidence_update`
+53. `evidence_update`
     1. `evidence_id: int` (required, ge=1)
     2. `category: str | null` (optional)
     3. `key_quote: str | null` (optional)
     4. `summary: str | null` (optional)
     5. `relevance: int | null` (optional, bounded 1-5)
     6. `notes: str | null` (optional)
-48. `evidence_remove`
+54. `evidence_remove`
     1. `evidence_id: int` (required, ge=1)
-49. `evidence_verify`
+55. `evidence_verify`
     1. no parameters
-50. `evidence_export`
+56. `evidence_export`
     1. `output_path: str` (optional, default "evidence_report.html")
     2. `format: str` (optional, default "html", one of html/csv/pdf)
     3. `min_relevance: int | null` (optional, bounded 1-5)
     4. `category: str | null` (optional)
-51. `evidence_stats`
+57. `evidence_stats`
     1. no parameters
-52. `evidence_add_batch`
+58. `evidence_add_batch`
     1. `items: list[EvidenceAddInput]` (required, 1-20 items)
-53. `evidence_search`
+59. `evidence_search`
     1. `query: str` (required, 1-500 chars)
     2. `category: str | null` (optional)
     3. `min_relevance: int | null` (optional, bounded 1-5)
     4. `limit: int` (optional, default 50, bounded 1-200)
-54. `evidence_timeline`
+60. `evidence_timeline`
     1. `category: str | null` (optional)
     2. `min_relevance: int | null` (optional, bounded 1-5)
-55. `evidence_categories`
+61. `evidence_categories`
     1. no parameters
 
 ### Chain of Custody
 
-56. `custody_chain`
+62. `custody_chain`
     1. `target_type: str | null` (optional)
     2. `target_id: str | null` (optional)
     3. `action: str | null` (optional)
     4. `limit: int` (optional, default 50, bounded 1-500)
-57. `email_provenance`
+63. `email_provenance`
     1. `email_uid: str` (required)
-58. `evidence_provenance`
+64. `evidence_provenance`
     1. `evidence_id: int` (required, ge=1)
 
 ### Relationship Analysis
 
-59. `relationship_paths`
+65. `relationship_paths`
     1. `source: str` (required)
     2. `target: str` (required)
     3. `max_hops: int` (optional, default 3, bounded 1-6)
     4. `top_k: int` (optional, default 5, bounded 1-20)
-60. `shared_recipients`
+66. `shared_recipients`
     1. `email_addresses: list[str]` (required, 2-20 items)
     2. `min_shared: int` (optional, default 2, ge=2)
-61. `coordinated_timing`
+67. `coordinated_timing`
     1. `email_addresses: list[str]` (required, 2-20 items)
     2. `window_hours: int` (optional, default 24, bounded 1-168)
     3. `min_events: int` (optional, default 3, bounded 2-50)
-62. `relationship_summary`
+68. `relationship_summary`
     1. `email_address: str` (required)
     2. `limit: int` (optional, default 20, bounded 1-50)
 
 ### Proof Dossier
 
-63. `dossier_generate`
+69. `dossier_generate`
     1. `output_path: str` (required)
     2. `format: str` (optional, default "html", one of html/pdf)
     3. `title: str` (optional, default "Proof Dossier")
@@ -474,16 +505,9 @@ The following 66 tool names are stable for `0.1.x`:
     8. `include_relationships: bool` (optional, default true)
     9. `include_custody: bool` (optional, default true)
     10. `persons_of_interest: list[str] | null` (optional)
-64. `dossier_preview`
+70. `dossier_preview`
     1. `min_relevance: int | null` (optional, bounded 1-5)
     2. `category: str | null` (optional)
-
-### Diagnostics
-
-65. `email_model_info`
-    1. no parameters
-66. `email_sparse_status`
-    1. no parameters
 
 ## Breaking Change Rule
 

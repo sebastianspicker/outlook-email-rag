@@ -1,3 +1,8 @@
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![MCP Tools](https://img.shields.io/badge/MCP_tools-70-purple)
+![Tests](https://img.shields.io/badge/tests-1145%2B-brightgreen)
+
 # Email RAG
 
 Search your Outlook emails with natural language using Claude — no cloud, no subscriptions, everything stays on your Mac.
@@ -48,7 +53,7 @@ flowchart LR
     NLP --> N2["Topic\nmodeling"]
     NLP --> N3["Email\nclustering"]
 
-    I["You ask\nClaude"] --> J["67 MCP tools\ncalled by Claude"]
+    I["You ask\nClaude"] --> J["70 MCP tools\ncalled by Claude"]
     J --> G
     J --> H
     G --> K["Ranked\nresults"]
@@ -62,7 +67,7 @@ flowchart LR
 sequenceDiagram
     participant You
     participant Claude as Claude Code
-    participant MCP as MCP Server (67 tools)
+    participant MCP as MCP Server (70 tools)
     participant VDB as ChromaDB (vectors)
     participant SQL as SQLite (metadata)
 
@@ -74,6 +79,40 @@ sequenceDiagram
     SQL-->>MCP: thread context + stats
     MCP-->>Claude: formatted results + metadata
     Claude-->>You: answer with sources
+```
+
+### Multi-vector embedding pipeline
+
+```mermaid
+flowchart LR
+    subgraph BGE-M3["BGE-M3 Model"]
+        D["Dense\n1024-d vectors"]
+        S["Sparse\nlearned weights"]
+        C["ColBERT\ntoken embeddings"]
+    end
+
+    INPUT["Email text"] --> BGE-M3
+    D --> CHROMA[("ChromaDB\ncosine similarity")]
+    S --> SPARSE[("SQLite\ninverted index")]
+    C --> RERANK["MaxSim\nreranking"]
+
+    QUERY["Search query"] --> BGE-M3
+    CHROMA --> FUSE["Score fusion"]
+    SPARSE --> FUSE
+    FUSE --> RERANK
+    RERANK --> RESULTS["Final results"]
+```
+
+### Evidence collection workflow
+
+```mermaid
+flowchart LR
+    SEARCH["Search emails"] --> SELECT["Select evidence"]
+    SELECT --> ADD["evidence_add\n+ auto-verify quote"]
+    ADD --> CUSTODY["SHA-256 hash\ncustody log"]
+    CUSTODY --> REVIEW["evidence_list\nevidence_timeline"]
+    REVIEW --> EXPORT["evidence_export\ndossier_generate"]
+    EXPORT --> OUTPUT["HTML / PDF / CSV\nfor legal review"]
 ```
 
 **Key properties:**
@@ -181,7 +220,7 @@ The project includes a `.claude/settings.json` that automatically registers the 
 
 ## Using with Claude Code (MCP Server)
 
-This is the primary way to use Email RAG. Claude Code talks to your email index through 67 MCP tools — you just ask questions in plain English.
+This is the primary way to use Email RAG. Claude Code talks to your email index through 70 MCP tools — you just ask questions in plain English.
 
 ### How it connects
 
@@ -207,7 +246,7 @@ After opening the project in Claude Code, you can check that the tools loaded:
 
 1. Type `/mcp` in the Claude Code prompt
 2. Look for `email_search` in the server list — it should show as **connected**
-3. You should see all 67 tools listed beneath it
+3. You should see all 70 tools listed beneath it
 
 If it shows as disconnected:
 - Make sure the virtual environment exists: `ls .venv/bin/python`
@@ -330,26 +369,23 @@ Ingest my new export at data/latest-export.olm
 
 When you ask a question like *"Find emails about the Q3 budget from finance"*, Claude:
 
-1. Picks the `email_search_by_sender` tool (or `email_search_structured` for complex queries)
+1. Picks the `email_search_structured` tool (or `email_smart_search` for auto-routing)
 2. Sends parameters like `query="Q3 budget"`, `sender="finance"` to the MCP server
 3. The server runs a semantic vector search in ChromaDB, filters by sender, deduplicates, and formats results
 4. Claude reads the results and gives you a sourced answer
 
 You never need to remember tool names or parameters — Claude handles that automatically.
 
-### Available MCP Tools (67)
+### Available MCP Tools (70)
 
 Claude picks the right tool automatically, but here's the full reference:
 
-#### Core Search (8)
+#### Core Search (5)
 
 | Tool | What it does |
 |------|-------------|
 | `email_search` | Semantic search across all emails |
-| `email_search_by_sender` | Search scoped to a specific sender |
-| `email_search_by_date` | Search within a date range |
-| `email_search_by_recipient` | Search by To recipient |
-| `email_search_structured` | Search with all filters: sender, subject, folder, CC, To, BCC, dates, attachments, priority, email type, topic, cluster, reranking, hybrid search |
+| `email_search_structured` | Power search with all filters: sender, subject, folder, CC, To, BCC, dates, attachments, attachment name/type, priority, email type, topic, cluster, reranking, hybrid search |
 | `email_search_thread` | Retrieve all emails in a conversation thread |
 | `email_smart_search` | Intelligent search that auto-routes based on query analysis |
 | `email_find_similar` | Find emails most similar to a given email or text |
@@ -363,29 +399,44 @@ Claude picks the right tool automatically, but here's the full reference:
 | `email_stats` | Archive statistics (total emails, date range, senders, folders) |
 | `email_query_suggestions` | Get search suggestions based on indexed data |
 
-#### Email Reading & Export (4)
+#### Email Reading & Export (3)
 
 | Tool | What it does |
 |------|-------------|
 | `email_get_full` | Get a single email with its complete body text |
 | `email_browse` | Browse emails in pages for systematic review (with filters) |
-| `email_export_thread` | Export a conversation thread as formatted HTML or PDF |
-| `email_export_single` | Export a single email as formatted HTML or PDF |
+| `email_export` | Export a single email (by UID) or conversation thread (by conversation_id) as HTML or PDF |
 
-#### Ingestion (2)
+#### Ingestion (1)
 
 | Tool | What it does |
 |------|-------------|
 | `email_ingest` | Trigger ingestion of an `.olm` file from within Claude (supports `extract_attachments` and `embed_images`) |
-| `email_reingest_bodies` | Backfill full body text for emails missing it in SQLite |
 
-#### Diagnostics (3)
+#### Diagnostics (5)
 
 | Tool | What it does |
 |------|-------------|
-| `email_model_info` | Show embedding model, backend (BGE-M3 / SentenceTransformer), device, sparse & ColBERT status |
-| `email_sparse_status` | Show sparse vector index status — vector count, whether the index is built |
+| `email_diagnostics` | Show embedding model, backend, device, sparse/ColBERT status, and sparse index info |
 | `email_reembed` | Rebuild ChromaDB embeddings from corrected body text in SQLite |
+| `email_reingest_bodies` | Backfill full body text for emails missing it in SQLite |
+| `email_reingest_metadata` | Backfill v7 metadata (categories, thread topics, calendar, references, attachments) |
+| `email_reingest_analytics` | Backfill language detection and sentiment analysis for emails missing analytics |
+
+#### Categories & Calendar (2)
+
+| Tool | What it does |
+|------|-------------|
+| `email_list_categories` | List all Outlook categories with email counts |
+| `email_browse_calendar` | Browse calendar/meeting emails with date filtering |
+
+#### Attachments (3)
+
+| Tool | What it does |
+|------|-------------|
+| `email_search_by_attachment` | Find emails with attachments matching criteria (filename, extension, MIME type) |
+| `email_list_attachments` | Browse all attachments with filters and pagination |
+| `email_attachment_stats` | Aggregate attachment statistics: counts, sizes, type distribution |
 
 #### Network Analysis (3)
 
@@ -413,13 +464,14 @@ Claude picks the right tool automatically, but here's the full reference:
 | `email_find_people` | Search emails by person name mentioned in body |
 | `email_entity_timeline` | Show how often an entity appears over time |
 
-#### Thread Intelligence (3)
+#### Thread Intelligence (4)
 
 | Tool | What it does |
 |------|-------------|
 | `email_thread_summary` | Summarize a conversation thread (extractive) |
 | `email_action_items` | Extract action items from threads or recent emails |
 | `email_decisions` | Extract decisions from email threads |
+| `email_search_by_thread_topic` | Find all emails sharing a thread topic |
 
 #### Topics & Clusters (5)
 
@@ -510,365 +562,22 @@ For the **Claude desktop app**, add this to `~/Library/Application Support/Claud
 
 ---
 
-## Using the CLI
+## CLI
 
-The command-line interface is a standalone way to search and analyze your email archive directly from Terminal. It doesn't require Claude Code — it works entirely on its own.
-
-### Starting the CLI
-
-Make sure the virtual environment is active first:
+A standalone terminal interface for searching and analyzing your email archive — no Claude Code required.
 
 ```bash
-source .venv/bin/activate
-```
-
-### Interactive mode
-
-Run without arguments to enter an interactive search loop:
-
-```bash
+# Interactive mode
 python -m src.cli
-```
 
-You'll see a summary of your archive and a search prompt:
-
-```
-+-------------- Email RAG ---------------+
-| Emails: 1842 | Chunks: 4210 |          |
-| Senders: 312 | Range: 2023-01 -> 2024  |
-| Type 'quit' to exit, 'stats', ...      |
-+-----------------------------------------+
-
-Search: _
-```
-
-Type a query, press Enter, and you get a table of results. Type `stats` for archive statistics, `senders` for the top sender list, or `quit` to exit.
-
-### Single query mode
-
-For one-off searches, use `--query` (or `-q`):
-
-```bash
-python -m src.cli --query "Q3 budget approval"
-```
-
-Output shows each result with relevance score, sender, date, subject, and the matching text:
-
-```
-============================================================
-Result 1 (relevance: 0.87)
-Subject: Re: Q3 Budget Approval
-Sender:  finance@company.com
-Date:    2024-07-15
-Folder:  Inbox
-
-The Q3 budget has been approved with the following allocations...
-(~180 tokens)
-```
-
-### Filtering results
-
-Combine `--query` with any filter flag to narrow results:
-
-```bash
-# By sender (partial match on name or email)
-python -m src.cli --query "contract renewal" --sender legal
-
-# By date range (ISO format)
-python -m src.cli --query "invoice" \
-    --date-from 2024-01-01 \
-    --date-to 2024-06-30
-
-# By recipient
-python -m src.cli --query "proposal" --to john@example.com
-
-# Only emails with attachments
-python -m src.cli --query "report" --has-attachments
-
-# By folder (partial match)
-python -m src.cli --query "update" --folder "Sent Items"
-
-# By CC recipient
-python -m src.cli --query "review" --cc manager@company.com
-
-# By BCC recipient
-python -m src.cli --query "announcement" --bcc board@company.com
-
-# By email type (reply, forward, or original)
-python -m src.cli --query "meeting notes" --email-type reply
-
-# By minimum priority level
-python -m src.cli --query "urgent" --priority 3
-
-# Combine multiple filters
-python -m src.cli --query "contract" \
-    --sender legal \
-    --date-from 2024-01-01 \
-    --has-attachments \
-    --min-score 0.5
-```
-
-### Search modes
-
-Three search modes provide different trade-offs between speed and accuracy:
-
-```bash
-# Standard semantic search (default — fast)
-python -m src.cli --query "budget discussion"
-
-# Hybrid: semantic + BM25 keyword search (better for exact terms)
-python -m src.cli --query "invoice #INV-2024-0847" --hybrid
-
-# With cross-encoder reranking (slower but most precise)
-python -m src.cli --query "budget discussion" --rerank
-
-# Query expansion: auto-adds related terms
-python -m src.cli --query "security" --expand-query
-
-# Combine all three
-python -m src.cli --query "infrastructure costs" --hybrid --rerank --expand-query
-
-# Filter by discovered topic or cluster
-python -m src.cli --query "migration" --topic 5
-python -m src.cli --query "hiring" --cluster-id 3
-```
-
-### Output format
-
-```bash
-# Human-readable text (default)
-python -m src.cli --query "budget" --format text
-
-# Machine-readable JSON
-python -m src.cli --query "budget" --format json
-
-# Legacy JSON shorthand
-python -m src.cli --query "budget" --json
-
-# Control number of results (default: 10, max: 1000)
-python -m src.cli --query "budget" --top-k 20
-```
-
-### Analytics commands
-
-These don't require a query — they analyze your entire archive:
-
-```bash
-# Archive statistics (total emails, chunks, senders, date range)
-python -m src.cli --stats
-
-# Top senders (show top 20)
-python -m src.cli --list-senders 20
-
-# Top contacts for a specific email address
-python -m src.cli --top-contacts user@company.com
-
-# Email volume over time
-python -m src.cli --volume day     # daily
-python -m src.cli --volume week    # weekly
-python -m src.cli --volume month   # monthly
-
-# Activity heatmap (hour x day-of-week)
-python -m src.cli --heatmap
-
-# Average response times per sender
-python -m src.cli --response-times
-
-# Most frequently mentioned entities (organizations, URLs, etc.)
-python -m src.cli --entities
-python -m src.cli --entities organization   # filter by type
-
-# Search suggestions based on your data
-python -m src.cli --suggest
-```
-
-### Browsing emails
-
-Browse your archive page by page for systematic review:
-
-```bash
-# Browse newest emails (default: 20 per page)
-python -m src.cli --browse
-
-# Navigate pages
-python -m src.cli --browse --page 3 --page-size 10
-
-# Filter by folder or sender
-python -m src.cli --browse --folder Inbox
-python -m src.cli --browse --sender legal@company.com
-```
-
-### Exporting emails
-
-Export conversation threads or individual emails as formatted HTML (or PDF with weasyprint):
-
-```bash
-# Export a conversation thread by conversation ID
-python -m src.cli --export-thread conv_abc123
-
-# Export a single email by UID
-python -m src.cli --export-email uid_xyz789
-
-# Choose format (html or pdf) and output path
-python -m src.cli --export-thread conv_abc123 --export-format pdf --output thread.pdf
-python -m src.cli --export-email uid_xyz789 --output email.html
-```
-
-> **PDF support** requires `weasyprint`: `pip install weasyprint`. Without it, export falls back to HTML automatically.
-
-### Evidence management
-
-List, export, and verify evidence items collected through the MCP tools:
-
-```bash
-# List all evidence items
-python -m src.cli --evidence-list
-
-# Filter by category or minimum relevance
-python -m src.cli --evidence-list --category discrimination
-python -m src.cli --evidence-list --min-relevance 4
-
-# Export evidence report (HTML by default)
-python -m src.cli --evidence-export evidence_report.html
-
-# Export as CSV (for Excel)
-python -m src.cli --evidence-export evidence.csv --evidence-export-format csv
-
-# Get evidence statistics (counts by category, verified vs unverified)
-python -m src.cli --evidence-stats
-
-# Re-verify all evidence quotes against source emails
-python -m src.cli --evidence-verify
-```
-
-### Reporting commands
-
-```bash
-# Generate an HTML report (default: report.html)
-python -m src.cli --generate-report
-python -m src.cli --generate-report my_report.html
-
-# Export communication network as GraphML
-python -m src.cli --export-network
-python -m src.cli --export-network my_network.graphml
-```
-
-### Index management
-
-```bash
-# Delete and recreate the index (requires --yes)
-python -m src.cli --reset-index --yes
-```
-
-### Complete flag reference
-
-| Flag | Type | Description |
-|------|------|-------------|
-| `--query`, `-q` | string | Search query (required for search mode) |
-| `--top-k` | int | Number of results (default: 10, max: 1000) |
-| `--sender` | string | Filter by sender (partial match on name or email) |
-| `--subject` | string | Filter by subject (partial match) |
-| `--folder` | string | Filter by folder (partial match) |
-| `--cc` | string | Filter by CC recipient (partial match) |
-| `--to` | string | Filter by To recipient (partial match) |
-| `--bcc` | string | Filter by BCC recipient (partial match) |
-| `--has-attachments` | flag | Only emails with attachments |
-| `--priority` | int | Minimum priority level |
-| `--email-type` | choice | `reply`, `forward`, or `original` |
-| `--date-from` | YYYY-MM-DD | Start date (inclusive) |
-| `--date-to` | YYYY-MM-DD | End date (inclusive) |
-| `--min-score` | float | Minimum relevance score (0.0–1.0) |
-| `--rerank` | flag | Re-rank with cross-encoder |
-| `--hybrid` | flag | Hybrid semantic + BM25 search |
-| `--expand-query` | flag | Expand query with related terms |
-| `--topic` | int | Filter by discovered topic ID |
-| `--cluster-id` | int | Filter by email cluster ID |
-| `--format` | choice | Output format: `text` or `json` |
-| `--json` | flag | Shorthand for `--format json` |
-| `--stats` | flag | Print archive statistics |
-| `--list-senders` | int | List top N senders |
-| `--top-contacts` | string | Top contacts for an email address |
-| `--volume` | choice | Email volume: `day`, `week`, or `month` |
-| `--entities` | string? | List top entities (optionally by type) |
-| `--heatmap` | flag | Activity heatmap |
-| `--response-times` | flag | Response time statistics |
-| `--suggest` | flag | Search suggestions |
-| `--browse` | flag | Browse emails page by page |
-| `--page` | int | Page number for `--browse` (default: 1) |
-| `--page-size` | int | Emails per page for `--browse` (default: 20) |
-| `--export-thread` | string | Export a conversation thread by conversation ID |
-| `--export-email` | string | Export a single email by UID |
-| `--export-format` | choice | Export format: `html` or `pdf` (default: `html`) |
-| `--output`, `-o` | string | Output file path for exports |
-| `--generate-report` | string? | Generate HTML report (default: `report.html`) |
-| `--export-network` | string? | Export GraphML network (default: `network.graphml`) |
-| `--evidence-list` | flag | List all evidence items |
-| `--evidence-export` | string | Export evidence report to file |
-| `--evidence-export-format` | choice | Evidence export format: `html`, `csv`, or `pdf` (default: `html`) |
-| `--evidence-stats` | flag | Show evidence collection statistics |
-| `--evidence-verify` | flag | Re-verify all evidence quotes against source emails |
-| `--category` | string | Filter evidence by category |
-| `--min-relevance` | int | Filter evidence by minimum relevance (1-5) |
-| `--dossier` | string | Generate proof dossier and write to file |
-| `--dossier-format` | choice | Dossier format: `html` or `pdf` (default: `html`) |
-| `--custody-chain` | flag | View chain-of-custody audit trail |
-| `--provenance` | string | View email provenance by UID (OLM source hash, ingestion run, custody events) |
-| `--generate-training-data` | string? | Generate contrastive triplets from threads (default: `training_data.jsonl`) |
-| `--fine-tune` | string? | Fine-tune embedding model on generated triplets |
-| `--fine-tune-output` | string | Output directory for fine-tuned model (default: `models/fine-tuned`) |
-| `--fine-tune-epochs` | int | Number of fine-tuning epochs (default: 3) |
-| `--reembed` | flag | Rebuild ChromaDB embeddings from corrected body text in SQLite |
-| `--reset-index` | flag | Delete and recreate the index (requires `--yes`) |
-| `--yes` | flag | Confirm destructive operations |
-| `--chromadb-path` | string | Override ChromaDB path |
-| `--log-level` | string | Logging level (`DEBUG`, `INFO`, etc.) |
-| `--version` | flag | Print version and exit |
-
-### CLI Subcommands (recommended)
-
-The CLI also supports a modern subcommand syntax with better discoverability. Legacy flat-flag syntax continues to work but emits a deprecation warning.
-
-```bash
-# Search
-python -m src.cli search "Q3 budget" --sender finance
-python -m src.cli search --query "contract renewal" --date-from 2024-01-01 --rerank
-
-# Browse
-python -m src.cli browse --folder Inbox --page 2 --page-size 30
-
-# Export
-python -m src.cli export thread CONV_ID --format pdf --output thread.pdf
-python -m src.cli export email UID --output email.html
-python -m src.cli export report --output report.html
-python -m src.cli export network --output network.graphml
-
-# Evidence
-python -m src.cli evidence list --category discrimination --min-relevance 4
-python -m src.cli evidence export evidence_report.html --format html
-python -m src.cli evidence stats
-python -m src.cli evidence verify
-python -m src.cli evidence dossier dossier.html --format pdf
-python -m src.cli evidence custody
-python -m src.cli evidence provenance UID
+# Single query
+python -m src.cli search "Q3 budget" --sender finance --rerank
 
 # Analytics
-python -m src.cli analytics stats
-python -m src.cli analytics senders 20
-python -m src.cli analytics contacts user@company.com
 python -m src.cli analytics volume month
-python -m src.cli analytics entities --type organization
-python -m src.cli analytics heatmap
-python -m src.cli analytics response-times
-
-# Training
-python -m src.cli training generate-data triplets.jsonl
-python -m src.cli training fine-tune triplets.jsonl --epochs 5
-
-# Admin
-python -m src.cli admin reset-index --yes
 ```
 
-Run `python -m src.cli <subcommand> --help` for subcommand-specific help.
+Supports 7 subcommand groups (`search`, `browse`, `export`, `evidence`, `analytics`, `training`, `admin`) with 58+ flags. See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the full reference.
 
 ---
 
@@ -998,7 +707,7 @@ block-beta
     end
 
     block:interfaces["Interfaces"]:1
-        mcp["mcp_server.py + tools/\n67 MCP tools\n(primary)"]
+        mcp["mcp_server.py + tools/\n70 MCP tools\n(primary)"]
         cli["cli.py\n7 subcommand groups"]
         ui["web_app.py\nStreamlit UI"]
     end
@@ -1015,6 +724,39 @@ block-beta
     sqlite --> ui
 ```
 
+### MCP tool modules (70 tools)
+
+```mermaid
+block-beta
+    columns 4
+
+    block:search_tools["Search & Discovery"]:1
+        s1["search.py\n5 tools"]
+        s2["threads.py\n4 tools"]
+        s3["topics.py\n7 tools"]
+        s4["categories.py\n2 tools"]
+    end
+
+    block:analysis_tools["Analysis"]:1
+        a1["network.py\n7 tools"]
+        a2["temporal.py\n3 tools"]
+        a3["entities.py\n5 tools"]
+        a4["data_quality.py\n3 tools"]
+    end
+
+    block:evidence_tools["Evidence & Export"]:1
+        e1["evidence.py\n17 tools"]
+        e2["reporting.py\n3 tools"]
+        e3["browse.py\n3 tools"]
+        e4["attachments.py\n3 tools"]
+    end
+
+    block:admin_tools["Admin"]:1
+        d1["diagnostics.py\n5 tools"]
+        d2["utils.py\nshared helpers"]
+    end
+```
+
 **Component responsibilities:**
 
 | File | Role |
@@ -1023,13 +765,19 @@ block-beta
 | `src/chunker.py` | Splits emails into 1 500-char chunks with 200-char overlap; handles attachments |
 | `src/embedder.py` | Generates embeddings with BGE-M3 (via MultiVectorEmbedder) and writes to ChromaDB |
 | `src/retriever.py` | Semantic search, 16-param filter logic, hybrid search, reranking, stats |
-| `src/email_db.py` | SQLite metadata store for analytics (emails, recipients, contacts, edges) |
+| `src/email_db.py` | SQLite metadata store (mixin-based: schema, attachments, custody, entities, analytics, evidence) |
+| `src/db_schema.py` | SQLite schema DDL and migrations (v3–v8) |
+| `src/db_attachments.py` | Attachment query mixin |
+| `src/db_custody.py` | Chain-of-custody mixin |
+| `src/db_entities.py` | Entity storage mixin |
+| `src/db_analytics.py` | Analytics mixin (language detection, sentiment) |
+| `src/db_evidence.py` | Evidence CRUD mixin |
 | `src/email_exporter.py` | Export threads/emails as styled HTML or PDF (Jinja2 + optional weasyprint) |
 | `src/evidence_exporter.py` | Export evidence reports as HTML, CSV, or PDF for legal review |
 | `src/dossier_generator.py` | Proof dossier combining evidence, emails, relationships, and custody chain |
 | `src/mcp_models.py` | Pydantic input models for all MCP tool parameters |
-| `src/mcp_server.py` | FastMCP server exposing 67 tools for Claude Code |
-| `src/tools/` | MCP tool subpackage — 54 tools across 9 domain modules (browse, evidence, entities, network, etc.) |
+| `src/mcp_server.py` | FastMCP server exposing 70 tools for Claude Code |
+| `src/tools/` | MCP tool subpackage — 70 tools across 13 domain modules (search, browse, evidence, entities, network, categories, attachments, diagnostics, etc.) |
 | `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
 | `src/cli.py` | Rich terminal interface with 7 subcommand groups and 58 flags — legacy flat-flag syntax still supported |
 | `src/web_app.py` | Streamlit search UI with filters, thread view, CSV export |
@@ -1039,6 +787,9 @@ block-beta
 | `src/validation.py` | Shared input validators (dates, positive_int) |
 | `src/sanitization.py` | Output safety (ANSI stripping, control character removal) |
 | `src/formatting.py` | Result formatting for Claude and CLI |
+| `src/html_converter.py` | HTML-to-text conversion preserving structure |
+| `src/rfc2822.py` | RFC 2822 header, MIME, and iCalendar parsing |
+| `src/result_filters.py` | Result filtering and deduplication logic |
 | `src/attachment_extractor.py` | Extract text from PDF, DOCX, XLSX, CSV, HTML, TXT attachments |
 | `src/network_analysis.py` | Communication network analysis with NetworkX (centrality, communities) |
 | `src/temporal_analysis.py` | Time-series analysis with pandas (volume, heatmaps, response times) |
@@ -1191,7 +942,7 @@ pip install -r requirements-dev.txt
 # or with pip install -e .[dev]
 
 ruff check .          # linting
-pytest -q             # tests (980+ tests)
+pytest -q             # tests (1145+ tests)
 bandit -r src -q      # security scan
 ```
 
@@ -1206,13 +957,21 @@ outlook-email-rag/
 ├── src/
 │   ├── __init__.py              # package marker
 │   ├── __main__.py              # python -m src -> MCP server
-│   ├── mcp_server.py            # 67 MCP tools for Claude Code
+│   ├── mcp_server.py            # 70 MCP tools for Claude Code
 │   ├── retriever.py             # search, filters, hybrid, reranking
 │   ├── ingest.py                # ingestion pipeline
 │   ├── parse_olm.py             # OLM XML parser
+│   ├── html_converter.py        # HTML-to-text conversion
+│   ├── rfc2822.py               # RFC 2822 header/MIME/iCal parsing
 │   ├── chunker.py               # email + attachment chunking
 │   ├── embedder.py              # embedding + ChromaDB writes
-│   ├── email_db.py              # SQLite metadata store
+│   ├── email_db.py              # SQLite metadata store (mixin-based)
+│   ├── db_schema.py             # SQLite schema DDL + migrations (v3–v8)
+│   ├── db_attachments.py        # attachment query mixin
+│   ├── db_custody.py            # chain-of-custody mixin
+│   ├── db_entities.py           # entity storage mixin
+│   ├── db_analytics.py          # analytics mixin (language, sentiment)
+│   ├── db_evidence.py           # evidence CRUD mixin
 │   ├── email_exporter.py        # thread/email HTML/PDF export
 │   ├── evidence_exporter.py     # evidence report HTML/CSV/PDF export
 │   ├── config.py                # settings from environment
@@ -1220,6 +979,7 @@ outlook-email-rag/
 │   ├── validation.py            # shared validators
 │   ├── sanitization.py          # output safety
 │   ├── formatting.py            # result formatting
+│   ├── result_filters.py        # result filtering + dedup logic
 │   ├── cli.py                   # terminal interface
 │   ├── web_app.py               # Streamlit UI
 │   ├── web_ui.py                # Streamlit helpers
@@ -1251,28 +1011,34 @@ outlook-email-rag/
 │   ├── dashboard_charts.py      # Streamlit chart helpers
 │   ├── mcp_models.py            # Pydantic input models for MCP tools
 │   ├── dossier_generator.py     # proof dossier (evidence + context)
-│   ├── tools/                   # MCP tool modules (54 tools in 9 domain modules)
+│   ├── tools/                   # MCP tool modules (70 tools in 13 domain modules)
 │   │   ├── __init__.py          # register_all() dispatcher
-│   │   ├── browse.py            # email reading & export (5 tools)
+│   │   ├── utils.py             # shared helpers (ToolDeps, formatters)
+│   │   ├── search.py            # core search (5 tools)
+│   │   ├── browse.py            # email reading & export (3 tools)
+│   │   ├── categories.py        # categories & calendar (2 tools)
+│   │   ├── attachments.py       # attachment search & stats (3 tools)
+│   │   ├── diagnostics.py       # diagnostics & reingest (5 tools)
 │   │   ├── data_quality.py      # duplicates, language, sentiment (3 tools)
 │   │   ├── entities.py          # entity search & NLP (5 tools)
 │   │   ├── evidence.py          # evidence CRUD, custody, dossier (17 tools)
 │   │   ├── network.py           # network & relationships (7 tools)
 │   │   ├── reporting.py         # reports & writing analysis (3 tools)
 │   │   ├── temporal.py          # volume, heatmap, response times (3 tools)
-│   │   ├── threads.py           # thread intelligence & smart search (4 tools)
+│   │   ├── threads.py           # thread intelligence & search (4 tools)
 │   │   └── topics.py            # topics, clusters, keywords (7 tools)
 │   └── templates/
 │       ├── report.html          # archive report template
 │       ├── thread_export.html   # email/thread export template
 │       ├── evidence_report.html # evidence report template
 │       └── dossier.html         # proof dossier template
-├── tests/                       # 980+ tests (57 test files)
+├── tests/                       # 1145+ tests (57 test files)
 ├── data/                        # put your .olm file here
 ├── .claude/
 │   └── settings.json            # auto-registers MCP server in Claude Code
 ├── docs/
-│   └── API_COMPATIBILITY.md
+│   ├── API_COMPATIBILITY.md
+│   └── CLI_REFERENCE.md
 ├── .env.example
 ├── requirements.txt
 ├── requirements-dev.txt

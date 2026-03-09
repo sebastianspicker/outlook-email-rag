@@ -9,6 +9,35 @@ and this project adheres to semantic versioning principles for public interfaces
 
 ### Added
 
+#### OLM Metadata Extraction & Search Quality
+
+- Parse OLM fields: categories, thread_topic, thread_index, inference_classification, is_calendar_message, meeting_data, Exchange-extracted links/emails/contacts/meetings, attachment content_id.
+- Schema v7: categories/thread_topic/inference_classification/is_calendar_message/references_json columns, `email_categories` + `attachments` tables.
+- Body recovery: text/calendar MIME parts, multipart fallback for attachment-only emails.
+- Chunking enrichment: categories, calendar tag, thread_topic in chunk metadata and text.
+- New MCP tools: `email_list_categories`, `email_browse_calendar`, `email_search_by_thread_topic`, `email_search_by_attachment`, `email_list_attachments`, `email_attachment_stats`.
+
+#### Ingest Quality & Analytics
+
+- Schema v8: `detected_language`, `sentiment_label`, `sentiment_score` columns with indexes and `update_analytics_batch()`.
+- Auto-analytics during ingest: language detection + sentiment wired into `_EmbedPipeline._process_batch()`.
+- New MCP tools: `email_reingest_analytics`, `email_reingest_metadata`.
+- Multilingual quoted content separators for FR/ES/NL/IT/PT/SV/DA/PL; "wrote" patterns for 8 languages; closing phrases for 7 languages.
+- Sparse index normalization: `normalize=True` option on `SparseIndex.search()`.
+- Entity dedup: Exchange types changed to canonical (`url`/`email`/`person`/`event`) for `ON CONFLICT` dedup.
+
+#### Code Decomposition
+
+- `src/db_schema.py`: SQLite schema DDL and migrations (v3–v8).
+- `src/db_attachments.py`: Attachment query mixin with dedup filter builder.
+- `src/db_custody.py`: Chain-of-custody mixin.
+- `src/db_entities.py`: Entity storage mixin.
+- `src/db_analytics.py`: Analytics mixin (language detection, sentiment analysis).
+- `src/db_evidence.py`: Evidence CRUD mixin.
+- `src/html_converter.py`: HTML-to-text conversion extracted from `parse_olm.py`.
+- `src/rfc2822.py`: RFC 2822 header, MIME, and iCalendar parsing extracted from `parse_olm.py`.
+- `src/result_filters.py`: Result filtering logic.
+
 #### BGE-M3 Multi-Vector Optimization
 
 - `src/multi_vector_embedder.py`: Unified embedder supporting BGEM3FlagModel (dense + sparse + ColBERT) with SentenceTransformer fallback. MPS float32 workaround, auto batch sizing.
@@ -32,6 +61,14 @@ and this project adheres to semantic versioning principles for public interfaces
 - `.env.example`: Added `SPARSE_ENABLED`, `COLBERT_RERANK_ENABLED`, `EMBEDDING_BATCH_SIZE` documentation.
 
 ### Changed
+
+#### MCP Tool Consolidation (74→70)
+
+- Removed 3 search wrappers (`email_search_by_sender`, `email_search_by_date`, `email_search_by_recipient`) — subsumed by `email_search_structured`.
+- Merged `email_model_info` + `email_sparse_status` → `email_diagnostics`.
+- Merged `email_export_thread` + `email_export_single` → `email_export` (with `uid` or `conversation_id`).
+- Moved reingest/reembed tools from `browse.py` to `diagnostics.py`.
+- `src/tools/` reorganized: 70 tools across 13 domain modules (was 54 tools in 9 modules).
 
 - `src/config.py`, `src/reranker.py`: Default rerank model changed from `cross-encoder/ms-marco-MiniLM-L-6-v2` (English-only) to `BAAI/bge-reranker-v2-m3` (multilingual, aligned with BGE-M3 embeddings). Drop-in replacement via `sentence_transformers.CrossEncoder`.
 - `src/fine_tuner.py`: FlagEmbedding status changed from `"config_written"` to `"config_ready"` with clear training command in output.
@@ -255,8 +292,8 @@ and this project adheres to semantic versioning principles for public interfaces
 - Simplified `_serialize_results` helper in MCP server to direct `retriever.serialize_results()` call.
 - Removed trivial wrapper functions `_sanitize_terminal_text()` (CLI) and `_sanitize_untrusted_text()` (MCP server).
 - Ingest progress log interval reduced from 500 to 100 emails.
-- README rewritten to reflect 64 MCP tools, 812 tests, full architecture.
-- `docs/API_COMPATIBILITY.md` expanded to cover all 64 tools and all CLI flags.
+- README rewritten to reflect 70 MCP tools, 1145+ tests, full architecture.
+- `docs/API_COMPATIBILITY.md` expanded to cover all 70 tools and all CLI flags.
 - Default embedding model changed to `BAAI/bge-m3` (multilingual, 1024 dims). Requires re-ingestion.
 
 ### Removed
