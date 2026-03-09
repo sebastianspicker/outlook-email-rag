@@ -138,11 +138,13 @@ def register(mcp, deps) -> None:
         body_text is NULL.
 
         With force=True, re-parses ALL emails and overwrites existing body
-        text. Use after fixing the OLM parser to update truncated/dirty bodies.
+        text **and** header fields (subject, sender_name, sender_email).
+        Use after fixing the OLM parser to update truncated/dirty bodies
+        or to decode MIME encoded-word subjects stored from earlier ingestions.
 
         Args:
             params: olm_path (str) — path to the .olm file.
-                    force (bool) — overwrite all bodies, not just NULL ones.
+                    force (bool) — overwrite all bodies and headers, not just NULL ones.
 
         Returns:
             JSON with update count and status message.

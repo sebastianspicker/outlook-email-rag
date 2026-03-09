@@ -306,6 +306,43 @@ def test_update_body_text_nonexistent_uid():
     db.close()
 
 
+# ── update_headers ─────────────────────────────────────────────────
+
+
+def test_update_headers_success():
+    db = EmailDatabase(":memory:")
+    email = _make_email(subject="=?utf-8?Q?old?=", sender_name="Old")
+    db.insert_email(email)
+
+    ok = db.update_headers(
+        email.uid,
+        subject="Decoded Subject",
+        sender_name="New Name",
+        sender_email="new@example.com",
+        base_subject="Decoded Subject",
+        email_type="reply",
+    )
+    assert ok is True
+
+    row = db.conn.execute(
+        "SELECT subject, sender_name, sender_email, base_subject, email_type FROM emails WHERE uid = ?",
+        (email.uid,),
+    ).fetchone()
+    assert row["subject"] == "Decoded Subject"
+    assert row["sender_name"] == "New Name"
+    assert row["sender_email"] == "new@example.com"
+    assert row["base_subject"] == "Decoded Subject"
+    assert row["email_type"] == "reply"
+    db.close()
+
+
+def test_update_headers_nonexistent_uid():
+    db = EmailDatabase(":memory:")
+    ok = db.update_headers("no_such_uid", "s", "n", "e", "b", "original")
+    assert ok is False
+    db.close()
+
+
 # ── uids_missing_body ──────────────────────────────────────────────
 
 

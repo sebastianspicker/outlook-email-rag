@@ -183,6 +183,144 @@ def test_reingest_is_idempotent(monkeypatch, tmp_path):
     db.close()
 
 
+def test_reingest_force_updates_headers(monkeypatch, tmp_path):
+    """--reingest-bodies --force should update subject, sender_name, sender_email."""
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+    from src.email_db import EmailDatabase
+    from src.parse_olm import Email
+
+    # First ingest: store emails with MIME-encoded subject and sender name.
+    encoded_emails = [
+        Email(
+            message_id="<msg1@test.com>",
+            subject="=?iso-8859-1?Q?Caf=E9?=",
+            sender_name="=?utf-8?B?TMO8ZGVy?=",
+            sender_email="old@test.com",
+            to=["r@test.com"],
+            cc=[],
+            bcc=[],
+            date="2024-01-01T10:00:00",
+            body_text="Old body",
+            body_html="",
+            folder="Inbox",
+            has_attachments=False,
+        )
+    ]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: encoded_emails)
+    monkeypatch.setattr(
+        ingest_mod,
+        "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+    ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+
+    # Verify encoded values were stored as-is (simulating old parser without decode).
+    db = EmailDatabase(sqlite_file)
+    row = db.conn.execute("SELECT subject, sender_name, sender_email FROM emails").fetchone()
+    assert row["subject"] == "=?iso-8859-1?Q?Caf=E9?="
+    db.close()
+
+    # Now simulate re-parse with decoded values (as the fixed parser would produce).
+    decoded_emails = [
+        Email(
+            message_id="<msg1@test.com>",
+            subject="Café",
+            sender_name="Lüder",
+            sender_email="new@test.com",
+            to=["r@test.com"],
+            cc=[],
+            bcc=[],
+            date="2024-01-01T10:00:00",
+            body_text="New body",
+            body_html="",
+            folder="Inbox",
+            has_attachments=False,
+        )
+    ]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: decoded_emails)
+
+    result = ingest_mod.reingest_bodies("mock.olm", sqlite_path=sqlite_file, force=True)
+    assert result["updated"] == 1
+
+    db = EmailDatabase(sqlite_file)
+    row = db.conn.execute(
+        "SELECT subject, sender_name, sender_email, base_subject, email_type FROM emails"
+    ).fetchone()
+    assert row["subject"] == "Café"
+    assert row["sender_name"] == "Lüder"
+    assert row["sender_email"] == "new@test.com"
+    assert row["base_subject"] == "Café"
+    assert row["email_type"] == "original"
+    db.close()
+
+
+def test_reingest_no_force_skips_headers(monkeypatch, tmp_path):
+    """Without --force, reingest should NOT update headers (only missing bodies)."""
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+    from src.email_db import EmailDatabase
+    from src.parse_olm import Email
+
+    emails = [
+        Email(
+            message_id="<msg1@test.com>",
+            subject="=?utf-8?Q?encoded?=",
+            sender_name="Old Name",
+            sender_email="old@test.com",
+            to=["r@test.com"],
+            cc=[],
+            bcc=[],
+            date="2024-01-01T10:00:00",
+            body_text="Body text",
+            body_html="",
+            folder="Inbox",
+            has_attachments=False,
+        )
+    ]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: emails)
+    monkeypatch.setattr(
+        ingest_mod,
+        "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+    ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+
+    # Non-force reingest: all bodies present → nothing to do, headers untouched.
+    decoded_emails = [
+        Email(
+            message_id="<msg1@test.com>",
+            subject="decoded",
+            sender_name="New Name",
+            sender_email="new@test.com",
+            to=["r@test.com"],
+            cc=[],
+            bcc=[],
+            date="2024-01-01T10:00:00",
+            body_text="New body",
+            body_html="",
+            folder="Inbox",
+            has_attachments=False,
+        )
+    ]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: decoded_emails)
+
+    result = ingest_mod.reingest_bodies("mock.olm", sqlite_path=sqlite_file, force=False)
+    assert result["updated"] == 0  # nothing missing
+
+    db = EmailDatabase(sqlite_file)
+    row = db.conn.execute("SELECT subject, sender_name FROM emails").fetchone()
+    assert row["subject"] == "=?utf-8?Q?encoded?="  # unchanged
+    assert row["sender_name"] == "Old Name"  # unchanged
+    db.close()
+
+
 def test_format_ingestion_summary_includes_qol_fields():
     from src.ingest import format_ingestion_summary
 

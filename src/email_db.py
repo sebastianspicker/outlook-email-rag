@@ -1111,6 +1111,30 @@ class EmailDatabase:
         self.conn.commit()
         return cur.rowcount > 0
 
+    def update_headers(
+        self,
+        uid: str,
+        subject: str,
+        sender_name: str,
+        sender_email: str,
+        base_subject: str,
+        email_type: str,
+    ) -> bool:
+        """Update decoded header fields for an existing email.
+
+        Fixes MIME encoded-word subjects and sender names that were stored
+        without decoding during earlier ingestions.  Returns True if updated.
+        """
+        cur = self.conn.execute(
+            """UPDATE emails
+               SET subject = ?, sender_name = ?, sender_email = ?,
+                   base_subject = ?, email_type = ?
+             WHERE uid = ?""",
+            (subject, sender_name, sender_email, base_subject, email_type, uid),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def all_uids(self) -> set[str]:
         """Return all UIDs in the database."""
         rows = self.conn.execute("SELECT uid FROM emails").fetchall()
