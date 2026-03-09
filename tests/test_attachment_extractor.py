@@ -58,3 +58,42 @@ def test_extract_latin1_fallback():
     result = extract_text("message.txt", content)
     assert result is not None
     assert "München" in result or "M" in result  # Latin-1 decoded
+
+
+def test_pptx_returns_none_without_library(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def _mock_import(name, *args, **kwargs):
+        if name == "pptx":
+            raise ImportError("mocked")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _mock_import)
+    result = extract_text("slides.pptx", b"fake content")
+    assert result is None
+
+
+def test_ppt_still_skipped():
+    result = extract_text("slides.ppt", b"fake content")
+    assert result is None
+
+
+def test_pptx_extraction():
+    pptx = __import__("pytest").importorskip("pptx")
+    import io
+
+    prs = pptx.Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
+    from pptx.util import Inches
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1))
+    txBox.text_frame.text = "Hello from slide one"
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+
+    result = extract_text("deck.pptx", buf.read())
+    assert result is not None
+    assert "[Slide 1]" in result
+    assert "Hello from slide one" in result

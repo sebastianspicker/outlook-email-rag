@@ -31,7 +31,7 @@ _SKIP_EXTENSIONS = frozenset({
     ".exe", ".dll", ".bin", ".dat", ".iso",
     ".gif", ".ico", ".svg",
     ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv", ".flac",
-    ".pptx", ".ppt",
+    ".ppt",
 })
 
 
@@ -102,6 +102,9 @@ def extract_text(filename: str, content: bytes) -> str | None:
 
     if ext == ".xlsx":
         return _extract_xlsx(content)
+
+    if ext == ".pptx":
+        return _extract_pptx(content)
 
     return None
 
@@ -219,4 +222,32 @@ def _extract_xlsx(content: bytes) -> str | None:
         return _truncate(text) if text else None
     except Exception:  # noqa: BLE001
         logger.debug("Failed to extract XLSX text from attachment.", exc_info=True)
+        return None
+
+
+def _extract_pptx(content: bytes) -> str | None:
+    """Extract text from a PowerPoint .pptx file using python-pptx."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        logger.debug("python-pptx not installed; skipping PPTX extraction.")
+        return None
+
+    import io
+
+    try:
+        prs = Presentation(io.BytesIO(content))
+        lines: list[str] = []
+        for slide_num, slide in enumerate(prs.slides, 1):
+            lines.append(f"[Slide {slide_num}]")
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            lines.append(text)
+        text = "\n".join(lines).strip()
+        return _truncate(text) if text else None
+    except Exception:  # noqa: BLE001
+        logger.debug("Failed to extract PPTX text from attachment.", exc_info=True)
         return None
