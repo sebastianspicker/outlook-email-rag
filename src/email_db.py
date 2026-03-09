@@ -1400,11 +1400,15 @@ class EmailDatabase:
             "attachment_count": full.get("attachment_count", 0),
             "conversation_id": full.get("conversation_id", ""),
             "in_reply_to": full.get("in_reply_to", ""),
-            "references": [],
+            "references": full.get("references", []),
             "priority": full.get("priority", 0),
             "is_read": bool(full.get("is_read", True)),
             "email_type": full.get("email_type", "original"),
             "base_subject": full.get("base_subject", ""),
+            "categories": full.get("categories", []) if isinstance(full.get("categories"), list) else [],
+            "thread_topic": full.get("thread_topic", ""),
+            "inference_classification": full.get("inference_classification", ""),
+            "is_calendar_message": bool(full.get("is_calendar_message")),
         }
 
     # ------------------------------------------------------------------
