@@ -1219,13 +1219,15 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
             "SELECT * FROM emails WHERE conversation_id = ? ORDER BY date ASC",
             (conversation_id,),
         ).fetchall()
+        uids = [row["uid"] for row in rows]
+        all_recipients = self._recipients_for_uids(uids) if uids else {}
         result = []
         for row in rows:
             email = dict(row)
-            recipients = self._recipients_for_uid(email["uid"])
-            email["to"] = recipients["to"]
-            email["cc"] = recipients["cc"]
-            email["bcc"] = recipients["bcc"]
+            recips = all_recipients.get(email["uid"], {"to": [], "cc": [], "bcc": []})
+            email["to"] = recips["to"]
+            email["cc"] = recips["cc"]
+            email["bcc"] = recips["bcc"]
             result.append(email)
         return result
 

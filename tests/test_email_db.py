@@ -774,3 +774,43 @@ class TestGetEmailsFullBatch:
         assert batch_email["attachments"][0]["name"] == single["attachments"][0]["name"]
         assert batch_email["categories"] == single["categories"]
         db.close()
+
+
+class TestGetThreadEmailsBatchRecipients:
+    def test_batch_recipients(self):
+        db = EmailDatabase(":memory:")
+        conv_id = "thread-123"
+        e1 = _make_email(
+            message_id="<t1@ex.com>",
+            conversation_id=conv_id,
+            to=["Bob <bob@example.com>"],
+            cc=["Carol <carol@example.com>"],
+            date="2024-01-01T10:00:00",
+        )
+        e2 = _make_email(
+            message_id="<t2@ex.com>",
+            sender_email="bob@example.com",
+            sender_name="Bob",
+            conversation_id=conv_id,
+            to=["Alice <alice@example.com>"],
+            bcc=["Dave <dave@example.com>"],
+            date="2024-01-01T11:00:00",
+        )
+        e3 = _make_email(
+            message_id="<t3@ex.com>",
+            sender_email="carol@example.com",
+            sender_name="Carol",
+            conversation_id=conv_id,
+            to=["Alice <alice@example.com>", "Bob <bob@example.com>"],
+            date="2024-01-01T12:00:00",
+        )
+        db.insert_email(e1)
+        db.insert_email(e2)
+        db.insert_email(e3)
+        thread = db.get_thread_emails(conv_id)
+        assert len(thread) == 3
+        assert thread[0]["to"] == ["Bob <bob@example.com>"]
+        assert thread[0]["cc"] == ["Carol <carol@example.com>"]
+        assert thread[1]["bcc"] == ["Dave <dave@example.com>"]
+        assert len(thread[2]["to"]) == 2
+        db.close()
