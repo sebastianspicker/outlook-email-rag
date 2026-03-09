@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -263,6 +263,8 @@ class EmailDatabase:
             self._migrate_to_v4(cur)
         if current < 5:
             self._migrate_to_v5(cur)
+        if current < 6:
+            self._migrate_to_v6(cur)
         if current < _SCHEMA_VERSION:
             cur.execute(
                 "INSERT OR REPLACE INTO schema_version(version) VALUES(?)",
@@ -310,6 +312,16 @@ class EmailDatabase:
         """Add sparse_vectors table (schema v5)."""
         cur.executescript(_SPARSE_SCHEMA_SQL)
         logger.info("Schema migration v5: created sparse_vectors table")
+
+    def _migrate_to_v6(self, cur: sqlite3.Cursor) -> None:
+        """Add composite indexes for common query patterns (schema v6)."""
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emails_sender_date ON emails(sender_email, date)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emails_folder_date ON emails(folder, date)"
+        )
+        logger.info("Schema migration v6: added composite indexes (sender_date, folder_date)")
 
     def close(self) -> None:
         if self._conn is not None:

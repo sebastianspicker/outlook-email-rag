@@ -221,6 +221,15 @@ class TestEmailDatabase:
         db.close()
 
 
+    def test_migration_v5_to_v6_creates_composite_indexes(self):
+        db = EmailDatabase(":memory:")
+        indexes = db.conn.execute("PRAGMA index_list(emails)").fetchall()
+        index_names = {row["name"] for row in indexes}
+        assert "idx_emails_sender_date" in index_names
+        assert "idx_emails_folder_date" in index_names
+        db.close()
+
+
 class TestNetworkQueries:
     def test_top_contacts(self):
         db = EmailDatabase(":memory:")
