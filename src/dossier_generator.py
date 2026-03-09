@@ -203,12 +203,11 @@ class DossierGenerator:
     ) -> tuple[list[dict[str, Any]], dict[str, str]]:
         """Deduplicate UIDs, fetch full emails, number appendices, attach quotes."""
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
+        uid_to_full = self._db.get_emails_full_batch(sorted(email_uids))
         source_emails: list[dict[str, Any]] = []
-        uid_to_full: dict[str, dict] = {}
         for uid in sorted(email_uids):
-            full = self._db.get_email_full(uid)
+            full = uid_to_full.get(uid)
             if full:
-                uid_to_full[uid] = full
                 raw_date = full.get("date", "")
                 raw_sha = full.get("content_sha256", "")
                 source_emails.append({
