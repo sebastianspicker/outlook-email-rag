@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -304,6 +304,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
             self._migrate_to_v6(cur)
         if current < 7:
             self._migrate_to_v7(cur)
+        if current < 8:
+            self._migrate_to_v8(cur)
         if current < _SCHEMA_VERSION:
             cur.execute(
                 "INSERT OR REPLACE INTO schema_version(version) VALUES(?)",
@@ -389,6 +391,28 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
         )
         logger.info("Schema migration v7: added categories, calendar, thread_topic, references_json columns + tables")
 
+    def _migrate_to_v8(self, cur: sqlite3.Cursor) -> None:
+        """Add language detection and sentiment analysis columns (schema v8)."""
+        existing = {
+            row[1]
+            for row in cur.execute("PRAGMA table_info(emails)").fetchall()
+        }
+        new_cols = {
+            "detected_language": "TEXT",
+            "sentiment_label": "TEXT",
+            "sentiment_score": "REAL",
+        }
+        for col, col_type in new_cols.items():
+            if col not in existing:
+                cur.execute(f"ALTER TABLE emails ADD COLUMN {col} {col_type}")
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emails_language ON emails(detected_language)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emails_sentiment ON emails(sentiment_label)"
+        )
+        logger.info("Schema migration v8: added detected_language, sentiment_label, sentiment_score columns")
+
     def close(self) -> None:
         if self._conn is not None:
             self._conn.close()
@@ -459,6 +483,26 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
             weights = list(struct.unpack(f"<{n}f", row["weights"]))
             result[row["chunk_id"]] = dict(zip(token_ids, weights))
         return result
+
+    # ------------------------------------------------------------------
+    # Analytics batch update
+    # ------------------------------------------------------------------
+
+    def update_analytics_batch(
+        self,
+        rows: list[tuple[str | None, str | None, float | None, str]],
+    ) -> int:
+        """Batch-update detected_language, sentiment_label, sentiment_score by uid.
+
+        Each tuple: (detected_language, sentiment_label, sentiment_score, uid).
+        Returns number of rows updated.
+        """
+        self.conn.executemany(
+            "UPDATE emails SET detected_language=?, sentiment_label=?, sentiment_score=? WHERE uid=?",
+            rows,
+        )
+        self.conn.commit()
+        return len(rows)
 
     # ------------------------------------------------------------------
     # Write operations
@@ -579,8 +623,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
     def insert_emails_batch(self, emails: list[Email]) -> int:
         """Insert a batch of emails in a single transaction. Returns count inserted.
 
-        Uses batched parameter collection for recipients, categories, and
-        attachments to reduce per-row execute() overhead.
+        Uses batched parameter collection for recipients, categories,
+        attachments, contacts, and communication edges to reduce per-row
+        execute() overhead.
         """
         inserted = 0
         cur = self.conn.cursor()
@@ -589,49 +634,50 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
         recipient_rows: list[tuple] = []
         category_rows: list[tuple] = []
         attachment_rows: list[tuple] = []
+        contact_rows: list[tuple] = []
+        edge_rows: list[tuple] = []
 
         try:
             for email in emails:
-                try:
-                    content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
-                    categories_json = json.dumps(getattr(email, "categories", []) or [])
-                    references_json = json.dumps(getattr(email, "references", []) or [])
-                    cur.execute(
-                        """INSERT INTO emails (uid, message_id, subject, sender_name,
-                           sender_email, date, folder, email_type, has_attachments,
-                           attachment_count, priority, is_read, conversation_id,
-                           in_reply_to, base_subject, body_length, body_text, body_html,
-                           content_sha256, categories, thread_topic,
-                           inference_classification, is_calendar_message, references_json)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (
-                            email.uid,
-                            email.message_id,
-                            email.subject,
-                            email.sender_name,
-                            email.sender_email,
-                            email.date,
-                            email.folder,
-                            email.email_type,
-                            int(email.has_attachments),
-                            len(email.attachment_names),
-                            email.priority,
-                            int(email.is_read),
-                            email.conversation_id,
-                            email.in_reply_to,
-                            email.base_subject,
-                            len(email.clean_body),
-                            email.clean_body,
-                            email.body_html,
-                            content_sha256,
-                            categories_json,
-                            getattr(email, "thread_topic", "") or "",
-                            getattr(email, "inference_classification", "") or "",
-                            int(getattr(email, "is_calendar_message", False)),
-                            references_json,
-                        ),
-                    )
-                except sqlite3.IntegrityError:
+                content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
+                categories_json = json.dumps(getattr(email, "categories", []) or [])
+                references_json = json.dumps(getattr(email, "references", []) or [])
+                cur.execute(
+                    """INSERT OR IGNORE INTO emails (uid, message_id, subject, sender_name,
+                       sender_email, date, folder, email_type, has_attachments,
+                       attachment_count, priority, is_read, conversation_id,
+                       in_reply_to, base_subject, body_length, body_text, body_html,
+                       content_sha256, categories, thread_topic,
+                       inference_classification, is_calendar_message, references_json)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        email.uid,
+                        email.message_id,
+                        email.subject,
+                        email.sender_name,
+                        email.sender_email,
+                        email.date,
+                        email.folder,
+                        email.email_type,
+                        int(email.has_attachments),
+                        len(email.attachment_names),
+                        email.priority,
+                        int(email.is_read),
+                        email.conversation_id,
+                        email.in_reply_to,
+                        email.base_subject,
+                        len(email.clean_body),
+                        email.clean_body,
+                        email.body_html,
+                        content_sha256,
+                        categories_json,
+                        getattr(email, "thread_topic", "") or "",
+                        getattr(email, "inference_classification", "") or "",
+                        int(getattr(email, "is_calendar_message", False)),
+                        references_json,
+                    ),
+                )
+                if cur.rowcount == 0:
                     continue
 
                 # Collect categories for batch insert
@@ -664,21 +710,21 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
                     recipient_rows.append((email.uid, em or addr, name, "bcc"))
                     all_recipients.append((name, em or addr))
 
-                # Contacts and edges still need per-row upsert (ON CONFLICT with min/max)
+                # Collect contacts for batch upsert
                 if email.sender_email:
-                    self._upsert_contact(
-                        cur, email.sender_email, email.sender_name, email.date, "sender"
-                    )
+                    contact_rows.append((
+                        email.sender_email, email.sender_name,
+                        email.date, email.date, 1, 0,
+                    ))
                 for name, em in all_recipients:
                     if em:
-                        self._upsert_contact(cur, em, name, email.date, "recipient")
+                        contact_rows.append((em, name, email.date, email.date, 0, 1))
 
+                # Collect edges for batch upsert
                 if email.sender_email:
                     for _, em in all_recipients:
                         if em:
-                            self._upsert_communication_edge(
-                                cur, email.sender_email, em, email.date
-                            )
+                            edge_rows.append((email.sender_email, em, email.date, email.date))
 
                 inserted += 1
 
@@ -698,6 +744,32 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
                     "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
                     "VALUES(?,?,?,?,?,?)",
                     attachment_rows,
+                )
+            if contact_rows:
+                cur.executemany(
+                    """INSERT INTO contacts(email_address, display_name, first_seen, last_seen,
+                       sent_count, received_count)
+                       VALUES(?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(email_address) DO UPDATE SET
+                         display_name = COALESCE(NULLIF(excluded.display_name, ''), contacts.display_name),
+                         first_seen = MIN(contacts.first_seen, excluded.first_seen),
+                         last_seen = MAX(contacts.last_seen, excluded.last_seen),
+                         sent_count = contacts.sent_count + excluded.sent_count,
+                         received_count = contacts.received_count + excluded.received_count
+                    """,
+                    contact_rows,
+                )
+            if edge_rows:
+                cur.executemany(
+                    """INSERT INTO communication_edges(sender_email, recipient_email,
+                       email_count, first_date, last_date)
+                       VALUES(?, ?, 1, ?, ?)
+                       ON CONFLICT(sender_email, recipient_email) DO UPDATE SET
+                         email_count = communication_edges.email_count + 1,
+                         first_date = MIN(communication_edges.first_date, excluded.first_date),
+                         last_date = MAX(communication_edges.last_date, excluded.last_date)
+                    """,
+                    edge_rows,
                 )
 
             self.conn.commit()
@@ -1034,6 +1106,26 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
             result[r["type"]].append(formatted)
         return result
 
+    def _recipients_for_uids(self, uids: list[str]) -> dict[str, dict[str, list[str]]]:
+        """Return {uid: {to: [...], cc: [...], bcc: [...]}} for multiple emails in one query."""
+        if not uids:
+            return {}
+        placeholders = ",".join("?" * len(uids))
+        rows = self.conn.execute(
+            f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",
+            uids,
+        ).fetchall()
+        result: dict[str, dict[str, list[str]]] = {}
+        for r in rows:
+            uid = r["email_uid"]
+            if uid not in result:
+                result[uid] = {"to": [], "cc": [], "bcc": []}
+            addr = r["address"]
+            name = r["display_name"]
+            formatted = f"{name} <{addr}>" if name else addr
+            result[uid][r["type"]].append(formatted)
+        return result
+
     def get_email_full(self, uid: str) -> dict | None:
         """Get a single email with full body text by UID."""
         row = self.conn.execute(
@@ -1062,6 +1154,62 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
         # Attachments from normalized table
         email["attachments"] = self.attachments_for_email(uid)
         return email
+
+    def get_emails_full_batch(self, uids: list[str]) -> dict[str, dict]:
+        """Get multiple emails with full body, recipients, and attachments.
+
+        Returns {uid: email_dict} — 3 queries regardless of N.
+        """
+        if not uids:
+            return {}
+        placeholders = ",".join("?" * len(uids))
+        # 1) Emails
+        rows = self.conn.execute(
+            f"SELECT * FROM emails WHERE uid IN ({placeholders})", uids,
+        ).fetchall()
+        # 2) Recipients (batch)
+        all_recipients = self._recipients_for_uids(uids)
+        # 3) Attachments (batch)
+        att_rows = self.conn.execute(
+            "SELECT name, mime_type, size, content_id, is_inline, email_uid"
+            f" FROM attachments WHERE email_uid IN ({placeholders})",
+            uids,
+        ).fetchall()
+        attachments_by_uid: dict[str, list[dict]] = {}
+        for a in att_rows:
+            a_uid = a["email_uid"]
+            if a_uid not in attachments_by_uid:
+                attachments_by_uid[a_uid] = []
+            attachments_by_uid[a_uid].append({
+                "name": a["name"], "mime_type": a["mime_type"],
+                "size": a["size"], "content_id": a["content_id"],
+                "is_inline": a["is_inline"],
+            })
+
+        result: dict[str, dict] = {}
+        for row in rows:
+            email = dict(row)
+            uid = email["uid"]
+            recips = all_recipients.get(uid, {"to": [], "cc": [], "bcc": []})
+            email["to"] = recips["to"]
+            email["cc"] = recips["cc"]
+            email["bcc"] = recips["bcc"]
+            # Parse JSON fields
+            cat_raw = email.get("categories")
+            if cat_raw and isinstance(cat_raw, str):
+                try:
+                    email["categories"] = json.loads(cat_raw)
+                except (json.JSONDecodeError, TypeError):
+                    email["categories"] = []
+            refs_raw = email.get("references_json")
+            if refs_raw and isinstance(refs_raw, str):
+                try:
+                    email["references"] = json.loads(refs_raw)
+                except (json.JSONDecodeError, TypeError):
+                    email["references"] = []
+            email["attachments"] = attachments_by_uid.get(uid, [])
+            result[uid] = email
+        return result
 
     def get_thread_emails(self, conversation_id: str) -> list[dict]:
         """Get all emails in a conversation thread, sorted by date ASC."""

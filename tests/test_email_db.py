@@ -220,6 +220,49 @@ class TestEmailDatabase:
         assert db.unique_sender_count() == 2
         db.close()
 
+    def test_batch_insert_contact_accumulation(self):
+        """Batch insert should accumulate sent_count correctly for repeated senders."""
+        db = EmailDatabase(":memory:")
+        emails = [
+            _make_email(message_id="<m1@ex.com>", date="2024-01-01T00:00:00"),
+            _make_email(message_id="<m2@ex.com>", date="2024-06-01T00:00:00"),
+            _make_email(message_id="<m3@ex.com>", date="2024-03-01T00:00:00"),
+        ]
+        inserted = db.insert_emails_batch(emails)
+        assert inserted == 3
+
+        sender = db.conn.execute(
+            "SELECT * FROM contacts WHERE email_address = 'alice@example.com'"
+        ).fetchone()
+        assert sender["sent_count"] == 3
+        assert sender["first_seen"] == "2024-01-01T00:00:00"
+        assert sender["last_seen"] == "2024-06-01T00:00:00"
+
+        recipient = db.conn.execute(
+            "SELECT * FROM contacts WHERE email_address = 'bob@example.com'"
+        ).fetchone()
+        assert recipient["received_count"] == 3
+        db.close()
+
+    def test_batch_insert_edge_accumulation(self):
+        """Batch insert should accumulate email_count for repeated sender→recipient pairs."""
+        db = EmailDatabase(":memory:")
+        emails = [
+            _make_email(message_id="<m1@ex.com>", date="2024-01-01T00:00:00"),
+            _make_email(message_id="<m2@ex.com>", date="2024-06-01T00:00:00"),
+        ]
+        inserted = db.insert_emails_batch(emails)
+        assert inserted == 2
+
+        edge = db.conn.execute(
+            "SELECT * FROM communication_edges WHERE sender_email='alice@example.com'"
+        ).fetchone()
+        assert edge is not None
+        assert edge["email_count"] == 2
+        assert edge["first_date"] == "2024-01-01T00:00:00"
+        assert edge["last_date"] == "2024-06-01T00:00:00"
+        db.close()
+
 
     def test_migration_v5_to_v6_creates_composite_indexes(self):
         db = EmailDatabase(":memory:")
@@ -546,6 +589,39 @@ class TestSchemaV7:
         db.close()
 
 
+class TestSchemaV8:
+    def test_migration_adds_analytics_columns(self):
+        db = EmailDatabase(":memory:")
+        cols = {
+            row[1]
+            for row in db.conn.execute("PRAGMA table_info(emails)").fetchall()
+        }
+        assert "detected_language" in cols
+        assert "sentiment_label" in cols
+        assert "sentiment_score" in cols
+        db.close()
+
+    def test_update_analytics_batch(self):
+        db = EmailDatabase(":memory:")
+        db.insert_email(_make_email(message_id="<a1@ex.com>"))
+        db.insert_email(_make_email(message_id="<a2@ex.com>", sender_email="bob@example.com"))
+        e1_uid = _make_email(message_id="<a1@ex.com>").uid
+        e2_uid = _make_email(message_id="<a2@ex.com>", sender_email="bob@example.com").uid
+        updated = db.update_analytics_batch([
+            ("en", "positive", 0.8, e1_uid),
+            ("de", "neutral", 0.0, e2_uid),
+        ])
+        assert updated == 2
+        row = db.conn.execute(
+            "SELECT detected_language, sentiment_label, sentiment_score FROM emails WHERE uid=?",
+            (e1_uid,),
+        ).fetchone()
+        assert row["detected_language"] == "en"
+        assert row["sentiment_label"] == "positive"
+        assert abs(row["sentiment_score"] - 0.8) < 0.01
+        db.close()
+
+
 class TestAttachmentQueries:
     def _make_db_with_attachments(self):
         db = EmailDatabase(":memory:")
@@ -625,4 +701,76 @@ class TestAttachmentQueries:
         db = self._make_db_with_attachments()
         results = db.search_emails_by_attachment(extension="pdf")
         assert len(results) == 2
+        db.close()
+
+
+class TestGetEmailsFullBatch:
+    def test_returns_all(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(
+            message_id="<b1@ex.com>",
+            to=["Bob <bob@example.com>"],
+            cc=["Carol <carol@example.com>"],
+            has_attachments=True,
+            attachments=[{"name": "f1.pdf", "mime_type": "application/pdf",
+                          "size": 100, "content_id": "", "is_inline": False}],
+        )
+        e2 = _make_email(
+            message_id="<b2@ex.com>",
+            sender_email="bob@example.com",
+            to=["Alice <alice@example.com>"],
+        )
+        e3 = _make_email(
+            message_id="<b3@ex.com>",
+            sender_email="carol@example.com",
+            bcc=["Dave <dave@example.com>"],
+        )
+        db.insert_email(e1)
+        db.insert_email(e2)
+        db.insert_email(e3)
+        batch = db.get_emails_full_batch([e1.uid, e2.uid, e3.uid])
+        assert len(batch) == 3
+        assert batch[e1.uid]["to"] == ["Bob <bob@example.com>"]
+        assert batch[e1.uid]["cc"] == ["Carol <carol@example.com>"]
+        assert len(batch[e1.uid]["attachments"]) == 1
+        assert batch[e3.uid]["bcc"] == ["Dave <dave@example.com>"]
+        db.close()
+
+    def test_partial_uids(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(message_id="<b1@ex.com>")
+        e2 = _make_email(message_id="<b2@ex.com>", sender_email="bob@example.com")
+        db.insert_email(e1)
+        db.insert_email(e2)
+        batch = db.get_emails_full_batch([e1.uid, e2.uid, "nonexistent-uid"])
+        assert len(batch) == 2
+        assert "nonexistent-uid" not in batch
+        db.close()
+
+    def test_empty_list(self):
+        db = EmailDatabase(":memory:")
+        assert db.get_emails_full_batch([]) == {}
+        db.close()
+
+    def test_matches_single(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(
+            to=["Bob <bob@example.com>"],
+            cc=["Carol <carol@example.com>"],
+            has_attachments=True,
+            attachments=[{"name": "doc.pdf", "mime_type": "application/pdf",
+                          "size": 500, "content_id": "", "is_inline": False}],
+            references=["ref1@example.com"],
+            categories=["Important"],
+        )
+        db.insert_email(email)
+        single = db.get_email_full(email.uid)
+        batch = db.get_emails_full_batch([email.uid])
+        batch_email = batch[email.uid]
+        # Compare key fields
+        for key in ("uid", "subject", "sender_email", "to", "cc", "bcc", "references"):
+            assert batch_email[key] == single[key], f"Mismatch on {key}"
+        assert len(batch_email["attachments"]) == len(single["attachments"])
+        assert batch_email["attachments"][0]["name"] == single["attachments"][0]["name"]
+        assert batch_email["categories"] == single["categories"]
         db.close()
