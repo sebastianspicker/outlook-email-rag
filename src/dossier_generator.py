@@ -204,9 +204,11 @@ class DossierGenerator:
         """Deduplicate UIDs, fetch full emails, number appendices, attach quotes."""
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
         source_emails: list[dict[str, Any]] = []
+        uid_to_full: dict[str, dict] = {}
         for uid in sorted(email_uids):
             full = self._db.get_email_full(uid)
             if full:
+                uid_to_full[uid] = full
                 raw_date = full.get("date", "")
                 raw_sha = full.get("content_sha256", "")
                 source_emails.append({
@@ -248,8 +250,8 @@ class DossierGenerator:
         for email in source_emails:
             uid = email["uid"]
             email["evidence_quotes"] = email_quotes.get(uid, [])
-            full = self._db.get_email_full(uid)
-            attachments = full.get("attachments", []) if full else []
+            full = uid_to_full.get(uid, {})
+            attachments = full.get("attachments", [])
             email["attachment_count"] = str(len(attachments))
             email["attachment_list"] = [
                 {
