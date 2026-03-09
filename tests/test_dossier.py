@@ -385,3 +385,44 @@ def test_glossary_present(db):
     assert "Category Definitions" in html
     # Check at least one definition text
     assert "Hostile behavior" in html
+
+
+# ── quote highlighting and attachments ───────────────────────
+
+
+def test_evidence_quote_banner(db):
+    """Quote text should appear in source email section as banners."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # Evidence quotes are "evidence content" from fixtures
+    assert "evidence-quote-banner" in html
+    assert "evidence content" in html
+
+
+def test_attachment_info_in_appendix(db):
+    """Emails with attachments should show attachment bar."""
+    # Insert an attachment for uid-1
+    db.conn.execute(
+        "INSERT INTO attachments (email_uid, name, mime_type, size) VALUES (?, ?, ?, ?)",
+        ("uid-1", "report.pdf", "application/pdf", 12345),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "report.pdf" in html
+    assert "attachment-bar" in html
+
+
+def test_no_attachment_bar_when_none(db):
+    """Emails without attachments should not show attachment bar."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # No attachments in basic fixtures — div should not appear (CSS class still in <style>)
+    assert '<div class="attachment-bar">' not in html

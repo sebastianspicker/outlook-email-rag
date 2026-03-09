@@ -230,6 +230,33 @@
     padding: 12px;
     margin-bottom: 12px;
   }
+
+  /* Evidence quote banners in source emails */
+  .evidence-quote-banner {
+    background: #fff8e1;
+    border-left: 3px solid #f9a825;
+    padding: 6px 10px;
+    margin: 0 14px;
+    font-size: 11px;
+  }
+  .evidence-quote-banner .quote-text {
+    font-style: italic;
+    color: #333;
+  }
+  .evidence-quote-banner .quote-ref {
+    font-weight: 600;
+    color: #1a237e;
+  }
+
+  /* Attachment bar */
+  .attachment-bar {
+    background: #f5f5f5;
+    border-top: 1px solid #e0e0e0;
+    padding: 6px 14px;
+    font-size: 11px;
+    color: #555;
+  }
+  .attachment-bar strong { color: #333; }
 </style>
 </head>
 <body>
@@ -359,7 +386,19 @@
     <br><strong>UID:</strong> <span style="font-family:monospace;font-size:10px">{{ email.uid }}</span> &middot;
     <strong>SHA-256:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256 }}</span>
   </div>
+  {% for q in email.evidence_quotes %}
+  <div class="evidence-quote-banner">
+    <span class="quote-ref">{{ q.evidence_number }}</span>
+    <span class="badge badge-{{ q.category }}">{{ q.category }}</span>
+    &ldquo;<span class="quote-text">{{ q.quote }}</span>&rdquo;
+  </div>
+  {% endfor %}
   <div class="email-card-body">{{ email.body_text }}</div>
+  {% if email.has_attachments %}
+  <div class="attachment-bar">
+    <strong>Attachments ({{ email.attachment_count }}):</strong> {{ email.attachment_names }}
+  </div>
+  {% endif %}
 </div>
 {% endfor %}
 {% else %}

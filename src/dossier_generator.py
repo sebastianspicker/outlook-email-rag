@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -140,6 +140,30 @@ class DossierGenerator:
 
         for item in enriched_items:
             item["appendix_ref"] = uid_to_appendix.get(item.get("email_uid", ""), "")
+
+        # Build quote map for highlighting in source emails
+        email_quotes: dict[str, list[dict[str, str]]] = defaultdict(list)
+        for item in enriched_items:
+            uid = item.get("email_uid")
+            quote = item.get("key_quote")
+            if uid and quote:
+                email_quotes[uid].append({
+                    "quote": str(quote),
+                    "evidence_number": item.get("evidence_number", ""),
+                    "category": item.get("category", ""),
+                })
+
+        # Enrich source emails with quotes and attachment data
+        for email in source_emails:
+            uid = email["uid"]
+            email["evidence_quotes"] = email_quotes.get(uid, [])
+            full = self._db.get_email_full(uid)
+            attachments = full.get("attachments", []) if full else []
+            email["attachment_count"] = str(len(attachments))
+            email["attachment_names"] = ", ".join(
+                a.get("name", "") for a in attachments if a.get("name")
+            )
+            email["has_attachments"] = "1" if attachments else ""
 
         # Gather relationship data
         relationship_data = []
@@ -363,8 +387,17 @@ def _process_loops(template: str, variables: dict[str, Any]) -> str:
     """Process {% for item in items %}...{% endfor %} blocks."""
     import re
 
+    # Body can contain dotted sub-loops ({% for x in item.field %}) which have
+    # their own {% endfor %} — skip those so the outer loop doesn't break.
+    dotted_for = (
+        r"\{%\s*for\s+\w+\s+in\s+\w+\.\w+(?:\[:\d+\])?\s*%\}"
+        r".*?"
+        r"\{%\s*endfor\s*%\}"
+    )
+    safe_char = r"(?!\{%\s*for\s+\w+\s+in\s+\w+\s*%\})."
+    loop_body = f"(?:{dotted_for}|{safe_char})*?"
     pattern = re.compile(
-        r"\{%\s*for\s+(\w+)\s+in\s+(\w+)\s*%\}(.*?)\{%\s*endfor\s*%\}",
+        r"\{%\s*for\s+(\w+)\s+in\s+(\w+)\s*%\}(" + loop_body + r")\{%\s*endfor\s*%\}",
         re.DOTALL,
     )
 
