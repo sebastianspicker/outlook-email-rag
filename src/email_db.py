@@ -565,9 +565,19 @@ class EmailDatabase:
         return True
 
     def insert_emails_batch(self, emails: list[Email]) -> int:
-        """Insert a batch of emails in a single transaction. Returns count inserted."""
+        """Insert a batch of emails in a single transaction. Returns count inserted.
+
+        Uses batched parameter collection for recipients, categories, and
+        attachments to reduce per-row execute() overhead.
+        """
         inserted = 0
         cur = self.conn.cursor()
+
+        # Collect rows for executemany() across the whole batch
+        recipient_rows: list[tuple] = []
+        category_rows: list[tuple] = []
+        attachment_rows: list[tuple] = []
+
         try:
             for email in emails:
                 try:
@@ -612,51 +622,37 @@ class EmailDatabase:
                 except sqlite3.IntegrityError:
                     continue
 
-                # Categories (normalized table)
+                # Collect categories for batch insert
                 for cat in getattr(email, "categories", []) or []:
-                    cur.execute(
-                        "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
-                        (email.uid, cat),
-                    )
+                    category_rows.append((email.uid, cat))
 
-                # Attachments table
+                # Collect attachments for batch insert
                 for att in getattr(email, "attachments", []) or []:
-                    cur.execute(
-                        "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
-                        "VALUES(?,?,?,?,?,?)",
-                        (
-                            email.uid,
-                            att.get("name", ""),
-                            att.get("mime_type", ""),
-                            att.get("size", 0),
-                            att.get("content_id", ""),
-                            int(att.get("is_inline", False)),
-                        ),
-                    )
+                    attachment_rows.append((
+                        email.uid,
+                        att.get("name", ""),
+                        att.get("mime_type", ""),
+                        att.get("size", 0),
+                        att.get("content_id", ""),
+                        int(att.get("is_inline", False)),
+                    ))
 
+                # Collect recipients for batch insert
                 all_recipients: list[tuple[str, str]] = []
                 for addr in email.to:
                     name, em = _parse_address(addr)
-                    cur.execute(
-                        "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                        (email.uid, em or addr, name, "to"),
-                    )
+                    recipient_rows.append((email.uid, em or addr, name, "to"))
                     all_recipients.append((name, em or addr))
                 for addr in email.cc:
                     name, em = _parse_address(addr)
-                    cur.execute(
-                        "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                        (email.uid, em or addr, name, "cc"),
-                    )
+                    recipient_rows.append((email.uid, em or addr, name, "cc"))
                     all_recipients.append((name, em or addr))
                 for addr in email.bcc:
                     name, em = _parse_address(addr)
-                    cur.execute(
-                        "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                        (email.uid, em or addr, name, "bcc"),
-                    )
+                    recipient_rows.append((email.uid, em or addr, name, "bcc"))
                     all_recipients.append((name, em or addr))
 
+                # Contacts and edges still need per-row upsert (ON CONFLICT with min/max)
                 if email.sender_email:
                     self._upsert_contact(
                         cur, email.sender_email, email.sender_name, email.date, "sender"
@@ -673,6 +669,25 @@ class EmailDatabase:
                             )
 
                 inserted += 1
+
+            # Batch insert collected rows
+            if recipient_rows:
+                cur.executemany(
+                    "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
+                    recipient_rows,
+                )
+            if category_rows:
+                cur.executemany(
+                    "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
+                    category_rows,
+                )
+            if attachment_rows:
+                cur.executemany(
+                    "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
+                    "VALUES(?,?,?,?,?,?)",
+                    attachment_rows,
+                )
+
             self.conn.commit()
         except Exception:
             self.conn.rollback()
@@ -732,11 +747,14 @@ class EmailDatabase:
     # ------------------------------------------------------------------
 
     def insert_entities_batch(
-        self, email_uid: str, entities: list[tuple[str, str, str]]
+        self, email_uid: str, entities: list[tuple[str, str, str]], *, commit: bool = True
     ) -> None:
         """Insert extracted entities for an email.
 
         Each entity is (entity_text, entity_type, normalized_form).
+
+        Args:
+            commit: If False, skip the final commit (caller is responsible).
         """
         cur = self.conn.cursor()
         for text, etype, norm in entities:
@@ -758,7 +776,8 @@ class EmailDatabase:
                      mention_count = entity_mentions.mention_count + 1""",
                 (entity_id, email_uid),
             )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def search_by_entity(
         self, entity_text: str, entity_type: str | None = None, limit: int = 20
