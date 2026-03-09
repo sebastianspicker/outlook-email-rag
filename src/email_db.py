@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -205,6 +205,29 @@ CREATE TABLE IF NOT EXISTS sparse_vectors (
 );
 """
 
+_ATTACHMENTS_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_uid TEXT NOT NULL REFERENCES emails(uid),
+    name TEXT NOT NULL,
+    mime_type TEXT,
+    size INTEGER DEFAULT 0,
+    content_id TEXT,
+    is_inline INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_uid ON attachments(email_uid);
+CREATE INDEX IF NOT EXISTS idx_attachments_inline ON attachments(is_inline);
+"""
+
+_CATEGORIES_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS email_categories (
+    email_uid TEXT NOT NULL REFERENCES emails(uid),
+    category TEXT NOT NULL,
+    PRIMARY KEY (email_uid, category)
+);
+CREATE INDEX IF NOT EXISTS idx_categories_name ON email_categories(category);
+"""
+
 _ADDR_RE = re.compile(r"^(.*?)\s*<([^>]+)>$")
 
 
@@ -236,7 +259,7 @@ class EmailDatabase:
         if self._conn is None:
             if self._db_path != ":memory:":
                 Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(self._db_path)
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.row_factory = sqlite3.Row
@@ -253,6 +276,8 @@ class EmailDatabase:
         cur.executescript(_EVIDENCE_SCHEMA_SQL)
         cur.executescript(_CUSTODY_SCHEMA_SQL)
         cur.executescript(_SPARSE_SCHEMA_SQL)
+        cur.executescript(_ATTACHMENTS_SCHEMA_SQL)
+        cur.executescript(_CATEGORIES_SCHEMA_SQL)
         row = cur.execute(
             "SELECT MAX(version) AS v FROM schema_version"
         ).fetchone()
@@ -265,6 +290,8 @@ class EmailDatabase:
             self._migrate_to_v5(cur)
         if current < 6:
             self._migrate_to_v6(cur)
+        if current < 7:
+            self._migrate_to_v7(cur)
         if current < _SCHEMA_VERSION:
             cur.execute(
                 "INSERT OR REPLACE INTO schema_version(version) VALUES(?)",
@@ -322,6 +349,33 @@ class EmailDatabase:
             "CREATE INDEX IF NOT EXISTS idx_emails_folder_date ON emails(folder, date)"
         )
         logger.info("Schema migration v6: added composite indexes (sender_date, folder_date)")
+
+    def _migrate_to_v7(self, cur: sqlite3.Cursor) -> None:
+        """Add categories, calendar, thread_topic, references_json columns + tables (schema v7)."""
+        existing = {
+            row[1]
+            for row in cur.execute("PRAGMA table_info(emails)").fetchall()
+        }
+        new_cols = {
+            "categories": "TEXT",
+            "thread_topic": "TEXT",
+            "inference_classification": "TEXT",
+            "is_calendar_message": "INTEGER DEFAULT 0",
+            "references_json": "TEXT",
+        }
+        for col, col_type in new_cols.items():
+            if col not in existing:
+                cur.execute(f"ALTER TABLE emails ADD COLUMN {col} {col_type}")
+        # Tables created by executescript above (IF NOT EXISTS), just add indexes
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emails_calendar "
+            "ON emails(is_calendar_message, date)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emails_inference "
+            "ON emails(inference_classification)"
+        )
+        logger.info("Schema migration v7: added categories, calendar, thread_topic, references_json columns + tables")
 
     def close(self) -> None:
         if self._conn is not None:
@@ -404,13 +458,17 @@ class EmailDatabase:
         Returns False if uid already exists (duplicate).
         """
         cur = self.conn.cursor()
+        categories_json = json.dumps(getattr(email, "categories", []) or [])
+        references_json = json.dumps(getattr(email, "references", []) or [])
         try:
             cur.execute(
                 """INSERT INTO emails (uid, message_id, subject, sender_name,
                    sender_email, date, folder, email_type, has_attachments,
                    attachment_count, priority, is_read, conversation_id,
-                   in_reply_to, base_subject, body_length, body_text, body_html)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   in_reply_to, base_subject, body_length, body_text, body_html,
+                   categories, thread_topic, inference_classification,
+                   is_calendar_message, references_json)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     email.uid,
                     email.message_id,
@@ -430,10 +488,37 @@ class EmailDatabase:
                     len(email.clean_body),
                     email.clean_body,
                     email.body_html,
+                    categories_json,
+                    getattr(email, "thread_topic", "") or "",
+                    getattr(email, "inference_classification", "") or "",
+                    int(getattr(email, "is_calendar_message", False)),
+                    references_json,
                 ),
             )
         except sqlite3.IntegrityError:
             return False
+
+        # Categories (normalized table)
+        for cat in getattr(email, "categories", []) or []:
+            cur.execute(
+                "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
+                (email.uid, cat),
+            )
+
+        # Attachments table
+        for att in getattr(email, "attachments", []) or []:
+            cur.execute(
+                "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    email.uid,
+                    att.get("name", ""),
+                    att.get("mime_type", ""),
+                    att.get("size", 0),
+                    att.get("content_id", ""),
+                    int(att.get("is_inline", False)),
+                ),
+            )
 
         # Recipients
         all_recipients: list[tuple[str, str]] = []
@@ -487,13 +572,16 @@ class EmailDatabase:
             for email in emails:
                 try:
                     content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
+                    categories_json = json.dumps(getattr(email, "categories", []) or [])
+                    references_json = json.dumps(getattr(email, "references", []) or [])
                     cur.execute(
                         """INSERT INTO emails (uid, message_id, subject, sender_name,
                            sender_email, date, folder, email_type, has_attachments,
                            attachment_count, priority, is_read, conversation_id,
                            in_reply_to, base_subject, body_length, body_text, body_html,
-                           content_sha256)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           content_sha256, categories, thread_topic,
+                           inference_classification, is_calendar_message, references_json)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (
                             email.uid,
                             email.message_id,
@@ -514,10 +602,37 @@ class EmailDatabase:
                             email.clean_body,
                             email.body_html,
                             content_sha256,
+                            categories_json,
+                            getattr(email, "thread_topic", "") or "",
+                            getattr(email, "inference_classification", "") or "",
+                            int(getattr(email, "is_calendar_message", False)),
+                            references_json,
                         ),
                     )
                 except sqlite3.IntegrityError:
                     continue
+
+                # Categories (normalized table)
+                for cat in getattr(email, "categories", []) or []:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
+                        (email.uid, cat),
+                    )
+
+                # Attachments table
+                for att in getattr(email, "attachments", []) or []:
+                    cur.execute(
+                        "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (
+                            email.uid,
+                            att.get("name", ""),
+                            att.get("mime_type", ""),
+                            att.get("size", 0),
+                            att.get("content_id", ""),
+                            int(att.get("is_inline", False)),
+                        ),
+                    )
 
                 all_recipients: list[tuple[str, str]] = []
                 for addr in email.to:
@@ -994,6 +1109,79 @@ class EmailDatabase:
         return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
+    # Category / Calendar / Attachment queries (schema v7)
+    # ------------------------------------------------------------------
+
+    def emails_by_category(self, category: str, limit: int = 50) -> list[dict]:
+        """Get emails with a specific category."""
+        rows = self.conn.execute(
+            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder
+               FROM email_categories ec
+               JOIN emails e ON ec.email_uid = e.uid
+               WHERE ec.category = ?
+               ORDER BY e.date DESC LIMIT ?""",
+            (category, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def category_counts(self) -> list[dict]:
+        """Get category names with email counts."""
+        rows = self.conn.execute(
+            """SELECT category, COUNT(*) AS count
+               FROM email_categories
+               GROUP BY category
+               ORDER BY count DESC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def calendar_emails(
+        self, date_from: str | None = None, date_to: str | None = None, limit: int = 50,
+    ) -> list[dict]:
+        """Get calendar/meeting emails, optionally filtered by date."""
+        query = "SELECT uid, subject, sender_email, date, folder FROM emails WHERE is_calendar_message = 1"
+        params: list = []
+        if date_from:
+            query += " AND date >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND date <= ?"
+            params.append(date_to)
+        query += " ORDER BY date DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def attachments_for_email(self, uid: str) -> list[dict]:
+        """Get all attachments for a specific email."""
+        rows = self.conn.execute(
+            "SELECT name, mime_type, size, content_id, is_inline FROM attachments WHERE email_uid = ?",
+            (uid,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def thread_by_references(self, message_id: str, limit: int = 50) -> list[dict]:
+        """Find emails whose references_json contains a given message-id."""
+        rows = self.conn.execute(
+            """SELECT uid, subject, sender_email, date, folder
+               FROM emails
+               WHERE references_json LIKE ?
+               ORDER BY date ASC LIMIT ?""",
+            (f"%{message_id}%", limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def thread_by_topic(self, thread_topic: str, limit: int = 50) -> list[dict]:
+        """Find all emails sharing a thread topic."""
+        rows = self.conn.execute(
+            """SELECT uid, subject, sender_email, date, folder
+               FROM emails
+               WHERE thread_topic = ?
+               ORDER BY date ASC LIMIT ?""",
+            (thread_topic, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
     # Full-body retrieval (Phase: export & browse)
     # ------------------------------------------------------------------
 
@@ -1023,6 +1211,21 @@ class EmailDatabase:
         email["to"] = recipients["to"]
         email["cc"] = recipients["cc"]
         email["bcc"] = recipients["bcc"]
+        # Parse JSON fields
+        cat_raw = email.get("categories")
+        if cat_raw and isinstance(cat_raw, str):
+            try:
+                email["categories"] = json.loads(cat_raw)
+            except (json.JSONDecodeError, TypeError):
+                email["categories"] = []
+        refs_raw = email.get("references_json")
+        if refs_raw and isinstance(refs_raw, str):
+            try:
+                email["references"] = json.loads(refs_raw)
+            except (json.JSONDecodeError, TypeError):
+                email["references"] = []
+        # Attachments from normalized table
+        email["attachments"] = self.attachments_for_email(uid)
         return email
 
     def get_thread_emails(self, conversation_id: str) -> list[dict]:

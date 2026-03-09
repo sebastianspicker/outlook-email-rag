@@ -375,3 +375,154 @@ class TestEntityOperations:
         assert len(co) == 1
         assert co[0]["entity_type"] == "url"
         db.close()
+
+
+# ── Schema v7: categories, calendar, attachments, references ──
+
+
+class TestSchemaV7:
+    def test_migration_adds_new_columns(self):
+        db = EmailDatabase(":memory:")
+        cols = {
+            row[1]
+            for row in db.conn.execute("PRAGMA table_info(emails)").fetchall()
+        }
+        assert "categories" in cols
+        assert "thread_topic" in cols
+        assert "inference_classification" in cols
+        assert "is_calendar_message" in cols
+        assert "references_json" in cols
+        db.close()
+
+    def test_migration_creates_new_tables(self):
+        db = EmailDatabase(":memory:")
+        tables = {
+            r["name"]
+            for r in db.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        assert "attachments" in tables
+        assert "email_categories" in tables
+        db.close()
+
+    def test_insert_populates_categories(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(categories=["Meeting", "Finance"])
+        db.insert_email(email)
+        cats = db.category_counts()
+        assert len(cats) == 2
+        names = {c["category"] for c in cats}
+        assert "Meeting" in names
+        assert "Finance" in names
+        db.close()
+
+    def test_emails_by_category(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(message_id="<m1>", categories=["Finance"])
+        e2 = _make_email(message_id="<m2>", categories=["HR"])
+        db.insert_email(e1)
+        db.insert_email(e2)
+        finance = db.emails_by_category("Finance")
+        assert len(finance) == 1
+        assert finance[0]["uid"] == e1.uid
+        db.close()
+
+    def test_insert_populates_attachments_table(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(
+            has_attachments=True,
+            attachment_names=["doc.pdf"],
+            attachments=[
+                {"name": "doc.pdf", "mime_type": "application/pdf", "size": 1000,
+                 "content_id": "", "is_inline": False},
+                {"name": "logo.png", "mime_type": "image/png", "size": 500,
+                 "content_id": "cid123", "is_inline": True},
+            ],
+        )
+        db.insert_email(email)
+        atts = db.attachments_for_email(email.uid)
+        assert len(atts) == 2
+        assert atts[0]["name"] == "doc.pdf"
+        assert atts[0]["is_inline"] == 0
+        assert atts[1]["content_id"] == "cid123"
+        assert atts[1]["is_inline"] == 1
+        db.close()
+
+    def test_calendar_emails(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(message_id="<cal1>", is_calendar_message=True, date="2025-01-10T10:00:00")
+        e2 = _make_email(message_id="<cal2>", is_calendar_message=False, date="2025-01-11T10:00:00")
+        db.insert_email(e1)
+        db.insert_email(e2)
+        cals = db.calendar_emails()
+        assert len(cals) == 1
+        assert cals[0]["uid"] == e1.uid
+        db.close()
+
+    def test_references_json_stored(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(references=["ref1@example.com", "ref2@example.com"])
+        db.insert_email(email)
+        full = db.get_email_full(email.uid)
+        assert full["references"] == ["ref1@example.com", "ref2@example.com"]
+        db.close()
+
+    def test_thread_by_references(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(references=["root@example.com", "parent@example.com"])
+        db.insert_email(email)
+        found = db.thread_by_references("root@example.com")
+        assert len(found) == 1
+        assert found[0]["uid"] == email.uid
+        db.close()
+
+    def test_thread_by_topic(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(message_id="<t1>", thread_topic="Budget Q4")
+        e2 = _make_email(message_id="<t2>", thread_topic="Budget Q4")
+        e3 = _make_email(message_id="<t3>", thread_topic="Other")
+        db.insert_email(e1)
+        db.insert_email(e2)
+        db.insert_email(e3)
+        found = db.thread_by_topic("Budget Q4")
+        assert len(found) == 2
+        db.close()
+
+    def test_batch_insert_populates_v7_fields(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(
+            message_id="<b1>",
+            categories=["Important"],
+            is_calendar_message=True,
+            references=["r1@example.com"],
+            attachments=[{"name": "a.txt", "mime_type": "text/plain",
+                          "size": 100, "content_id": "", "is_inline": False}],
+        )
+        inserted = db.insert_emails_batch([e1])
+        assert inserted == 1
+        cats = db.category_counts()
+        assert len(cats) == 1
+        atts = db.attachments_for_email(e1.uid)
+        assert len(atts) == 1
+        full = db.get_email_full(e1.uid)
+        assert full["is_calendar_message"] == 1
+        assert full["references"] == ["r1@example.com"]
+        db.close()
+
+    def test_get_email_full_includes_attachments(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(
+            has_attachments=True,
+            attachment_names=["report.pdf"],
+            attachments=[
+                {"name": "report.pdf", "mime_type": "application/pdf",
+                 "size": 2000, "content_id": "", "is_inline": False},
+            ],
+        )
+        db.insert_email(email)
+        full = db.get_email_full(email.uid)
+        assert "attachments" in full
+        assert len(full["attachments"]) == 1
+        assert full["attachments"][0]["name"] == "report.pdf"
+        db.close()
