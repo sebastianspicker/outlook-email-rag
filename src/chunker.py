@@ -222,8 +222,21 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
             # First chunk gets full header + attachment names
             text = f"{header}{attachment_line}\n\n[Part 1/{len(body_segments)}]\n{segment}"
         else:
-            # Continuation chunks get minimal reference (saves ~150-300 tokens)
-            text = f"[{subject} - Part {i + 1}/{len(body_segments)}]\n{segment}"
+            # Continuation chunks get context header for embedding quality
+            context_parts = []
+            sender_name = email_dict.get("sender_name", "")
+            sender_email = email_dict.get("sender_email", "")
+            date = email_dict.get("date", "")
+            if sender_name and sender_email:
+                context_parts.append(f"From: {sender_name} <{sender_email}>")
+            elif sender_email:
+                context_parts.append(f"From: {sender_email}")
+            if date:
+                context_parts.append(f"Date: {date}")
+            if subject:
+                context_parts.append(f"Subject: {subject}")
+            context_header = f"[{' | '.join(context_parts)}]\n" if context_parts else ""
+            text = f"{context_header}[{subject} - Part {i + 1}/{len(body_segments)}]\n{segment}"
 
         # Append notes to last chunk only
         if i == len(body_segments) - 1:

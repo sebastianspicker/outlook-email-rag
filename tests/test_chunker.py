@@ -139,9 +139,11 @@ def test_multi_chunk_header_once():
     assert "Date:" in chunks[0].text
     assert "Subject:" in chunks[0].text
 
-    # Chunk 1+ should NOT have full header, just a minimal reference
-    assert "From:" not in chunks[1].text
+    # Chunk 1+ should have a compact context header, not the full multi-line header
+    assert "Date:" not in chunks[1].text or "Date: 2025-01-01" in chunks[1].text
     assert "[Important Discussion - Part 2/" in chunks[1].text
+    # Context header is a single bracketed line, not the full "From: ... \nDate: ..." block
+    assert "From: Alice <alice@example.com> | Date:" in chunks[1].text
 
 
 # ── Phase 2: New metadata fields ────────────────────────────────
@@ -308,6 +310,60 @@ def test_chunk_email_strips_signature():
     # Signature "Bob\nbob@example.com" stripped from body, but "From: Bob <bob@example.com>" stays in header
     assert "Important info here" in chunks[0].text
     assert chunks[0].metadata["has_signature"] == "True"
+
+
+def test_continuation_chunks_have_context_header():
+    """Continuation chunks (2nd, 3rd, etc.) should include sender/date/subject context."""
+    email = {
+        "uid": "ctx1",
+        "message_id": "m1",
+        "subject": "Budget Review",
+        "sender_name": "Alice",
+        "sender_email": "alice@example.com",
+        "to": ["bob@example.com"],
+        "cc": [],
+        "date": "2025-03-01",
+        "body": "Paragraph text. " * 300,  # Long enough to split
+        "folder": "Inbox",
+        "has_attachments": False,
+        "email_type": "original",
+    }
+
+    chunks = chunk_email(email)
+    assert len(chunks) >= 2
+
+    # Continuation chunk should have context header
+    text = chunks[1].text
+    assert "From: Alice <alice@example.com>" in text
+    assert "Date: 2025-03-01" in text
+    assert "Subject: Budget Review" in text
+    assert "[Budget Review - Part 2/" in text
+
+
+def test_continuation_chunks_context_header_partial_fields():
+    """Context header gracefully handles missing fields."""
+    email = {
+        "uid": "ctx2",
+        "message_id": "m2",
+        "subject": "Test",
+        "sender_name": "",
+        "sender_email": "anon@example.com",
+        "to": [],
+        "cc": [],
+        "date": "",
+        "body": "Word " * 500,
+        "folder": "Inbox",
+        "has_attachments": False,
+    }
+
+    chunks = chunk_email(email)
+    assert len(chunks) >= 2
+
+    text = chunks[1].text
+    # Should have sender email without name
+    assert "From: anon@example.com" in text
+    # No date since empty
+    assert "Date:" not in text
 
 
 def test_chunk_email_no_signature_flag():
