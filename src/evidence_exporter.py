@@ -58,10 +58,12 @@ class EvidenceExporter:
         if not items:
             return {"html": "", "item_count": 0}
 
-        # Gather full email bodies for the appendix
+        # Gather full email bodies for the appendix (batch)
+        all_uids = list({item["email_uid"] for item in items if item.get("email_uid")})
+        batch = self._db.get_emails_full_batch(all_uids)
         appendix_emails = []
         for item in items:
-            full = self._db.get_email_full(item["email_uid"])
+            full = batch.get(item.get("email_uid", ""))
             if full:
                 appendix_emails.append({
                     "evidence_id": item["id"],
