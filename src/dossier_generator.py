@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .formatting import format_date, format_file_size, strip_html_tags
+from .formatting import format_date, format_file_size, strip_html_tags, write_html_or_pdf
 
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
@@ -375,30 +375,13 @@ class DossierGenerator:
             {"output_path": str, "format": str, "evidence_count": int, "dossier_hash": str}
         """
         result = self.generate(**kwargs)
-        html = result["html"]
-
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-        if fmt == "pdf":
-            try:
-                from weasyprint import HTML  # type: ignore[import-untyped]
-
-                HTML(string=html).write_pdf(output_path)
-            except ImportError:
-                # Fall back to HTML
-                output_path = str(Path(output_path).with_suffix(".html"))
-                Path(output_path).write_text(html, encoding="utf-8")
-                fmt = "html"
-        else:
-            Path(output_path).write_text(html, encoding="utf-8")
-
-        return {
-            "output_path": output_path,
-            "format": fmt,
-            "evidence_count": result["evidence_count"],
-            "email_count": result["email_count"],
-            "dossier_hash": result["dossier_hash"],
-        }
+        result_meta = write_html_or_pdf(result["html"], output_path, fmt)
+        result_meta.update(
+            evidence_count=result["evidence_count"],
+            email_count=result["email_count"],
+            dossier_hash=result["dossier_hash"],
+        )
+        return result_meta
 
     @staticmethod
     def _render_template(variables: dict[str, Any]) -> str:

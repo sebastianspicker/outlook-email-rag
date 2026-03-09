@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from jinja2 import Environment, FileSystemLoader
 
+from .formatting import write_html_or_pdf
+
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
 
@@ -115,36 +117,7 @@ class EmailExporter:
         html: str, output_path: str, fmt: str, extra: dict[str, Any]
     ) -> dict[str, Any]:
         """Write HTML or PDF to disk."""
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-        if fmt.lower() == "pdf":
-            try:
-                from weasyprint import HTML  # type: ignore[import-untyped]
-
-                HTML(string=html).write_pdf(output_path)
-                return {
-                    "output_path": output_path,
-                    "format": "pdf",
-                    "email_count": extra.get("email_count", 0),
-                    "subject": extra.get("subject", ""),
-                }
-            except ImportError:
-                # Fallback to HTML
-                html_path = str(Path(output_path).with_suffix(".html"))
-                Path(html_path).write_text(html, encoding="utf-8")
-                return {
-                    "output_path": html_path,
-                    "format": "html",
-                    "email_count": extra.get("email_count", 0),
-                    "subject": extra.get("subject", ""),
-                    "note": "weasyprint not installed; saved as HTML. Install with: pip install weasyprint",
-                }
-
-        # HTML output
-        Path(output_path).write_text(html, encoding="utf-8")
-        return {
-            "output_path": output_path,
-            "format": "html",
-            "email_count": extra.get("email_count", 0),
-            "subject": extra.get("subject", ""),
-        }
+        result = write_html_or_pdf(html, output_path, fmt)
+        result["email_count"] = extra.get("email_count", 0)
+        result["subject"] = extra.get("subject", "")
+        return result

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from jinja2 import Environment, FileSystemLoader
 from markupsafe import Markup, escape
 
-from .formatting import strip_html_tags
+from .formatting import strip_html_tags, write_html_or_pdf
 
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
@@ -153,10 +153,9 @@ class EvidenceExporter:
         Returns:
             {"output_path": str, "format": str, "item_count": int}
         """
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
         if fmt.lower() == "csv":
             result = self.export_csv(min_relevance=min_relevance, category=category)
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             Path(output_path).write_text(result["csv"], encoding="utf-8")
             return {
                 "output_path": output_path,
@@ -166,34 +165,9 @@ class EvidenceExporter:
 
         # HTML or PDF
         result = self.export_html(min_relevance=min_relevance, category=category)
-
-        if fmt.lower() == "pdf":
-            try:
-                from weasyprint import HTML  # type: ignore[import-untyped]
-
-                HTML(string=result["html"]).write_pdf(output_path)
-                return {
-                    "output_path": output_path,
-                    "format": "pdf",
-                    "item_count": result["item_count"],
-                }
-            except ImportError:
-                html_path = str(Path(output_path).with_suffix(".html"))
-                Path(html_path).write_text(result["html"], encoding="utf-8")
-                return {
-                    "output_path": html_path,
-                    "format": "html",
-                    "item_count": result["item_count"],
-                    "note": "weasyprint not installed; saved as HTML. Install with: pip install weasyprint",
-                }
-
-        # Default: HTML
-        Path(output_path).write_text(result["html"], encoding="utf-8")
-        return {
-            "output_path": output_path,
-            "format": "html",
-            "item_count": result["item_count"],
-        }
+        result_meta = write_html_or_pdf(result["html"], output_path, fmt)
+        result_meta["item_count"] = result["item_count"]
+        return result_meta
 
     # ── Internal ──────────────────────────────────────────────
 

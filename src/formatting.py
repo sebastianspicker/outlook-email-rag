@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from html import unescape
+from pathlib import Path
 from typing import Any
 
 
@@ -221,3 +222,33 @@ def strip_html_tags(text: str | None) -> str:
     # Collapse excessive blank lines
     result = _MULTI_BLANK_RE.sub("\n\n", result)
     return result.strip()
+
+
+def write_html_or_pdf(html: str, output_path: str, fmt: str) -> dict[str, Any]:
+    """Write HTML content to disk as HTML or PDF.
+
+    If ``fmt`` is ``"pdf"`` but WeasyPrint is not installed, falls back to
+    HTML and includes a ``note`` key in the result.
+
+    Returns:
+        ``{"output_path": str, "format": str}`` (plus optional ``"note"``).
+    """
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if fmt.lower() == "pdf":
+        try:
+            from weasyprint import HTML as WeasyprintHTML  # type: ignore[import-untyped]
+
+            WeasyprintHTML(string=html).write_pdf(output_path)
+            return {"output_path": output_path, "format": "pdf"}
+        except ImportError:
+            output_path = str(Path(output_path).with_suffix(".html"))
+            Path(output_path).write_text(html, encoding="utf-8")
+            return {
+                "output_path": output_path,
+                "format": "html",
+                "note": "weasyprint not installed; saved as HTML. Install with: pip install weasyprint",
+            }
+
+    Path(output_path).write_text(html, encoding="utf-8")
+    return {"output_path": output_path, "format": fmt}
