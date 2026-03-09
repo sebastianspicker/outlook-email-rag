@@ -14,22 +14,32 @@ OPFMessageCopySource), fields are extracted from the raw RFC 2822 headers.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import logging
 import os
 import re
 import zipfile
 from dataclasses import dataclass, field
-from email.utils import parsedate_to_datetime
 from typing import IO, Generator
 
 from lxml import etree
 
-from .html_converter import _RE_WHITESPACE_COLLAPSE
 from .html_converter import clean_text as _clean_text
 from .html_converter import html_to_text as _html_to_text
 from .html_converter import looks_like_html as _looks_like_html
+from .rfc2822 import (
+    _calendar_to_text,  # noqa: F401 — backward-compat alias
+    _decode_mime_words,  # noqa: F401 — backward-compat alias
+    _extract_body_from_source,  # noqa: F401 — backward-compat alias
+    _extract_email_from_header,  # noqa: F401 — backward-compat alias
+    _extract_header,  # noqa: F401 — backward-compat alias
+    _extract_name_from_header,  # noqa: F401 — backward-compat alias
+    _header_pattern,  # noqa: F401 — backward-compat alias
+    _ical_pattern,  # noqa: F401 — backward-compat alias
+    _normalize_date,  # noqa: F401 — backward-compat alias
+    _parse_address_list,  # noqa: F401 — backward-compat alias
+    _parse_int,  # noqa: F401 — backward-compat alias
+)
 
 logger = logging.getLogger(__name__)
 MAX_XML_BYTES = int(os.environ.get("OLM_MAX_XML_BYTES", 50_000_000))  # 50 MB default
@@ -43,28 +53,6 @@ _RE_FW_PREFIX = re.compile(
     r"^(RE|AW|FW|WG|SV|VS|Antw|Doorst)\s*:\s*",
     re.IGNORECASE,
 )
-
-_RE_ICAL_UNFOLD = re.compile(r"\r?\n[\t ]")
-_RE_MAILTO = re.compile(r"(?i)mailto:")
-
-
-@functools.lru_cache(maxsize=32)
-def _header_pattern(name: str) -> re.Pattern:
-    """Compile and cache a regex for extracting a named RFC 2822 header."""
-    return re.compile(
-        rf"^{re.escape(name)}:[ \t]*(.+?)(?=\n\S|\n\n|\Z)",
-        re.IGNORECASE | re.MULTILINE | re.DOTALL,
-    )
-
-
-@functools.lru_cache(maxsize=16)
-def _ical_pattern(name: str) -> re.Pattern:
-    """Compile and cache a regex for extracting a named iCalendar field."""
-    return re.compile(
-        rf"^{re.escape(name)}(?:;[^:]*)?:(.+?)(?=\r?\n[^\t ]|\Z)",
-        re.MULTILINE | re.DOTALL,
-    )
-
 
 @dataclass
 class Email:
@@ -775,256 +763,6 @@ def _extract_html_body(el: etree._Element) -> str:
         if child.tail:
             parts.append(child.tail)
     return "".join(parts)
-
-
-def _normalize_date(value: str) -> str:
-    """Normalize a date string to ISO 8601 format.
-
-    Handles both ISO 8601 (from OLM XML) and RFC 2822 (from email headers).
-    Returns the original value if parsing fails.
-    """
-    if not value or not value.strip():
-        return value
-    value = value.strip()
-    # Already looks like ISO 8601 — keep as-is
-    if re.match(r"\d{4}-\d{2}-\d{2}T", value):
-        return value
-    # Try RFC 2822 (e.g. "Wed, 25 Jun 2025 10:52:47 +0200")
-    try:
-        dt = parsedate_to_datetime(value)
-        return dt.isoformat()
-    except Exception:
-        return value
-
-
-def _parse_int(value: str, default: int = 0) -> int:
-    """Safely parse an integer from a string."""
-    if not value or not value.strip():
-        return default
-    try:
-        return int(value.strip())
-    except ValueError:
-        return default
-
-
-# ── RFC 2822 Body Extraction ──────────────────────────────────
-
-
-def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
-    """Extract body text and HTML from raw RFC 2822 source.
-
-    When OLM has no OPFMessageCopyBody/HTMLBody elements, the full email
-    (headers + body) is in OPFMessageCopySource.  This function splits
-    headers from body at the first blank line, then handles MIME multipart
-    and Content-Transfer-Encoding.
-    """
-    import email
-    import email.policy
-
-    try:
-        msg = email.message_from_string(raw_source, policy=email.policy.default)
-    except Exception:
-        # Fallback: simple header/body split
-        parts = raw_source.split("\n\n", 1)
-        if len(parts) == 2:
-            return parts[1].strip(), ""
-        return "", ""
-
-    body_text = ""
-    body_html = ""
-
-    if msg.is_multipart():
-        for part in msg.walk():
-            ct = part.get_content_type()
-            if ct == "text/plain" and not body_text:
-                try:
-                    payload = part.get_content()
-                except Exception:
-                    continue
-                if isinstance(payload, str):
-                    body_text = payload
-            elif ct == "text/html" and not body_html:
-                try:
-                    payload = part.get_content()
-                except Exception:
-                    continue
-                if isinstance(payload, str):
-                    body_html = payload
-            elif ct == "text/calendar" and not body_text:
-                try:
-                    payload = part.get_content()
-                except Exception:
-                    continue
-                if isinstance(payload, str):
-                    body_text = _calendar_to_text(payload)
-    else:
-        ct = msg.get_content_type()
-        try:
-            payload = msg.get_content()
-        except Exception:
-            payload = None
-        if isinstance(payload, str):
-            if ct == "text/html":
-                body_html = payload
-            elif ct == "text/calendar":
-                body_text = _calendar_to_text(payload)
-            else:
-                body_text = payload
-
-    # Fallback for multipart emails with only calendar or attachment parts
-    if not body_text and not body_html and msg.is_multipart():
-        content_types = {
-            part.get_content_type() for part in msg.walk() if not part.is_multipart()
-        }
-        if "text/calendar" in content_types:
-            body_text = "[Calendar meeting invitation]"
-        elif content_types:
-            body_text = "[Attachment-only email]"
-
-    return body_text.strip(), body_html.strip()
-
-
-def _calendar_to_text(ical_text: str) -> str:
-    """Extract human-readable text from iCalendar (ICS) content.
-
-    No external dependency — uses simple regex patterns to extract
-    SUMMARY, DESCRIPTION, DTSTART, DTEND, LOCATION, ORGANIZER.
-    """
-    if not ical_text:
-        return ""
-    parts: list[str] = []
-
-    def _ical_field(name: str) -> str:
-        # Handle folded lines and parameterized field names (e.g. DTSTART;VALUE=DATE:...)
-        m = _ical_pattern(name).search(ical_text)
-        if m:
-            # Unfold continuation lines
-            return _RE_ICAL_UNFOLD.sub("", m.group(1)).strip()
-        return ""
-
-    summary = _ical_field("SUMMARY")
-    if summary:
-        parts.append(f"Meeting: {summary}")
-
-    organizer = _ical_field("ORGANIZER")
-    if organizer:
-        # Strip mailto: prefix
-        organizer = _RE_MAILTO.sub("", organizer)
-        parts.append(f"Organizer: {organizer}")
-
-    location = _ical_field("LOCATION")
-    if location:
-        parts.append(f"Location: {location}")
-
-    dtstart = _ical_field("DTSTART")
-    if dtstart:
-        parts.append(f"Start: {dtstart}")
-
-    dtend = _ical_field("DTEND")
-    if dtend:
-        parts.append(f"End: {dtend}")
-
-    description = _ical_field("DESCRIPTION")
-    if description:
-        # Unescape common ICS escapes
-        description = description.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";")
-        parts.append(f"\n{description}")
-
-    return "\n".join(parts) if parts else "[Calendar event]"
-
-
-# ── MIME Encoded-Word Decoding ─────────────────────────────────
-
-
-def _decode_mime_words(value: str) -> str:
-    """Decode MIME encoded-word sequences like =?iso-8859-1?Q?...?=."""
-    if "=?" not in value:
-        return value
-    from email.header import decode_header
-
-    try:
-        parts = decode_header(value)
-    except Exception:
-        return value
-    decoded: list[str] = []
-    for part, charset in parts:
-        if isinstance(part, bytes):
-            decoded.append(part.decode(charset or "utf-8", errors="replace"))
-        else:
-            decoded.append(part)
-    return "".join(decoded)
-
-
-# ── RFC 2822 Header Extraction ────────────────────────────────
-
-
-def _extract_header(source: str, header_name: str) -> str:
-    """Extract a single header value from raw RFC 2822 source.
-
-    Handles continuation lines (lines starting with whitespace).
-    Stops at the blank line separating headers from body.
-    """
-    match = _header_pattern(header_name).search(source)
-    if not match:
-        return ""
-    value = match.group(1).strip()
-    # Collapse continuation whitespace
-    value = _RE_WHITESPACE_COLLAPSE.sub(" ", value)
-    return value
-
-
-def _extract_email_from_header(source: str, header_name: str) -> str:
-    """Extract the email address from a From/To header like 'Name <email>'."""
-    raw = _extract_header(source, header_name)
-    if not raw:
-        return ""
-    # HTML-encoded angle brackets from OLM: &lt; and &gt;
-    raw = raw.replace("&lt;", "<").replace("&gt;", ">")
-    match = re.search(r"<([^>]+@[^>]+)>", raw)
-    if match:
-        return match.group(1)
-    # Bare email
-    match = re.search(r"[\w.+-]+@[\w.-]+", raw)
-    return match.group(0) if match else raw
-
-
-def _extract_name_from_header(source: str, header_name: str) -> str:
-    """Extract the display name from a header like ``"Name" <email>``."""
-    raw = _extract_header(source, header_name)
-    if not raw:
-        return ""
-    raw = raw.replace("&lt;", "<").replace("&gt;", ">")
-    # Try Python's email.utils first — handles escaped quotes, RFC 2822 names
-    try:
-        from email.utils import parseaddr
-        name, _addr = parseaddr(raw)
-        if name:
-            return name
-    except Exception:
-        pass
-    # Unquoted Name <email>
-    match = re.search(r"^([^<]+)<", raw)
-    if match:
-        return match.group(1).strip().strip('"')
-    return ""
-
-
-def _parse_address_list(raw: str) -> list[str]:
-    """Parse a comma/semicolon-separated list of addresses into email strings."""
-    raw = raw.replace("&lt;", "<").replace("&gt;", ">")
-    # Outlook uses both commas and semicolons as separators
-    raw = raw.replace(";", ",")
-    addresses: list[str] = []
-    for part in raw.split(","):
-        part = part.strip()
-        match = re.search(r"<([^>]+@[^>]+)>", part)
-        if match:
-            addresses.append(match.group(1))
-        else:
-            match = re.search(r"[\w.+-]+@[\w.-]+", part)
-            if match:
-                addresses.append(match.group(0))
-    return addresses
 
 
 # ── Folder / Text / XML Utilities ─────────────────────────────
