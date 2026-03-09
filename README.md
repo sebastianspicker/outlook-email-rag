@@ -48,7 +48,7 @@ flowchart LR
     NLP --> N2["Topic\nmodeling"]
     NLP --> N3["Email\nclustering"]
 
-    I["You ask\nClaude"] --> J["66 MCP tools\ncalled by Claude"]
+    I["You ask\nClaude"] --> J["67 MCP tools\ncalled by Claude"]
     J --> G
     J --> H
     G --> K["Ranked\nresults"]
@@ -62,7 +62,7 @@ flowchart LR
 sequenceDiagram
     participant You
     participant Claude as Claude Code
-    participant MCP as MCP Server (66 tools)
+    participant MCP as MCP Server (67 tools)
     participant VDB as ChromaDB (vectors)
     participant SQL as SQLite (metadata)
 
@@ -181,7 +181,7 @@ The project includes a `.claude/settings.json` that automatically registers the 
 
 ## Using with Claude Code (MCP Server)
 
-This is the primary way to use Email RAG. Claude Code talks to your email index through 66 MCP tools — you just ask questions in plain English.
+This is the primary way to use Email RAG. Claude Code talks to your email index through 67 MCP tools — you just ask questions in plain English.
 
 ### How it connects
 
@@ -207,7 +207,7 @@ After opening the project in Claude Code, you can check that the tools loaded:
 
 1. Type `/mcp` in the Claude Code prompt
 2. Look for `email_search` in the server list — it should show as **connected**
-3. You should see all 66 tools listed beneath it
+3. You should see all 67 tools listed beneath it
 
 If it shows as disconnected:
 - Make sure the virtual environment exists: `ls .venv/bin/python`
@@ -337,7 +337,7 @@ When you ask a question like *"Find emails about the Q3 budget from finance"*, C
 
 You never need to remember tool names or parameters — Claude handles that automatically.
 
-### Available MCP Tools (66)
+### Available MCP Tools (67)
 
 Claude picks the right tool automatically, but here's the full reference:
 
@@ -379,12 +379,13 @@ Claude picks the right tool automatically, but here's the full reference:
 | `email_ingest` | Trigger ingestion of an `.olm` file from within Claude (supports `extract_attachments` and `embed_images`) |
 | `email_reingest_bodies` | Backfill full body text for emails missing it in SQLite |
 
-#### Diagnostics (2)
+#### Diagnostics (3)
 
 | Tool | What it does |
 |------|-------------|
 | `email_model_info` | Show embedding model, backend (BGE-M3 / SentenceTransformer), device, sparse & ColBERT status |
 | `email_sparse_status` | Show sparse vector index status — vector count, whether the index is built |
+| `email_reembed` | Rebuild ChromaDB embeddings from corrected body text in SQLite |
 
 #### Network Analysis (3)
 
@@ -816,6 +817,7 @@ python -m src.cli --reset-index --yes
 | `--fine-tune` | string? | Fine-tune embedding model on generated triplets |
 | `--fine-tune-output` | string | Output directory for fine-tuned model (default: `models/fine-tuned`) |
 | `--fine-tune-epochs` | int | Number of fine-tuning epochs (default: 3) |
+| `--reembed` | flag | Rebuild ChromaDB embeddings from corrected body text in SQLite |
 | `--reset-index` | flag | Delete and recreate the index (requires `--yes`) |
 | `--yes` | flag | Confirm destructive operations |
 | `--chromadb-path` | string | Override ChromaDB path |
@@ -996,7 +998,7 @@ block-beta
     end
 
     block:interfaces["Interfaces"]:1
-        mcp["mcp_server.py + tools/\n66 MCP tools\n(primary)"]
+        mcp["mcp_server.py + tools/\n67 MCP tools\n(primary)"]
         cli["cli.py\n7 subcommand groups"]
         ui["web_app.py\nStreamlit UI"]
     end
@@ -1026,7 +1028,7 @@ block-beta
 | `src/evidence_exporter.py` | Export evidence reports as HTML, CSV, or PDF for legal review |
 | `src/dossier_generator.py` | Proof dossier combining evidence, emails, relationships, and custody chain |
 | `src/mcp_models.py` | Pydantic input models for all MCP tool parameters |
-| `src/mcp_server.py` | FastMCP server exposing 66 tools for Claude Code |
+| `src/mcp_server.py` | FastMCP server exposing 67 tools for Claude Code |
 | `src/tools/` | MCP tool subpackage — 54 tools across 9 domain modules (browse, evidence, entities, network, etc.) |
 | `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
 | `src/cli.py` | Rich terminal interface with 7 subcommand groups and 58 flags — legacy flat-flag syntax still supported |
@@ -1204,7 +1206,7 @@ outlook-email-rag/
 ├── src/
 │   ├── __init__.py              # package marker
 │   ├── __main__.py              # python -m src -> MCP server
-│   ├── mcp_server.py            # 66 MCP tools for Claude Code
+│   ├── mcp_server.py            # 67 MCP tools for Claude Code
 │   ├── retriever.py             # search, filters, hybrid, reranking
 │   ├── ingest.py                # ingestion pipeline
 │   ├── parse_olm.py             # OLM XML parser
