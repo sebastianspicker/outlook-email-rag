@@ -14,8 +14,8 @@ from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from markupsafe import Markup, escape
 from jinja2 import Environment, FileSystemLoader
+from markupsafe import Markup, escape
 
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
