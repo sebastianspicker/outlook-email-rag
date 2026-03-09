@@ -149,7 +149,7 @@ class EvidenceExporter:
         writer.writerow([
             "id", "date", "sender_name", "sender_email", "recipients",
             "subject", "category", "key_quote", "summary", "relevance",
-            "verified", "notes", "email_uid",
+            "verified", "notes", "email_uid", "created_at", "updated_at",
         ])
         for item in items:
             writer.writerow([
@@ -166,6 +166,8 @@ class EvidenceExporter:
                 "yes" if item.get("verified") else "no",
                 item.get("notes", ""),
                 item.get("email_uid", ""),
+                item.get("created_at", ""),
+                item.get("updated_at", ""),
             ])
 
         return {"csv": output.getvalue(), "item_count": len(items)}

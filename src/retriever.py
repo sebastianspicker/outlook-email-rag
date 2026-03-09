@@ -16,6 +16,14 @@ from .storage import get_chroma_client, get_collection, iter_collection_metadata
 logger = logging.getLogger(__name__)
 MAX_TOP_K = 1000
 
+# Overfetch multipliers for search_filtered to compensate for
+# post-retrieval filtering and deduplication.
+_FILTER_OVERFETCH = 8
+_DEDUP_OVERFETCH = 2
+_RERANK_OVERFETCH = 3
+_MAX_FETCH_SIZE = 10_000
+_MAX_FETCH_ATTEMPTS = 6
+
 
 def _normalize_filter(value: str | None) -> str | None:
     """Strip whitespace and convert empty strings to None."""
@@ -254,17 +262,12 @@ class EmailRetriever:
         use_rerank = rerank or (settings.rerank_enabled if settings else False)
         use_hybrid = hybrid or (settings.hybrid_enabled if settings else False)
 
-        # Over-fetch more when reranking (need larger candidate pool)
-        rerank_multiplier = 3 if use_rerank else 1
-        # Over-fetch 2x for dedup (we need extra to compensate for multi-chunk emails)
-        dedup_multiplier = 2
-        multiplier = (8 if has_filters else 1) * dedup_multiplier * rerank_multiplier
+        rerank_multiplier = _RERANK_OVERFETCH if use_rerank else 1
+        multiplier = (_FILTER_OVERFETCH if has_filters else 1) * _DEDUP_OVERFETCH * rerank_multiplier
         fetch_size = max(top_k * multiplier, top_k)
-        max_fetch_size = 10_000
-        max_attempts = 6
         query_embedding = None
 
-        for _ in range(max_attempts):
+        for _ in range(_MAX_FETCH_ATTEMPTS):
             if fetch_size <= MAX_TOP_K:
                 raw_candidates = self.search(query, top_k=fetch_size)
             else:
@@ -320,10 +323,10 @@ class EmailRetriever:
             if raw_count < fetch_size:
                 return deduped[:top_k]
 
-            if fetch_size >= max_fetch_size:
+            if fetch_size >= _MAX_FETCH_SIZE:
                 return deduped[:top_k]
 
-            fetch_size = min(fetch_size * 2, max_fetch_size)
+            fetch_size = min(fetch_size * 2, _MAX_FETCH_SIZE)
 
         return deduped[:top_k] if filtered else []
 

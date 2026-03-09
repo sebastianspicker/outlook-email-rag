@@ -70,7 +70,8 @@ class MultiVectorEmbedder:
         """Return backend info, loading model if needed."""
         if self._backend is None:
             self._load_model()
-        assert self._backend is not None
+        if self._backend is None:
+            raise RuntimeError("model not loaded")
         return self._backend
 
     @property
