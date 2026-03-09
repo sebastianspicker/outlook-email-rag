@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 from ..mcp_models import (
     CustodyChainInput,
     DossierGenerateInput,
@@ -39,14 +37,13 @@ def register(mcp, deps) -> None:
         ingestion, evidence additions/updates/removals, and exports.
         Use to verify evidence handling history and integrity.
         """
-        def _run():
-            db = deps.get_email_db()
+        def _work(db):
             events = db.get_custody_chain(
                 target_type=params.target_type, target_id=params.target_id,
                 action=params.action, limit=params.limit,
             )
             return json_response({"events": events, "count": len(events)}, default=str)
-        return await deps.offload(_run)
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_provenance",
@@ -58,10 +55,9 @@ def register(mcp, deps) -> None:
         One call gives complete traceability from source file to stored email.
         Use to verify an email's origin and integrity for legal evidence.
         """
-        def _run():
-            db = deps.get_email_db()
+        def _work(db):
             return json_response(db.email_provenance(params.email_uid), default=str)
-        return await deps.offload(_run)
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="evidence_provenance",
@@ -73,10 +69,9 @@ def register(mcp, deps) -> None:
         Combines evidence item, source email traceability, and all custody
         events in one call. Use to present complete provenance to a lawyer.
         """
-        def _run():
-            db = deps.get_email_db()
+        def _work(db):
             return json_response(db.evidence_provenance(params.evidence_id), default=str)
-        return await deps.offload(_run)
+        return await run_with_db(deps, _work)
 
     # ── Proof Dossier ─────────────────────────────────────────────
 
@@ -229,7 +224,7 @@ def register(mcp, deps) -> None:
             removed = db.remove_evidence(params.evidence_id)
             if not removed:
                 return json_error(f"Evidence item not found: {params.evidence_id}")
-            return json.dumps({"removed": params.evidence_id})
+            return json_response({"removed": params.evidence_id})
         return await run_with_db(deps, _work)
 
     @mcp.tool(
