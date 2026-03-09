@@ -740,3 +740,45 @@ def test_updated_at_shown_when_different(db):
     html = result["html"]
 
     assert "<strong>Updated:</strong>" in html
+
+
+# ── Commit 5: Scope, prepared-by, legal disclaimer ──────────
+
+
+def test_prepared_by_on_cover(db):
+    """Prepared-by name should appear on cover page."""
+    gen = DossierGenerator(db)
+    result = gen.generate(prepared_by="Jane Smith, Paralegal")
+    html = result["html"]
+
+    assert "Jane Smith, Paralegal" in html
+    assert "Prepared by:" in html
+
+
+def test_scope_section_no_filters(db):
+    """Scope should show archive size and 'No filters applied'."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "No filters applied" in html
+    assert "3</strong> emails" in html  # 3 emails in fixture
+
+
+def test_scope_section_with_filters(db):
+    """Scope should list active filters."""
+    gen = DossierGenerator(db)
+    result = gen.generate(category="harassment")
+    html = result["html"]
+
+    assert "Category: harassment" in html
+
+
+def test_legal_disclaimer_present(db):
+    """Legal disclaimer with ESI language should appear."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "electronically stored information" in html
+    assert "does not constitute" in html

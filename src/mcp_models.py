@@ -837,6 +837,10 @@ class DossierGenerateInput(StrictInput):
         default="",
         description="Name of the evidence custodian.",
     )
+    prepared_by: str = Field(
+        default="",
+        description="Name and role of person who prepared this dossier (e.g. 'Jane Smith, Paralegal').",
+    )
     min_relevance: Optional[int] = Field(
         default=None, ge=1, le=5,
         description="Only include evidence with this minimum relevance.",

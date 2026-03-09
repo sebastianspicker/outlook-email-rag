@@ -80,6 +80,7 @@ class DossierGenerator:
         title: str = "Proof Dossier",
         case_reference: str = "",
         custodian: str = "",
+        prepared_by: str = "",
         min_relevance: int | None = None,
         category: str | None = None,
         include_relationships: bool = True,
@@ -284,6 +285,25 @@ class DossierGenerator:
             })
         has_evidence_index = "1" if evidence_index else ""
 
+        # Scope data — what the dossier covers
+        scope_parts = []
+        if category:
+            scope_parts.append(f"Category: {category}")
+        if min_relevance:
+            scope_parts.append(f"Minimum relevance: {min_relevance}/5")
+        scope_filter_text = (
+            "Filters applied: " + ", ".join(scope_parts) + "."
+            if scope_parts
+            else "No filters applied \u2014 all evidence items included."
+        )
+        # Archive totals from lightweight SQL
+        archive_row = self._db.conn.execute(
+            "SELECT COUNT(*) as total, MIN(date) as earliest, MAX(date) as latest FROM emails"
+        ).fetchone()
+        archive_total = archive_row["total"] if archive_row else 0
+        archive_earliest = (archive_row["earliest"] or "")[:10] if archive_row else ""
+        archive_latest = (archive_row["latest"] or "")[:10] if archive_row else ""
+
         # Render template
         template_vars = {
             "title": title,
@@ -314,6 +334,11 @@ class DossierGenerator:
             "verification_banner_class": verification_banner_class,
             "evidence_index": evidence_index,
             "has_evidence_index": has_evidence_index,
+            "prepared_by": prepared_by,
+            "scope_filter_text": scope_filter_text,
+            "archive_total": archive_total,
+            "archive_earliest": archive_earliest,
+            "archive_latest": archive_latest,
             "dossier_hash": "",  # Placeholder, computed after render
         }
 
