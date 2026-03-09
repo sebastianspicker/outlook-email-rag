@@ -20,6 +20,7 @@ import os
 import re
 import zipfile
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from html import unescape
 from typing import IO, Generator
 
@@ -257,13 +258,13 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     # ── Direct XML fields ──────────────────────────────────
     message_id = _find_text(root, "OPFMessageCopyMessageID", ns)
     subject = _find_text(root, "OPFMessageCopySubject", ns)
-    date = _find_text(root, "OPFMessageCopySentTime", ns)
-    # Use itertext() for body fields — el.text only returns text before the
-    # first child element, silently truncating bodies that contain <br/> etc.
+    date = _normalize_date(_find_text(root, "OPFMessageCopySentTime", ns))
+    # Body fields: plain text uses itertext(); HTML preserves child element
+    # structure (e.g. <p>, <br/>, <table>) via serialization when present.
     body_text_el = _find(root, "OPFMessageCopyBody", ns)
     body_text = "".join(body_text_el.itertext()) if body_text_el is not None else ""
     body_html_el = _find(root, "OPFMessageCopyHTMLBody", ns)
-    body_html = "".join(body_html_el.itertext()) if body_html_el is not None else ""
+    body_html = _extract_html_body(body_html_el) if body_html_el is not None else ""
 
     sender_el = _find(root, "OPFMessageCopySenderAddress", ns)
     sender_name_el = _find(root, "OPFMessageCopySenderName", ns)
@@ -310,7 +311,7 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
         if not sender_name:
             sender_name = _extract_name_from_header(raw_source, "From")
         if not date:
-            date = _extract_header(raw_source, "Date")
+            date = _normalize_date(_extract_header(raw_source, "Date"))
         if not to_addresses:
             to_raw = _extract_header(raw_source, "To")
             if to_raw:
@@ -347,6 +348,9 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     # Decode MIME encoded-words in subject and sender name
     subject = _decode_mime_words(subject) if subject else ""
     sender_name = _decode_mime_words(sender_name) if sender_name else ""
+
+    # Normalize sender email: strip whitespace, lowercase
+    sender_email = sender_email.strip().lower() if sender_email else ""
 
     # Default subject
     if not subject:
@@ -572,15 +576,68 @@ def _extract_attachment_contents(
 
 
 def _parse_references(raw: str) -> list[str]:
-    """Parse a References header value into a list of message IDs."""
+    """Parse a References header value into a list of message IDs.
+
+    Handles bracketed IDs (``<id@host>``), bare IDs (``id@host``), and
+    mixed formats in the same header value.
+    """
     if not raw or not raw.strip():
         return []
-    # References are space-separated message IDs in angle brackets: <id1> <id2>
-    ids = re.findall(r"<([^>]+)>", raw)
-    if ids:
-        return ids
-    # Fallback: try splitting on whitespace for bare IDs
-    return [ref.strip("<>").strip() for ref in raw.split() if ref.strip()]
+    # Extract all angle-bracketed IDs, then collect bare IDs from remaining text
+    bracketed = re.findall(r"<([^>]+)>", raw)
+    # Remove bracketed tokens so we can find any bare IDs left over
+    remainder = re.sub(r"<[^>]+>", "", raw)
+    bare = [tok.strip() for tok in remainder.split() if "@" in tok]
+    # Preserve order: bracketed first (they appear in-place), then bare leftovers
+    seen: set[str] = set()
+    result: list[str] = []
+    for ref_id in bracketed + bare:
+        if ref_id not in seen:
+            seen.add(ref_id)
+            result.append(ref_id)
+    return result
+
+
+def _extract_html_body(el: etree._Element) -> str:
+    """Extract HTML body from an OLM XML element, preserving child HTML structure.
+
+    If the element has child elements (e.g. ``<p>``, ``<br/>``), serialize them
+    to preserve HTML semantics.  If it's pure text, return the text directly.
+    """
+    if len(el) == 0:
+        # No child elements — pure text content
+        return "".join(el.itertext())
+    # Has child elements — serialize inner HTML to preserve structure
+    parts: list[str] = []
+    if el.text:
+        parts.append(el.text)
+    for child in el:
+        parts.append(
+            etree.tostring(child, encoding="unicode", method="html")
+        )
+        if child.tail:
+            parts.append(child.tail)
+    return "".join(parts)
+
+
+def _normalize_date(value: str) -> str:
+    """Normalize a date string to ISO 8601 format.
+
+    Handles both ISO 8601 (from OLM XML) and RFC 2822 (from email headers).
+    Returns the original value if parsing fails.
+    """
+    if not value or not value.strip():
+        return value
+    value = value.strip()
+    # Already looks like ISO 8601 — keep as-is
+    if re.match(r"\d{4}-\d{2}-\d{2}T", value):
+        return value
+    # Try RFC 2822 (e.g. "Wed, 25 Jun 2025 10:52:47 +0200")
+    try:
+        dt = parsedate_to_datetime(value)
+        return dt.isoformat()
+    except Exception:
+        return value
 
 
 def _parse_int(value: str, default: int = 0) -> int:
@@ -702,15 +759,19 @@ def _extract_email_from_header(source: str, header_name: str) -> str:
 
 
 def _extract_name_from_header(source: str, header_name: str) -> str:
-    """Extract the display name from a header like '"Name" <email>'."""
+    """Extract the display name from a header like ``"Name" <email>``."""
     raw = _extract_header(source, header_name)
     if not raw:
         return ""
     raw = raw.replace("&lt;", "<").replace("&gt;", ">")
-    # "Quoted Name" <email>
-    match = re.search(r'"([^"]+)"', raw)
-    if match:
-        return match.group(1)
+    # Try Python's email.utils first — handles escaped quotes, RFC 2822 names
+    try:
+        from email.utils import parseaddr
+        name, _addr = parseaddr(raw)
+        if name:
+            return name
+    except Exception:
+        pass
     # Unquoted Name <email>
     match = re.search(r"^([^<]+)<", raw)
     if match:
@@ -828,20 +889,24 @@ def _html_to_text(html: str) -> str:
 
 
 def _clean_text(text: str) -> str:
-    """Normalize whitespace and collapse repeated blank lines."""
+    """Normalize whitespace and collapse repeated blank lines.
+
+    Preserves leading indentation (important for code blocks and lists)
+    while stripping trailing whitespace from each line.
+    """
     lines = text.splitlines()
     cleaned: list[str] = []
     blank_count = 0
 
     for line in lines:
-        stripped = line.strip()
-        if not stripped:
+        rstripped = line.rstrip()
+        if not rstripped:
             blank_count += 1
             if blank_count <= 2:
                 cleaned.append("")
         else:
             blank_count = 0
-            cleaned.append(stripped)
+            cleaned.append(rstripped)
 
     return "\n".join(cleaned).strip()
 

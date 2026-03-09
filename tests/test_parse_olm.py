@@ -4,11 +4,14 @@ from lxml import etree
 
 from src.parse_olm import (
     Email,
+    _clean_text,
     _extract_email_from_header,
     _extract_folder,
     _extract_header,
+    _extract_html_body,
     _extract_name_from_header,
     _html_to_text,
+    _normalize_date,
     _parse_address_element,
     _parse_address_list,
     _parse_email_xml,
@@ -707,3 +710,128 @@ def test_html_to_text_preserves_blockquote():
     html = "<blockquote>Quoted text here</blockquote>"
     text = _html_to_text(html)
     assert "> Quoted text here" in text
+
+
+# ── _clean_text preserves indentation ─────────────────────────────
+
+
+def test_clean_text_preserves_leading_indentation():
+    text = "if True:\n    do_something()\n    more()"
+    result = _clean_text(text)
+    assert "    do_something()" in result
+    assert "    more()" in result
+
+
+def test_clean_text_strips_trailing_whitespace():
+    text = "hello   \nworld   "
+    result = _clean_text(text)
+    assert result == "hello\nworld"
+
+
+def test_clean_text_collapses_blank_lines():
+    text = "a\n\n\n\n\nb"
+    result = _clean_text(text)
+    assert result == "a\n\n\nb"
+
+
+# ── _normalize_date ───────────────────────────────────────────────
+
+
+def test_normalize_date_iso_passthrough():
+    assert _normalize_date("2025-06-25T08:52:47") == "2025-06-25T08:52:47"
+    assert _normalize_date("2025-06-25T08:52:47Z") == "2025-06-25T08:52:47Z"
+
+
+def test_normalize_date_rfc2822_to_iso():
+    result = _normalize_date("Wed, 25 Jun 2025 10:52:47 +0200")
+    assert result.startswith("2025-06-25T10:52:47")
+
+
+def test_normalize_date_empty():
+    assert _normalize_date("") == ""
+    assert _normalize_date("   ") == "   "
+
+
+def test_normalize_date_unparseable():
+    assert _normalize_date("not a date") == "not a date"
+
+
+# ── _parse_references mixed format ────────────────────────────────
+
+
+def test_parse_references_mixed_bracketed_and_bare():
+    raw = "<id1@host.com> bare@host.com <id3@host.com>"
+    result = _parse_references(raw)
+    assert "id1@host.com" in result
+    assert "bare@host.com" in result
+    assert "id3@host.com" in result
+    assert len(result) == 3
+
+
+def test_parse_references_bare_only():
+    raw = "id1@host.com id2@host.com"
+    result = _parse_references(raw)
+    assert result == ["id1@host.com", "id2@host.com"]
+
+
+def test_parse_references_no_duplicates():
+    raw = "<id1@host.com> id1@host.com"
+    result = _parse_references(raw)
+    assert result == ["id1@host.com"]
+
+
+# ── _extract_name_from_header edge cases ──────────────────────────
+
+
+def test_extract_name_from_header_escaped_quotes():
+    source = 'From: "John \\"Johnny\\" Smith" <john@example.com>\n\nBody'
+    name = _extract_name_from_header(source, "From")
+    assert "Johnny" in name
+    assert "John" in name
+
+
+def test_extract_name_from_header_unquoted():
+    source = "From: John Smith <john@example.com>\n\nBody"
+    name = _extract_name_from_header(source, "From")
+    assert name == "John Smith"
+
+
+# ── _extract_html_body ────────────────────────────────────────────
+
+
+def test_extract_html_body_pure_text():
+    el = etree.fromstring("<body>Hello world</body>")
+    assert _extract_html_body(el) == "Hello world"
+
+
+def test_extract_html_body_with_child_elements():
+    el = etree.fromstring("<body><p>Para 1</p><p>Para 2</p></body>")
+    result = _extract_html_body(el)
+    assert "<p>" in result
+    assert "Para 1" in result
+    assert "Para 2" in result
+
+
+def test_extract_html_body_mixed_content():
+    el = etree.fromstring("<body>Before<br/>After</body>")
+    result = _extract_html_body(el)
+    assert "Before" in result
+    assert "<br>" in result or "<br/>" in result
+    assert "After" in result
+
+
+# ── sender email normalization ────────────────────────────────────
+
+
+def test_sender_email_normalized_lowercase():
+    """Sender email from OLM XML should be lowercased."""
+    xml = b"""<?xml version="1.0"?>
+    <email>
+      <OPFMessageCopySubject>Test</OPFMessageCopySubject>
+      <OPFMessageCopySentTime>2024-01-01T00:00:00</OPFMessageCopySentTime>
+      <OPFMessageCopySenderAddress>John.Smith@Example.COM</OPFMessageCopySenderAddress>
+      <OPFMessageCopySenderName>John Smith</OPFMessageCopySenderName>
+      <OPFMessageCopyBody>Body</OPFMessageCopyBody>
+    </email>"""
+    email = _parse_email_xml(xml, "test.xml")
+    assert email.sender_email == "john.smith@example.com"
