@@ -586,3 +586,48 @@ def test_strip_html_tags_removes_html_comments():
     assert "<!--" not in result
     assert "mso" not in result
     assert "Hello world" in result
+
+
+# ── Commit 2: Verification banner + evidence index table ─────
+
+
+def test_verification_banner_all_verified(db):
+    """Green banner should appear when all quotes are verified."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "banner-ok" in html or "banner-warn" in html
+    assert "verification-banner" in html
+
+
+def test_verification_banner_partial(db):
+    """Warning banner should appear when some quotes are unverified."""
+    # Add an evidence item with a quote that won't match the body
+    db.add_evidence("uid-1", "general", "nonexistent quote xyz", "Unverifiable", 2)
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "banner-warn" in html
+    assert "unverified" in html.lower()
+
+
+def test_evidence_index_table(db):
+    """Evidence index table should appear with correct structure."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Index of Evidence" in html
+    assert "evidence-index-table" in html
+    assert "E-1" in html
+
+
+def test_toc_includes_index(db):
+    """TOC should contain link to evidence index."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "#evidence-index" in html

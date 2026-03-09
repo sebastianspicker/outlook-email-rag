@@ -239,6 +239,32 @@ class DossierGenerator:
         has_evidence = "1" if enriched_items else ""
         has_glossary = "1" if glossary_items else ""
 
+        # Verification banner data
+        total_evidence = len(enriched_items)
+        unverified_count = total_evidence - verified_count
+        all_verified = "1" if total_evidence > 0 and unverified_count == 0 else ""
+        verification_banner_class = "banner-ok" if all_verified else "banner-warn"
+
+        # Evidence index table (compact overview for navigation)
+        evidence_index = []
+        for item in enriched_items:
+            raw_date = item.get("date", "")
+            date_short = raw_date[:10] if raw_date else ""
+            sender_short = item.get("sender_name") or item.get("sender_email", "")
+            if len(sender_short) > 30:
+                sender_short = sender_short[:27] + "..."
+            summary_raw = item.get("summary", "")
+            summary_short = summary_raw[:80] + "..." if len(summary_raw) > 80 else summary_raw
+            evidence_index.append({
+                "evidence_number": item.get("evidence_number", ""),
+                "category": item.get("category", ""),
+                "date_short": date_short,
+                "sender_short": sender_short,
+                "summary_short": summary_short,
+                "relevance": item.get("relevance", ""),
+            })
+        has_evidence_index = "1" if evidence_index else ""
+
         # Render template
         template_vars = {
             "title": title,
@@ -264,6 +290,11 @@ class DossierGenerator:
             "relationship_data": relationship_data,
             "include_custody": include_custody,
             "custody_events": custody_events,
+            "all_verified": all_verified,
+            "unverified_count": unverified_count,
+            "verification_banner_class": verification_banner_class,
+            "evidence_index": evidence_index,
+            "has_evidence_index": has_evidence_index,
             "dossier_hash": "",  # Placeholder, computed after render
         }
 

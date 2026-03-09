@@ -264,6 +264,44 @@
     color: #555;
   }
   .attachment-bar strong { color: #333; }
+
+  /* Verification banner */
+  .verification-banner {
+    padding: 10px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  .banner-ok {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    color: #2e7d32;
+  }
+  .banner-warn {
+    background: #fff3e0;
+    border: 1px solid #ffcc80;
+    color: #e65100;
+  }
+
+  /* Evidence index table */
+  .evidence-index-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-bottom: 20px;
+  }
+  .evidence-index-table th, .evidence-index-table td {
+    border: 1px solid #e0e0e0;
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .evidence-index-table th {
+    background: #f5f5f5;
+    font-weight: 600;
+    color: #333;
+  }
+  .evidence-index-table td:first-child { text-align: center; }
 </style>
 </head>
 <body>
@@ -333,6 +371,13 @@
   </table>
   {% endif %}
 </div>
+
+<!-- Verification Banner -->
+{% if all_verified %}
+<div class="verification-banner banner-ok">&#10003; All {{ evidence_count }} evidence quotes verified against source emails.</div>
+{% else %}
+<div class="verification-banner banner-warn">&#9888; {{ verified_count }} of {{ evidence_count }} quotes verified — {{ unverified_count }} unverified.</div>
+{% endif %}
 {% endif %}
 
 <!-- Table of Contents -->
@@ -340,12 +385,35 @@
   <h2>Table of Contents</h2>
   <ol>
     {% if has_evidence %}<li><a href="#executive-summary">Executive Summary</a></li>{% endif %}
+    {% if has_evidence_index %}<li><a href="#evidence-index">Index of Evidence</a></li>{% endif %}
     <li><a href="#evidence-timeline">Evidence Timeline</a></li>
     <li><a href="#source-emails">Source Email Appendix</a></li>
     {% if include_relationships %}<li><a href="#relationships">Relationship Analysis</a></li>{% endif %}
     {% if include_custody %}<li><a href="#custody-log">Chain-of-Custody Log</a></li>{% endif %}
   </ol>
 </div>
+
+{% if has_evidence_index %}
+<!-- Index of Evidence -->
+<h2 id="evidence-index">Index of Evidence</h2>
+<table class="evidence-index-table">
+  <thead>
+    <tr><th>No.</th><th>Category</th><th>Date</th><th>Sender</th><th>Summary</th><th>Rel.</th></tr>
+  </thead>
+  <tbody>
+  {% for ei in evidence_index %}
+  <tr>
+    <td><a href="#evidence-{{ ei.evidence_number }}">{{ ei.evidence_number }}</a></td>
+    <td><span class="badge badge-{{ ei.category }}">{{ ei.category }}</span></td>
+    <td>{{ ei.date_short }}</td>
+    <td>{{ ei.sender_short }}</td>
+    <td>{{ ei.summary_short }}</td>
+    <td>{{ ei.relevance }}/5</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 
 <!-- Evidence Timeline -->
 <div class="page-break"></div>
