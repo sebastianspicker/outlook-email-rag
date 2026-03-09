@@ -1100,6 +1100,11 @@ class EmailDatabase:
         self.conn.commit()
         return cur.rowcount > 0
 
+    def all_uids(self) -> set[str]:
+        """Return all UIDs in the database."""
+        rows = self.conn.execute("SELECT uid FROM emails").fetchall()
+        return {r["uid"] for r in rows}
+
     def uids_missing_body(self) -> set[str]:
         """Return UIDs of emails where body_text is NULL."""
         rows = self.conn.execute(
