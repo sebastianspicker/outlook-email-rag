@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -17,6 +18,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+CATEGORY_GLOSSARY: dict[str, str] = {
+    "bossing": "Intimidation, power abuse, or unreasonable demands by a superior",
+    "harassment": "Hostile behavior, bullying, or unwanted conduct targeting an individual",
+    "discrimination": "Unequal treatment based on protected characteristics (age, gender, race, etc.)",
+    "retaliation": "Adverse action taken in response to reporting, complaining, or whistleblowing",
+    "hostile_environment": "Pattern of conduct creating a toxic or intimidating workplace atmosphere",
+    "micromanagement": "Excessive control, undermining autonomy, or constant surveillance of work",
+    "exclusion": "Deliberate isolation from meetings, decisions, communications, or social activities",
+    "gaslighting": "Denying facts, rewriting history, or questioning competence to undermine confidence",
+    "workload": "Unreasonable assignments, impossible deadlines, or deliberate work overload",
+    "general": "Other relevant evidence not fitting a specific category",
+}
 
 
 class DossierGenerator:
@@ -151,6 +165,33 @@ class DossierGenerator:
         categories = {item.get("category") for item in enriched_items if item.get("category")}
         verified_count = sum(1 for item in enriched_items if item.get("verified"))
 
+        # Executive summary data
+        category_counts = Counter(
+            item.get("category") for item in enriched_items if item.get("category")
+        )
+        category_breakdown = [
+            {"category": c, "count": str(n)}
+            for c, n in sorted(category_counts.items(), key=lambda x: -x[1])
+        ]
+        dates = [item.get("date") for item in enriched_items if item.get("date")]
+        date_earliest = min(dates)[:10] if dates else ""
+        date_latest = max(dates)[:10] if dates else ""
+        unique_sender_count = len({
+            item.get("sender_email") for item in enriched_items if item.get("sender_email")
+        })
+        dominant_category = category_breakdown[0]["category"] if category_breakdown else ""
+        dominant_count = category_breakdown[0]["count"] if category_breakdown else "0"
+
+        # Glossary filtered to present categories
+        glossary_items = [
+            {"category": cat, "definition": CATEGORY_GLOSSARY[cat]}
+            for cat in sorted(categories)
+            if cat in CATEGORY_GLOSSARY
+        ]
+
+        has_evidence = "1" if enriched_items else ""
+        has_glossary = "1" if glossary_items else ""
+
         # Render template
         template_vars = {
             "title": title,
@@ -161,6 +202,15 @@ class DossierGenerator:
             "email_count": len(source_emails),
             "verified_count": verified_count,
             "category_count": len(categories),
+            "date_earliest": date_earliest,
+            "date_latest": date_latest,
+            "unique_sender_count": unique_sender_count,
+            "dominant_category": dominant_category,
+            "dominant_count": dominant_count,
+            "category_breakdown": category_breakdown,
+            "glossary_items": glossary_items,
+            "has_evidence": has_evidence,
+            "has_glossary": has_glossary,
             "evidence_items": enriched_items,
             "source_emails": source_emails,
             "include_relationships": include_relationships and bool(relationship_data),

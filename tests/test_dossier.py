@@ -339,3 +339,49 @@ def test_cross_references(db):
     # Evidence items reference appendix numbers (link inside anchor tag)
     assert "Appendix" in html
     assert "#appendix-A-" in html
+
+
+# ── executive summary ────────────────────────────────────────
+
+
+def test_executive_summary_present(db):
+    """Executive summary should appear when evidence exists."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Executive Summary" in html
+    assert "evidence items" in html
+    assert "source emails" in html
+
+
+def test_executive_summary_absent_when_empty(db_empty):
+    """Executive summary should not appear with no evidence."""
+    gen = DossierGenerator(db_empty)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Executive Summary" not in html
+
+
+def test_category_breakdown_table(db):
+    """Category breakdown table should list categories with counts."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Category Breakdown" in html
+    assert "harassment" in html
+    assert "discrimination" in html
+    assert "retaliation" in html
+
+
+def test_glossary_present(db):
+    """Category glossary should appear with definitions."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Category Definitions" in html
+    # Check at least one definition text
+    assert "Hostile behavior" in html

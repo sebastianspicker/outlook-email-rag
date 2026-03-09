@@ -264,10 +264,48 @@
   </div>
 </div>
 
+{% if has_evidence %}
+<!-- Executive Summary -->
+<div id="executive-summary" style="margin-bottom: 24px;">
+  <h2>Executive Summary</h2>
+  <p>This dossier contains <strong>{{ evidence_count }}</strong> evidence items from
+  <strong>{{ email_count }}</strong> source emails, spanning <strong>{{ date_earliest }}</strong>
+  to <strong>{{ date_latest }}</strong>. Evidence from <strong>{{ unique_sender_count }}</strong>
+  sender(s). Most prevalent category: <strong>{{ dominant_category }}</strong>
+  ({{ dominant_count }} items). <strong>{{ verified_count }}</strong> of {{ evidence_count }}
+  quotes verified against source emails.</p>
+
+  {% if category_breakdown %}
+  <h3>Category Breakdown</h3>
+  <table class="custody-table" style="max-width: 400px;">
+    <thead><tr><th>Category</th><th style="text-align:right">Count</th></tr></thead>
+    <tbody>
+    {% for cb in category_breakdown %}
+    <tr><td><span class="badge badge-{{ cb.category }}">{{ cb.category }}</span></td><td style="text-align:right">{{ cb.count }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if has_glossary %}
+  <h3>Category Definitions</h3>
+  <table class="custody-table">
+    <thead><tr><th>Category</th><th>Definition</th></tr></thead>
+    <tbody>
+    {% for g in glossary_items %}
+    <tr><td><span class="badge badge-{{ g.category }}">{{ g.category }}</span></td><td>{{ g.definition }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
 <!-- Table of Contents -->
 <div class="toc">
   <h2>Table of Contents</h2>
   <ol>
+    {% if has_evidence %}<li><a href="#executive-summary">Executive Summary</a></li>{% endif %}
     <li><a href="#evidence-timeline">Evidence Timeline</a></li>
     <li><a href="#source-emails">Source Email Appendix</a></li>
     {% if include_relationships %}<li><a href="#relationships">Relationship Analysis</a></li>{% endif %}
@@ -277,7 +315,7 @@
 
 <!-- Evidence Timeline -->
 <div class="page-break"></div>
-<h2 id="evidence-timeline">1. Evidence Timeline</h2>
+<h2 id="evidence-timeline">Evidence Timeline</h2>
 {% if evidence_items %}
 {% for item in evidence_items %}
 <div class="evidence-item relevance-{{ item.relevance }}" id="evidence-{{ item.evidence_number }}">
@@ -306,7 +344,7 @@
 
 <!-- Source Email Appendix -->
 <div class="page-break"></div>
-<h2 id="source-emails">2. Source Email Appendix</h2>
+<h2 id="source-emails">Source Email Appendix</h2>
 {% if source_emails %}
 {% for email in source_emails %}
 <div class="email-card" id="appendix-{{ email.appendix_number }}">
@@ -331,7 +369,7 @@
 {% if include_relationships %}
 <!-- Relationship Analysis -->
 <div class="page-break"></div>
-<h2 id="relationships">3. Relationship Analysis</h2>
+<h2 id="relationships">Relationship Analysis</h2>
 {% if relationship_data %}
 {% for person in relationship_data %}
 <div class="relationship-card">
@@ -354,7 +392,7 @@
 {% if include_custody %}
 <!-- Chain-of-Custody Log -->
 <div class="page-break"></div>
-<h2 id="custody-log">{% if include_relationships %}4{% else %}3{% endif %}. Chain-of-Custody Log</h2>
+<h2 id="custody-log">Chain-of-Custody Log</h2>
 {% if custody_events %}
 <table class="custody-table">
   <thead>
