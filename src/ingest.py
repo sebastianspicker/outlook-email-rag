@@ -6,6 +6,8 @@ import argparse
 import hashlib
 import logging
 import os
+import queue
+import threading
 import time
 import zipfile
 from typing import Any
@@ -18,6 +20,132 @@ from .parse_olm import parse_olm
 from .validation import positive_int as _shared_positive_int
 
 logger = logging.getLogger(__name__)
+
+_SENTINEL = object()
+
+
+class _EmbedPipeline:
+    """Background thread that embeds and writes batches while parsing continues.
+
+    Producer (main thread): calls ``submit(chunks, emails)`` to enqueue work.
+    Consumer (background thread): embeds chunks and writes emails to SQLite.
+    """
+
+    def __init__(
+        self,
+        embedder: Any,
+        email_db: Any,
+        entity_extractor_fn: Any,
+        batch_size: int,
+    ) -> None:
+        self._embedder = embedder
+        self._email_db = email_db
+        self._entity_extractor_fn = entity_extractor_fn
+        self._batch_size = batch_size
+        self._queue: queue.Queue = queue.Queue(maxsize=2)
+        self._thread: threading.Thread | None = None
+        self._error: BaseException | None = None
+
+        # Accumulated stats (written only by consumer thread)
+        self.chunks_added = 0
+        self.sqlite_inserted = 0
+        self.batches_written = 0
+        self.embed_seconds = 0.0
+        self.write_seconds = 0.0
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, chunks: list, emails: list) -> None:
+        """Enqueue a batch for the consumer. Blocks if queue is full (backpressure)."""
+        if not chunks and not emails:
+            return
+        self._queue.put((chunks, emails))
+
+    def finish(self) -> None:
+        """Signal end-of-input and wait for consumer to drain. Re-raises errors."""
+        self._queue.put(_SENTINEL)
+        if self._thread is not None:
+            self._thread.join()
+        if self._error is not None:
+            raise self._error
+
+    def _run(self) -> None:
+        """Consumer loop — runs in background thread."""
+        try:
+            while True:
+                item = self._queue.get()
+                if item is _SENTINEL:
+                    break
+                chunks, emails = item
+                self._process_batch(chunks, emails)
+        except BaseException as exc:
+            self._error = exc
+
+    def _process_batch(self, chunks: list, emails: list) -> None:
+        if self._embedder and chunks:
+            t0 = time.monotonic()
+            added = self._embedder.add_chunks(chunks, batch_size=self._batch_size)
+            dt_embed = time.monotonic() - t0
+            self.chunks_added += added
+            self.batches_written += 1
+            self.embed_seconds += dt_embed
+            rate = len(chunks) / dt_embed if dt_embed > 0 else 0
+            logger.info(
+                "Batch %d: %d chunks embedded in %.1fs (%.0f chunks/s)",
+                self.batches_written, len(chunks), dt_embed, rate,
+            )
+
+        if self._email_db and emails:
+            t0 = time.monotonic()
+            self.sqlite_inserted += self._email_db.insert_emails_batch(emails)
+            if self._entity_extractor_fn:
+                for em in emails:
+                    entities = self._entity_extractor_fn(em.clean_body, em.sender_email)
+                    if entities:
+                        self._email_db.insert_entities_batch(
+                            em.uid,
+                            [(e.text, e.entity_type, e.normalized_form) for e in entities],
+                        )
+            # Insert Exchange-extracted entities (always available from XML)
+            for em in emails:
+                exchange_entities = _exchange_entities_from_email(em)
+                if exchange_entities:
+                    self._email_db.insert_entities_batch(em.uid, exchange_entities)
+            dt_write = time.monotonic() - t0
+            self.write_seconds += dt_write
+
+
+def _exchange_entities_from_email(email: Any) -> list[tuple[str, str, str]]:
+    """Extract entity tuples from Exchange-extracted fields on an Email object.
+
+    Returns list of (entity_text, entity_type, normalized_form) tuples
+    suitable for ``insert_entities_batch``.
+    """
+    entities: list[tuple[str, str, str]] = []
+
+    for link in getattr(email, "exchange_extracted_links", []):
+        url = link.get("url", "").strip()
+        if url:
+            entities.append((url, "exchange_url", url.lower()))
+
+    for addr in getattr(email, "exchange_extracted_emails", []):
+        addr = addr.strip()
+        if addr:
+            entities.append((addr, "exchange_email", addr.lower()))
+
+    for contact in getattr(email, "exchange_extracted_contacts", []):
+        contact = contact.strip()
+        if contact:
+            entities.append((contact, "exchange_contact", contact.lower()))
+
+    for meeting in getattr(email, "exchange_extracted_meetings", []):
+        subject = meeting.get("subject", "").strip()
+        if subject:
+            entities.append((subject, "exchange_meeting", subject.lower()))
+
+    return entities
 
 
 def _hash_file_sha256(filepath: str) -> str:
@@ -62,6 +190,29 @@ def _auto_download_spacy_models() -> None:
                 logger.info("spaCy model installed: %s", model_name)
             except subprocess.CalledProcessError:
                 logger.warning("Failed to download spaCy model: %s", model_name)
+
+
+class _NoOpProgressBar:
+    """Fallback when tqdm is not available."""
+
+    def update(self, n: int = 1) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    def set_postfix(self, **kwargs: Any) -> None:
+        pass
+
+
+def _make_progress_bar(total: int | None, desc: str = "", unit: str = "it") -> Any:
+    """Create a tqdm progress bar if available, otherwise return a no-op."""
+    try:
+        from tqdm import tqdm
+
+        return tqdm(total=total, desc=desc, unit=unit)
+    except ImportError:
+        return _NoOpProgressBar()
 
 
 def ingest(
@@ -182,14 +333,25 @@ def ingest(
 
     total_emails = 0
     total_chunks_created = 0
-    total_chunks_added = 0
-    total_batches_written = 0
     total_attachment_chunks = 0
     total_image_embeddings = 0
     total_skipped_incremental = 0
-    sqlite_inserted = 0
-    pending_chunks = []
-    pending_emails = []
+    pending_chunks: list = []
+    pending_emails: list = []
+
+    # Set up pipeline for non-dry-run mode
+    pipeline: _EmbedPipeline | None = None
+    if not dry_run:
+        pipeline = _EmbedPipeline(
+            embedder=embedder,
+            email_db=email_db,
+            entity_extractor_fn=entity_extractor_fn,
+            batch_size=batch_size,
+        )
+        pipeline.start()
+
+    # Progress bar (tqdm if available, else no-op)
+    progress = _make_progress_bar(max_emails, desc="Ingesting", unit="email")
 
     for email in parse_olm(olm_path, extract_attachments=extract_attachments):
         total_emails += 1
@@ -197,6 +359,7 @@ def ingest(
         # Incremental mode: skip already-ingested emails
         if incremental and email_db and email_db.email_exists(email.uid):
             total_skipped_incremental += 1
+            progress.update(1)
             continue
         email_dict = email.to_dict()
         chunks = chunk_email(email_dict)
@@ -258,45 +421,38 @@ def ingest(
         if total_emails % 100 == 0:
             logger.info("Parsed %s emails (%s chunks).", total_emails, total_chunks_created)
 
+        progress.update(1)
+
         if max_emails is not None and total_emails >= max_emails:
             logger.info("Reached --max-emails=%s; stopping parse loop.", max_emails)
             break
 
-        if embedder and len(pending_chunks) >= batch_size:
-            total_chunks_added += embedder.add_chunks(pending_chunks, batch_size=batch_size)
-            total_batches_written += 1
-            pending_chunks = []
+        if len(pending_chunks) >= batch_size or len(pending_emails) >= batch_size:
+            if pipeline:
+                pipeline.submit(list(pending_chunks), list(pending_emails))
+                pending_chunks = []
+                pending_emails = []
 
-        if email_db and len(pending_emails) >= batch_size:
-            sqlite_inserted += email_db.insert_emails_batch(pending_emails)
-            if entity_extractor_fn:
-                for em in pending_emails:
-                    entities = entity_extractor_fn(em.clean_body, em.sender_email)
-                    if entities:
-                        email_db.insert_entities_batch(
-                            em.uid,
-                            [(e.text, e.entity_type, e.normalized_form) for e in entities],
-                        )
-            pending_emails = []
+    # Flush remaining
+    if pipeline:
+        if pending_chunks or pending_emails:
+            pipeline.submit(list(pending_chunks), list(pending_emails))
+        pipeline.finish()
 
-    if embedder and pending_chunks:
-        total_chunks_added += embedder.add_chunks(pending_chunks, batch_size=batch_size)
-        total_batches_written += 1
-
-    if email_db and pending_emails:
-        sqlite_inserted += email_db.insert_emails_batch(pending_emails)
-        if entity_extractor_fn:
-            for em in pending_emails:
-                entities = entity_extractor_fn(em.clean_body, em.sender_email)
-                if entities:
-                    email_db.insert_entities_batch(
-                        em.uid,
-                        [(e.text, e.entity_type, e.normalized_form) for e in entities],
-                    )
+    progress.close()
 
     elapsed = time.time() - start_time
 
-    stats = {
+    total_chunks_added = pipeline.chunks_added if pipeline else 0
+    total_batches_written = pipeline.batches_written if pipeline else 0
+    sqlite_inserted = pipeline.sqlite_inserted if pipeline else 0
+
+    timing = {}
+    if pipeline:
+        timing["embed_seconds"] = round(pipeline.embed_seconds, 1)
+        timing["write_seconds"] = round(pipeline.write_seconds, 1)
+
+    stats: dict[str, Any] = {
         "emails_parsed": total_emails,
         "chunks_created": total_chunks_created,
         "attachment_chunks": total_attachment_chunks,
@@ -312,6 +468,7 @@ def ingest(
         "extract_entities": extract_entities,
         "incremental": incremental,
         "elapsed_seconds": round(elapsed, 1),
+        "timing": timing,
     }
 
     # Record ingestion completion
@@ -656,6 +813,16 @@ def format_ingestion_summary(stats: dict[str, Any]) -> list[str]:
             lines.append(f"SQLite rows inserted: {stats['sqlite_inserted']}")
         if stats.get("skipped_incremental", 0) > 0:
             lines.append(f"Skipped (incremental): {stats['skipped_incremental']}")
+
+    timing = stats.get("timing")
+    if timing:
+        parts = []
+        if timing.get("embed_seconds"):
+            parts.append(f"embed={timing['embed_seconds']}s")
+        if timing.get("write_seconds"):
+            parts.append(f"write={timing['write_seconds']}s")
+        if parts:
+            lines.append(f"Timing: {', '.join(parts)}")
 
     lines.append(f"Elapsed: {stats['elapsed_seconds']}s")
     return lines

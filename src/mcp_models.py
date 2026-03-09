@@ -221,6 +221,17 @@ class SmartSearchInput(StrictInput):
     top_k: int = Field(default=10, ge=1, le=30)
 
 
+class ThreadTopicSearchInput(StrictInput):
+    """Input for searching emails by thread topic."""
+
+    thread_topic: str = Field(
+        ...,
+        description="Thread topic string to search for (exact match).",
+        min_length=1,
+    )
+    limit: int = Field(default=50, ge=1, le=200)
+
+
 class FindSimilarInput(StrictInput):
     """Input for finding similar emails."""
 

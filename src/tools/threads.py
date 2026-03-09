@@ -9,6 +9,7 @@ from ..mcp_models import (
     DecisionsInput,
     SmartSearchInput,
     ThreadSummaryInput,
+    ThreadTopicSearchInput,
 )
 
 
@@ -129,6 +130,33 @@ def register(mcp, deps) -> None:
             )
 
         return json.dumps({"error": "Provide conversation_id to extract decisions."})
+
+    @mcp.tool(
+        name="email_search_by_thread_topic",
+        annotations=deps.tool_annotations("Search by Thread Topic"),
+    )
+    async def email_search_by_thread_topic(params: ThreadTopicSearchInput) -> str:
+        """Find all emails sharing a thread topic.
+
+        Thread topics are extracted from OLM metadata and group related
+        emails more reliably than conversation_id in some cases.
+
+        Args:
+            params: thread_topic (str), limit (int).
+
+        Returns:
+            JSON with matching emails sorted by date.
+        """
+        db = deps.get_email_db()
+        if not db:
+            return deps.DB_UNAVAILABLE
+
+        emails = db.thread_by_topic(params.thread_topic, limit=params.limit)
+        return json.dumps({
+            "thread_topic": params.thread_topic,
+            "emails": emails,
+            "count": len(emails),
+        }, indent=2)
 
     @mcp.tool(
         name="email_smart_search",
