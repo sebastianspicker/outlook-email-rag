@@ -22,6 +22,13 @@
     body { padding: 0; font-size: 11px; }
     .page-break { page-break-before: always; }
     .no-print { display: none; }
+    .evidence-item, .email-card, .relationship-card { break-inside: avoid; }
+    .email-card-body { max-height: none !important; overflow: visible !important; }
+    @page {
+      margin: 20mm 15mm;
+      @top-center { content: "CONFIDENTIAL"; font-size: 8px; color: #999; }
+      @bottom-right { content: "Page " counter(page); font-size: 8px; color: #999; }
+    }
   }
 
   /* Cover page */
@@ -347,7 +354,7 @@
 {% for item in evidence_items %}
 <div class="evidence-item relevance-{{ item.relevance }}" id="evidence-{{ item.evidence_number }}">
   <div class="evidence-header">
-    <span class="evidence-date"><strong>{{ item.evidence_number }}</strong> &mdash; {{ item.date }}</span>
+    <span class="evidence-date"><strong>{{ item.evidence_number }}</strong> &mdash; {{ item.date_formatted }}</span>
     <span>
       <span class="badge badge-{{ item.category }}">{{ item.category }}</span>
       <span class="badge badge-relevance">Relevance: {{ item.relevance }}/5</span>
@@ -360,6 +367,7 @@
     <strong>From:</strong> {{ item.sender_name }} &lt;{{ item.sender_email }}&gt;<br>
     <strong>Subject:</strong> {{ item.subject }}<br>
     {% if item.appendix_ref %}<strong>Source:</strong> Appendix <a href="#appendix-{{ item.appendix_ref }}">{{ item.appendix_ref }}</a><br>{% endif %}
+    {% if item.created_at_formatted %}<strong>Collected:</strong> {{ item.created_at_formatted }}<br>{% endif %}
     <strong>Email UID:</strong> <span style="font-family: monospace; font-size: 10px;">{{ item.email_uid }}</span><br>
     <span class="item-notes"><strong>Notes:</strong> {{ item.notes }}</span>
   </div>
@@ -378,13 +386,13 @@
   <div class="email-card-header">
     <strong>{{ email.appendix_number }}</strong> &mdash;
     <strong>From:</strong> {{ email.sender_name }} &lt;{{ email.sender_email }}&gt; &middot;
-    <strong>Date:</strong> {{ email.date }}<br>
+    <strong>Date:</strong> {{ email.date_formatted }}<br>
     <strong>Subject:</strong> {{ email.subject }}
     {% if email.to %}<br><strong>To:</strong> {{ email.to }}{% endif %}
     {% if email.cc %}<br><strong>CC:</strong> {{ email.cc }}{% endif %}
     {% if email.evidence_refs_str %}<br><strong>Evidence:</strong> {{ email.evidence_refs_str }}{% endif %}
     <br><strong>UID:</strong> <span style="font-family:monospace;font-size:10px">{{ email.uid }}</span> &middot;
-    <strong>SHA-256:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256 }}</span>
+    <strong>SHA-256:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256_display }}</span>
   </div>
   {% for q in email.evidence_quotes %}
   <div class="evidence-quote-banner">

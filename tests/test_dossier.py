@@ -426,3 +426,68 @@ def test_no_attachment_bar_when_none(db):
 
     # No attachments in basic fixtures — div should not appear (CSS class still in <style>)
     assert '<div class="attachment-bar">' not in html
+
+
+# ── print/PDF and date formatting ────────────────────────────
+
+
+def test_date_formatting(db):
+    """Dates should appear in human-readable format with month names."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # "2024-01-11" should become "January 11, 2024"
+    assert "January" in html
+
+
+def test_created_at_shown(db):
+    """Evidence items should show when they were collected."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Collected:" in html
+
+
+def test_content_sha256_fallback(db):
+    """Empty SHA-256 should show fallback text."""
+    # Insert email with empty hash
+    db.conn.execute(
+        """INSERT INTO emails (uid, sender_email, sender_name, date, subject,
+           body_text, body_html, has_attachments, attachment_count,
+           priority, is_read, body_length, content_sha256)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 1, 10, ?)""",
+        ("uid-nohash", "test@test.com", "Test", "2024-01-20", "No Hash",
+         "Body", "<p>Body</p>", ""),
+    )
+    db.conn.execute(
+        "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
+        ("uid-nohash", "r@test.com", "R", "to"),
+    )
+    db.conn.commit()
+    db.add_evidence("uid-nohash", "general", "test quote", "Test", 1)
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "(not available)" in html
+
+
+def test_print_css_avoids_breaks(db):
+    """Print CSS should prevent page breaks inside items."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "break-inside: avoid" in html
+
+
+def test_print_css_removes_scroll(db):
+    """Print CSS should remove scroll containers."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "max-height: none" in html

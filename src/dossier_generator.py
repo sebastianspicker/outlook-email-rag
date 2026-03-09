@@ -107,9 +107,11 @@ class DossierGenerator:
             else:
                 enriched_items.append(item)
 
-        # Number evidence items
+        # Number evidence items and format dates
         for idx, item in enumerate(enriched_items, 1):
             item["evidence_number"] = f"E-{idx}"
+            item["date_formatted"] = _format_date(item.get("date"))
+            item["created_at_formatted"] = _format_date(item.get("created_at"))
 
         # Gather source emails (deduplicated)
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
@@ -117,14 +119,18 @@ class DossierGenerator:
         for uid in sorted(email_uids):
             full = self._db.get_email_full(uid)
             if full:
+                raw_date = full.get("date", "")
+                raw_sha = full.get("content_sha256", "")
                 email = {
                     "uid": full["uid"],
                     "sender_name": full.get("sender_name", ""),
                     "sender_email": full.get("sender_email", ""),
-                    "date": full.get("date", ""),
+                    "date": raw_date,
+                    "date_formatted": _format_date(raw_date),
                     "subject": full.get("subject", ""),
                     "body_text": strip_html_tags(full.get("body_text")),
-                    "content_sha256": full.get("content_sha256", ""),
+                    "content_sha256": raw_sha,
+                    "content_sha256_display": raw_sha or "(not available)",
                     "to": ", ".join(full.get("to", [])),
                     "cc": ", ".join(full.get("cc", [])),
                 }
@@ -545,3 +551,24 @@ def _escape_html(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def _format_date(iso_date: str | None) -> str:
+    """Convert ISO date string to human-readable format.
+
+    '2024-01-15T10:30:00' → 'January 15, 2024, 10:30 AM'
+    '2024-01-15' → 'January 15, 2024'
+    Falls back to the original string on parse failure.
+    """
+    if not iso_date:
+        return ""
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(iso_date.strip(), fmt)
+            if dt.hour or dt.minute:
+                return dt.strftime("%B %d, %Y, %I:%M %p").replace(" 0", " ")
+            return dt.strftime("%B %d, %Y").replace(" 0", " ")
+        except ValueError:
+            continue
+    return iso_date
