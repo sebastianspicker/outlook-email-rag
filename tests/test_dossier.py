@@ -303,3 +303,39 @@ def test_dotted_conditional_false_branch(db):
     # CC was not populated in fixtures → CC line should be absent
     assert "<strong>CC:</strong>" not in html
     assert "{% if email.cc %}" not in html
+
+
+# ── evidence numbering and cross-references ──────────────────
+
+
+def test_evidence_numbering(db):
+    """Evidence items should have E-1, E-2, E-3 numbers."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "E-1" in html
+    assert "E-2" in html
+    assert "E-3" in html
+
+
+def test_appendix_numbering(db):
+    """Source emails should have A-1, A-2, A-3 numbers."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "A-1" in html
+    assert "A-2" in html
+    assert "A-3" in html
+
+
+def test_cross_references(db):
+    """Evidence items should link to their source appendix."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # Evidence items reference appendix numbers (link inside anchor tag)
+    assert "Appendix" in html
+    assert "#appendix-A-" in html

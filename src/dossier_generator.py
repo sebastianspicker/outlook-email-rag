@@ -93,6 +93,10 @@ class DossierGenerator:
             else:
                 enriched_items.append(item)
 
+        # Number evidence items
+        for idx, item in enumerate(enriched_items, 1):
+            item["evidence_number"] = f"E-{idx}"
+
         # Gather source emails (deduplicated)
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
         source_emails = []
@@ -111,6 +115,17 @@ class DossierGenerator:
                     "cc": ", ".join(full.get("cc", [])),
                 }
                 source_emails.append(email)
+
+        # Number source emails and cross-reference with evidence
+        uid_to_appendix: dict[str, str] = {}
+        for idx, email in enumerate(source_emails, 1):
+            email["appendix_number"] = f"A-{idx}"
+            uid_to_appendix[email["uid"]] = f"A-{idx}"
+            refs = [it["evidence_number"] for it in enriched_items if it.get("email_uid") == email["uid"]]
+            email["evidence_refs_str"] = ", ".join(refs)
+
+        for item in enriched_items:
+            item["appendix_ref"] = uid_to_appendix.get(item.get("email_uid", ""), "")
 
         # Gather relationship data
         relationship_data = []
