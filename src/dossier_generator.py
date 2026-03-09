@@ -156,27 +156,27 @@ class DossierGenerator:
         min_relevance: int | None,
     ) -> list[dict[str, Any]]:
         """Fetch evidence timeline, enrich with full records and display fields."""
-        evidence_items = self._db.evidence_timeline(
+        enriched_items = self._db.evidence_timeline(
             category=category, min_relevance=min_relevance,
         )
-        enriched_items: list[dict[str, Any]] = []
-        for item in evidence_items:
-            full = self._db.get_evidence(item["id"])
-            enriched_items.append(full if full else item)
+
+        # Batch-fetch thread topics for all referenced emails (1 query)
+        evidence_uids = list({item["email_uid"] for item in enriched_items if item.get("email_uid")})
+        thread_topics: dict[str, str] = {}
+        if evidence_uids:
+            ph = ",".join("?" * len(evidence_uids))
+            rows = self._db.conn.execute(
+                f"SELECT uid, thread_topic FROM emails WHERE uid IN ({ph})",
+                evidence_uids,
+            ).fetchall()
+            thread_topics = {r["uid"]: r["thread_topic"] or "" for r in rows}
 
         for idx, item in enumerate(enriched_items, 1):
             item["evidence_number"] = f"E-{idx}"
             item["date_formatted"] = format_date(item.get("date"))
             item["created_at_formatted"] = format_date(item.get("created_at"))
-            # Thread topic from source email
             uid = item.get("email_uid")
-            if uid:
-                row = self._db.conn.execute(
-                    "SELECT thread_topic FROM emails WHERE uid = ?", (uid,),
-                ).fetchone()
-                item["thread_topic"] = (row["thread_topic"] if row and row["thread_topic"] else "")
-            else:
-                item["thread_topic"] = ""
+            item["thread_topic"] = thread_topics.get(uid, "") if uid else ""
             # Notes cleanup
             raw_notes = item.get("notes") or ""
             item["notes"] = raw_notes if raw_notes and raw_notes != "None" else ""
