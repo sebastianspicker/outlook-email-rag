@@ -32,14 +32,16 @@ def register(mcp, deps) -> None:
         The report includes: archive overview, top senders, folder distribution,
         monthly volume, top entities, and response times.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..report_generator import ReportGenerator
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            from ..report_generator import ReportGenerator
 
-        generator = ReportGenerator(db)
-        generator.generate(title=params.title, output_path=params.output_path)
-        return json.dumps({"status": "ok", "output_path": params.output_path})
+            generator = ReportGenerator(db)
+            generator.generate(title=params.title, output_path=params.output_path)
+            return json.dumps({"status": "ok", "output_path": params.output_path})
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="email_export_network",
@@ -57,14 +59,16 @@ def register(mcp, deps) -> None:
         The GraphML format is supported by Gephi, Cytoscape, and other
         network analysis tools.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..network_analysis import CommunicationNetwork
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            from ..network_analysis import CommunicationNetwork
 
-        net = CommunicationNetwork(db)
-        result = net.export_graphml(params.output_path)
-        return json.dumps(result, indent=2)
+            net = CommunicationNetwork(db)
+            result = net.export_graphml(params.output_path)
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="email_writing_analysis",
@@ -85,52 +89,54 @@ def register(mcp, deps) -> None:
         Returns:
             JSON with writing style metrics per sender.
         """
-        from ..writing_analyzer import WritingAnalyzer
+        def _run():
+            from ..writing_analyzer import WritingAnalyzer
 
-        retriever = deps.get_retriever()
-        db = deps.get_email_db()
-        analyzer = WritingAnalyzer()
+            retriever = deps.get_retriever()
+            db = deps.get_email_db()
+            analyzer = WritingAnalyzer()
 
-        def _get_sender_texts(sender_filter: str, max_texts: int = 50) -> list[str]:
-            """Get email texts for a sender via semantic search."""
+            def _get_sender_texts(sender_filter: str, max_texts: int = 50) -> list[str]:
+                """Get email texts for a sender via semantic search."""
+                try:
+                    results = retriever.search_filtered(
+                        query="*", top_k=max_texts, sender=sender_filter,
+                    )
+                    return [r.text for r in results if r.text]
+                except Exception:
+                    return []
+
+            if params.sender:
+                texts = _get_sender_texts(params.sender, max_texts=params.limit)
+                if not texts:
+                    return json.dumps(
+                        {"error": f"No emails found for sender: {params.sender}"}
+                    )
+                profile = analyzer.analyze_sender_profile(texts, params.sender)
+                if not profile:
+                    return json.dumps(
+                        {"error": f"Not enough content to analyze: {params.sender}"}
+                    )
+                return json.dumps(profile, indent=2)
+
+            # Compare top senders
+            if not db:
+                return json.dumps({"error": "SQLite database not available."})
+
             try:
-                results = retriever.search_filtered(
-                    query="*", top_k=max_texts, sender=sender_filter,
-                )
-                return [r.text for r in results if r.text]
+                senders = db.top_senders(limit=params.limit)
             except Exception:
-                return []
+                return json.dumps({"error": "Could not fetch sender list."})
 
-        if params.sender:
-            texts = _get_sender_texts(params.sender, max_texts=params.limit)
-            if not texts:
-                return json.dumps(
-                    {"error": f"No emails found for sender: {params.sender}"}
-                )
-            profile = analyzer.analyze_sender_profile(texts, params.sender)
-            if not profile:
-                return json.dumps(
-                    {"error": f"Not enough content to analyze: {params.sender}"}
-                )
-            return json.dumps(profile, indent=2)
+            profiles = []
+            for s in senders:
+                email_addr = s.get("sender_email", "")
+                if not email_addr:
+                    continue
+                texts = _get_sender_texts(email_addr, max_texts=30)
+                profile = analyzer.analyze_sender_profile(texts, email_addr)
+                if profile:
+                    profiles.append(profile)
 
-        # Compare top senders
-        if not db:
-            return json.dumps({"error": "SQLite database not available."})
-
-        try:
-            senders = db.top_senders(limit=params.limit)
-        except Exception:
-            return json.dumps({"error": "Could not fetch sender list."})
-
-        profiles = []
-        for s in senders:
-            email_addr = s.get("sender_email", "")
-            if not email_addr:
-                continue
-            texts = _get_sender_texts(email_addr, max_texts=30)
-            profile = analyzer.analyze_sender_profile(texts, email_addr)
-            if profile:
-                profiles.append(profile)
-
-        return json.dumps(profiles, indent=2)
+            return json.dumps(profiles, indent=2)
+        return await deps.offload(_run)

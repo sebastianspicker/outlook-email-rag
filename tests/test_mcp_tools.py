@@ -371,3 +371,21 @@ def test_all_tool_modules_importable():
         reporting, temporal, threads, topics,
     ]:
         assert callable(module.register), f"{module.__name__} missing register()"
+
+
+@pytest.mark.asyncio
+async def test_offload_runs_sync_in_thread():
+    """_offload should run a sync function without blocking the event loop."""
+    from src.mcp_server import _offload
+
+    result = await _offload(lambda: 42)
+    assert result == 42
+
+
+@pytest.mark.asyncio
+async def test_offload_with_args():
+    """_offload passes positional and keyword arguments through."""
+    from src.mcp_server import _offload
+
+    result = await _offload(lambda x, y=0: x + y, 10, y=5)
+    assert result == 15

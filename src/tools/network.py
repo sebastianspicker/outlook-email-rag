@@ -15,6 +15,21 @@ from ..mcp_models import (
 )
 
 
+def _get_network(deps):
+    """Get or create a cached CommunicationNetwork for the current db."""
+    db = deps.get_email_db()
+    if not db:
+        return None, None
+    # Cache on the db instance to avoid rebuilding the graph per tool call
+    net = getattr(db, "_cached_comm_network", None)
+    if net is None:
+        from ..network_analysis import CommunicationNetwork
+
+        net = CommunicationNetwork(db)
+        db._cached_comm_network = net
+    return db, net
+
+
 def register(mcp, deps) -> None:
     """Register network analysis tools."""
 
@@ -25,11 +40,13 @@ def register(mcp, deps) -> None:
         Returns contacts ranked by total bidirectional email frequency
         (emails sent to + received from each partner).
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        contacts = db.top_contacts(params.email_address, limit=params.limit)
-        return json.dumps(contacts, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            contacts = db.top_contacts(params.email_address, limit=params.limit)
+            return json.dumps(contacts, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="email_communication_between",
@@ -37,23 +54,24 @@ def register(mcp, deps) -> None:
     )
     async def email_communication_between(params: CommunicationBetweenInput) -> str:
         """Get bidirectional communication stats between two email addresses."""
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        result = db.communication_between(params.email_a, params.email_b)
-        return json.dumps(result, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            result = db.communication_between(params.email_a, params.email_b)
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_network_analysis", annotations=deps.tool_annotations("Email Network Analysis"))
     async def email_network_analysis(params: NetworkAnalysisInput) -> str:
         """Analyze the communication network: centrality, communities, bridge nodes."""
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..network_analysis import CommunicationNetwork
-
-        net = CommunicationNetwork(db)
-        result = net.network_analysis(top_n=params.top_n)
-        return json.dumps(result, indent=2)
+        def _run():
+            db, net = _get_network(deps)
+            if not db:
+                return deps.DB_UNAVAILABLE
+            result = net.network_analysis(top_n=params.top_n)
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="relationship_paths",
@@ -65,19 +83,18 @@ def register(mcp, deps) -> None:
         Shows how person A connects to person B through shared contacts.
         Useful for mapping relationships in investigations and legal analysis.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..network_analysis import CommunicationNetwork
-
-        net = CommunicationNetwork(db)
-        paths = net.find_paths(
-            source=params.source,
-            target=params.target,
-            max_hops=params.max_hops,
-            top_k=params.top_k,
-        )
-        return json.dumps({"paths": paths, "count": len(paths)}, indent=2)
+        def _run():
+            db, net = _get_network(deps)
+            if not db:
+                return deps.DB_UNAVAILABLE
+            paths = net.find_paths(
+                source=params.source,
+                target=params.target,
+                max_hops=params.max_hops,
+                top_k=params.top_k,
+            )
+            return json.dumps({"paths": paths, "count": len(paths)}, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="shared_recipients",
@@ -89,17 +106,16 @@ def register(mcp, deps) -> None:
         Identifies who is 'in the loop' on coordinated communications.
         Useful for discovering shared targets or information brokers.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..network_analysis import CommunicationNetwork
-
-        net = CommunicationNetwork(db)
-        results = net.shared_recipients(
-            email_addresses=params.email_addresses,
-            min_shared=params.min_shared,
-        )
-        return json.dumps({"shared_recipients": results, "count": len(results)}, indent=2)
+        def _run():
+            db, net = _get_network(deps)
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = net.shared_recipients(
+                email_addresses=params.email_addresses,
+                min_shared=params.min_shared,
+            )
+            return json.dumps({"shared_recipients": results, "count": len(results)}, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="coordinated_timing",
@@ -111,18 +127,17 @@ def register(mcp, deps) -> None:
         Finds synchronized communication patterns: periods where multiple
         people were actively emailing within the same time window.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..network_analysis import CommunicationNetwork
-
-        net = CommunicationNetwork(db)
-        windows = net.coordinated_timing(
-            email_addresses=params.email_addresses,
-            window_hours=params.window_hours,
-            min_events=params.min_events,
-        )
-        return json.dumps({"windows": windows, "count": len(windows)}, indent=2)
+        def _run():
+            db, net = _get_network(deps)
+            if not db:
+                return deps.DB_UNAVAILABLE
+            windows = net.coordinated_timing(
+                email_addresses=params.email_addresses,
+                window_hours=params.window_hours,
+                min_events=params.min_events,
+            )
+            return json.dumps({"windows": windows, "count": len(windows)}, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="relationship_summary",
@@ -134,14 +149,13 @@ def register(mcp, deps) -> None:
         One-call profile: top contacts, community membership, bridge score,
         send/receive ratio. Saves tokens compared to multiple separate calls.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..network_analysis import CommunicationNetwork
-
-        net = CommunicationNetwork(db)
-        result = net.relationship_summary(
-            email_address=params.email_address,
-            limit=params.limit,
-        )
-        return json.dumps(result, indent=2)
+        def _run():
+            db, net = _get_network(deps)
+            if not db:
+                return deps.DB_UNAVAILABLE
+            result = net.relationship_summary(
+                email_address=params.email_address,
+                limit=params.limit,
+            )
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)

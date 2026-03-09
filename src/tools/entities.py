@@ -19,29 +19,35 @@ def register(mcp, deps) -> None:
     @mcp.tool(name="email_search_by_entity", annotations=deps.tool_annotations("Search by Entity"))
     async def email_search_by_entity(params: EntitySearchInput) -> str:
         """Find emails mentioning a specific entity (organization, URL, phone, etc.)."""
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.search_by_entity(params.entity, entity_type=params.entity_type, limit=params.limit)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.search_by_entity(params.entity, entity_type=params.entity_type, limit=params.limit)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_list_entities", annotations=deps.tool_annotations("List Top Entities"))
     async def email_list_entities(params: ListEntitiesInput) -> str:
         """List most frequently mentioned entities in the email archive."""
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.top_entities(entity_type=params.entity_type, limit=params.limit)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.top_entities(entity_type=params.entity_type, limit=params.limit)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_entity_network", annotations=deps.tool_annotations("Entity Co-occurrences"))
     async def email_entity_network(params: EntityNetworkInput) -> str:
         """Find entities that co-occur with the given entity in the same emails."""
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.entity_co_occurrences(params.entity, limit=params.limit)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.entity_co_occurrences(params.entity, limit=params.limit)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_find_people", annotations=deps.tool_annotations("Find People in Emails"))
     async def email_find_people(params: FindPeopleInput) -> str:
@@ -56,11 +62,13 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of emails mentioning that person.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.people_in_emails(params.name, limit=params.limit)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.people_in_emails(params.name, limit=params.limit)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_entity_timeline", annotations=deps.tool_annotations("Entity Mention Timeline"))
     async def email_entity_timeline(params: EntityTimelineInput) -> str:
@@ -75,8 +83,10 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of {period, count} entries.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.entity_timeline(params.entity, period=params.period)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.entity_timeline(params.entity, period=params.period)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)

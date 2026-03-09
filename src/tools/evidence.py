@@ -40,14 +40,16 @@ def register(mcp, deps) -> None:
         ingestion, evidence additions/updates/removals, and exports.
         Use to verify evidence handling history and integrity.
         """
-        db = deps.get_email_db()
-        events = db.get_custody_chain(
-            target_type=params.target_type,
-            target_id=params.target_id,
-            action=params.action,
-            limit=params.limit,
-        )
-        return json.dumps({"events": events, "count": len(events)}, indent=2, default=str)
+        def _run():
+            db = deps.get_email_db()
+            events = db.get_custody_chain(
+                target_type=params.target_type,
+                target_id=params.target_id,
+                action=params.action,
+                limit=params.limit,
+            )
+            return json.dumps({"events": events, "count": len(events)}, indent=2, default=str)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="email_provenance",
@@ -59,9 +61,11 @@ def register(mcp, deps) -> None:
         One call gives complete traceability from source file to stored email.
         Use to verify an email's origin and integrity for legal evidence.
         """
-        db = deps.get_email_db()
-        result = db.email_provenance(params.email_uid)
-        return json.dumps(result, indent=2, default=str)
+        def _run():
+            db = deps.get_email_db()
+            result = db.email_provenance(params.email_uid)
+            return json.dumps(result, indent=2, default=str)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_provenance",
@@ -73,9 +77,11 @@ def register(mcp, deps) -> None:
         Combines evidence item, source email traceability, and all custody
         events in one call. Use to present complete provenance to a lawyer.
         """
-        db = deps.get_email_db()
-        result = db.evidence_provenance(params.evidence_id)
-        return json.dumps(result, indent=2, default=str)
+        def _run():
+            db = deps.get_email_db()
+            result = db.evidence_provenance(params.evidence_id)
+            return json.dumps(result, indent=2, default=str)
+        return await deps.offload(_run)
 
     # ── Proof Dossier ─────────────────────────────────────────────
 
@@ -96,34 +102,36 @@ def register(mcp, deps) -> None:
         The main 'export everything for the lawyer' tool. Produces a
         self-contained HTML or PDF document with integrity hash.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
 
-        network = None
-        try:
-            from ..network_analysis import CommunicationNetwork
+            network = None
+            try:
+                from ..network_analysis import CommunicationNetwork
 
-            network = CommunicationNetwork(db)
-        except Exception:
-            pass
+                network = CommunicationNetwork(db)
+            except Exception:
+                pass
 
-        from ..dossier_generator import DossierGenerator
+            from ..dossier_generator import DossierGenerator
 
-        gen = DossierGenerator(db, network=network)
-        result = gen.generate_file(
-            output_path=params.output_path,
-            fmt=params.format,
-            title=params.title,
-            case_reference=params.case_reference,
-            custodian=params.custodian,
-            min_relevance=params.min_relevance,
-            category=params.category,
-            include_relationships=params.include_relationships,
-            include_custody=params.include_custody,
-            persons_of_interest=params.persons_of_interest,
-        )
-        return json.dumps(result, indent=2)
+            gen = DossierGenerator(db, network=network)
+            result = gen.generate_file(
+                output_path=params.output_path,
+                fmt=params.format,
+                title=params.title,
+                case_reference=params.case_reference,
+                custodian=params.custodian,
+                min_relevance=params.min_relevance,
+                category=params.category,
+                include_relationships=params.include_relationships,
+                include_custody=params.include_custody,
+                persons_of_interest=params.persons_of_interest,
+            )
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="dossier_preview",
@@ -135,18 +143,20 @@ def register(mcp, deps) -> None:
         Token-efficient: returns counts, categories, and date range.
         Use to check scope before full generation.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
 
-        from ..dossier_generator import DossierGenerator
+            from ..dossier_generator import DossierGenerator
 
-        gen = DossierGenerator(db)
-        result = gen.preview(
-            min_relevance=params.min_relevance,
-            category=params.category,
-        )
-        return json.dumps(result, indent=2)
+            gen = DossierGenerator(db)
+            result = gen.preview(
+                min_relevance=params.min_relevance,
+                category=params.category,
+            )
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     # ── Evidence Management ───────────────────────────────────────
 
@@ -162,21 +172,23 @@ def register(mcp, deps) -> None:
         flagged. Use email_get_full to read the full email body before extracting
         a quote. Sender, date, recipients, and subject are auto-populated.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        try:
-            result = db.add_evidence(
-                email_uid=params.email_uid,
-                category=params.category,
-                key_quote=params.key_quote,
-                summary=params.summary,
-                relevance=params.relevance,
-                notes=params.notes,
-            )
-            return json.dumps(result, indent=2)
-        except ValueError as exc:
-            return json.dumps({"error": str(exc)})
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            try:
+                result = db.add_evidence(
+                    email_uid=params.email_uid,
+                    category=params.category,
+                    key_quote=params.key_quote,
+                    summary=params.summary,
+                    relevance=params.relevance,
+                    notes=params.notes,
+                )
+                return json.dumps(result, indent=2)
+            except ValueError as exc:
+                return json.dumps({"error": str(exc)})
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_list",
@@ -188,17 +200,19 @@ def register(mcp, deps) -> None:
         Use to review the evidence collection. Filter by category, minimum
         relevance, or specific email UID. Returns paginated results sorted by date.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        result = db.list_evidence(
-            category=params.category,
-            min_relevance=params.min_relevance,
-            email_uid=params.email_uid,
-            limit=params.limit,
-            offset=params.offset,
-        )
-        return json.dumps(result, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            result = db.list_evidence(
+                category=params.category,
+                min_relevance=params.min_relevance,
+                email_uid=params.email_uid,
+                limit=params.limit,
+                offset=params.offset,
+            )
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_get",
@@ -206,13 +220,15 @@ def register(mcp, deps) -> None:
     )
     async def evidence_get(params: EvidenceGetInput) -> str:
         """Get a single evidence item with full details including quote and verification status."""
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        item = db.get_evidence(params.evidence_id)
-        if not item:
-            return json.dumps({"error": f"Evidence item not found: {params.evidence_id}"})
-        return json.dumps(item, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            item = db.get_evidence(params.evidence_id)
+            if not item:
+                return json.dumps({"error": f"Evidence item not found: {params.evidence_id}"})
+            return json.dumps(item, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_update",
@@ -232,21 +248,23 @@ def register(mcp, deps) -> None:
             relevance: New relevance rating (optional).
             notes: New notes (optional).
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        updated = db.update_evidence(
-            params.evidence_id,
-            category=params.category,
-            key_quote=params.key_quote,
-            summary=params.summary,
-            relevance=params.relevance,
-            notes=params.notes,
-        )
-        if not updated:
-            return json.dumps({"error": f"Evidence item not found: {params.evidence_id}"})
-        item = db.get_evidence(params.evidence_id)
-        return json.dumps(item, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            updated = db.update_evidence(
+                params.evidence_id,
+                category=params.category,
+                key_quote=params.key_quote,
+                summary=params.summary,
+                relevance=params.relevance,
+                notes=params.notes,
+            )
+            if not updated:
+                return json.dumps({"error": f"Evidence item not found: {params.evidence_id}"})
+            item = db.get_evidence(params.evidence_id)
+            return json.dumps(item, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_remove",
@@ -258,13 +276,15 @@ def register(mcp, deps) -> None:
         Args:
             evidence_id: ID of the evidence item to remove.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        removed = db.remove_evidence(params.evidence_id)
-        if not removed:
-            return json.dumps({"error": f"Evidence item not found: {params.evidence_id}"})
-        return json.dumps({"removed": params.evidence_id})
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            removed = db.remove_evidence(params.evidence_id)
+            if not removed:
+                return json.dumps({"error": f"Evidence item not found: {params.evidence_id}"})
+            return json.dumps({"removed": params.evidence_id})
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_verify",
@@ -277,11 +297,13 @@ def register(mcp, deps) -> None:
         key_quote appears (case-insensitive) in the linked email's body_text
         and updates the verified status. Critical for ensuring zero hallucination.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        result = db.verify_evidence_quotes()
-        return json.dumps(result, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            result = db.verify_evidence_quotes()
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_export",
@@ -294,20 +316,22 @@ def register(mcp, deps) -> None:
         source email appendix. CSV can be opened in Excel. Filter by category
         or minimum relevance to create focused exports.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
 
-        from ..evidence_exporter import EvidenceExporter
+            from ..evidence_exporter import EvidenceExporter
 
-        exporter = EvidenceExporter(db)
-        result = exporter.export_file(
-            output_path=params.output_path,
-            fmt=params.format,
-            min_relevance=params.min_relevance,
-            category=params.category,
-        )
-        return json.dumps(result, indent=2)
+            exporter = EvidenceExporter(db)
+            result = exporter.export_file(
+                output_path=params.output_path,
+                fmt=params.format,
+                min_relevance=params.min_relevance,
+                category=params.category,
+            )
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_stats",
@@ -319,10 +343,12 @@ def register(mcp, deps) -> None:
         Returns total items, verified/unverified counts, breakdown by category
         and relevance level.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        return json.dumps(db.evidence_stats(), indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            return json.dumps(db.evidence_stats(), indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_add_batch",
@@ -334,30 +360,32 @@ def register(mcp, deps) -> None:
         Each item is independent — if one fails, others still succeed.
         Use when you find multiple evidence items in one search session.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        added: list[dict] = []
-        failed: list[dict] = []
-        for item in params.items:
-            try:
-                result = db.add_evidence(
-                    email_uid=item.email_uid,
-                    category=item.category,
-                    key_quote=item.key_quote,
-                    summary=item.summary,
-                    relevance=item.relevance,
-                    notes=item.notes,
-                )
-                added.append(result)
-            except ValueError as exc:
-                failed.append({"email_uid": item.email_uid, "error": str(exc)})
-        return json.dumps({
-            "added": added,
-            "failed": failed,
-            "total_added": len(added),
-            "total_failed": len(failed),
-        }, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            added: list[dict] = []
+            failed: list[dict] = []
+            for item in params.items:
+                try:
+                    result = db.add_evidence(
+                        email_uid=item.email_uid,
+                        category=item.category,
+                        key_quote=item.key_quote,
+                        summary=item.summary,
+                        relevance=item.relevance,
+                        notes=item.notes,
+                    )
+                    added.append(result)
+                except ValueError as exc:
+                    failed.append({"email_uid": item.email_uid, "error": str(exc)})
+            return json.dumps({
+                "added": added,
+                "failed": failed,
+                "total_added": len(added),
+                "total_failed": len(failed),
+            }, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_search",
@@ -369,16 +397,18 @@ def register(mcp, deps) -> None:
         Searches across key_quote, summary, and notes fields. Use to check
         whether evidence about a topic has already been collected.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        result = db.search_evidence(
-            query=params.query,
-            category=params.category,
-            min_relevance=params.min_relevance,
-            limit=params.limit,
-        )
-        return json.dumps(result, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            result = db.search_evidence(
+                query=params.query,
+                category=params.category,
+                min_relevance=params.min_relevance,
+                limit=params.limit,
+            )
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_timeline",
@@ -390,14 +420,16 @@ def register(mcp, deps) -> None:
         Returns evidence items sorted by date ascending. Use to identify
         patterns of behavior over time and construct a legal timeline.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        items = db.evidence_timeline(
-            category=params.category,
-            min_relevance=params.min_relevance,
-        )
-        return json.dumps({"items": items, "total": len(items)}, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            items = db.evidence_timeline(
+                category=params.category,
+                min_relevance=params.min_relevance,
+            )
+            return json.dumps({"items": items, "total": len(items)}, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(
         name="evidence_categories",
@@ -410,7 +442,9 @@ def register(mcp, deps) -> None:
         sexual_harassment, insult, bossing, retaliation, exclusion,
         microaggression, hostile_environment, other) with counts.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        return json.dumps(db.evidence_categories(), indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            return json.dumps(db.evidence_categories(), indent=2)
+        return await deps.offload(_run)

@@ -18,6 +18,7 @@ Configure in Claude Code's MCP settings:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 
@@ -92,6 +93,14 @@ def get_email_db():
 
 # ── Search kwargs builder ─────────────────────────────────────
 
+async def _offload(fn, *args, **kwargs):
+    """Run a synchronous function in a thread to avoid blocking the event loop."""
+    if args or kwargs:
+        import functools
+        return await asyncio.to_thread(functools.partial(fn, *args, **kwargs))
+    return await asyncio.to_thread(fn)
+
+
 _FILTER_FIELDS = [
     "sender", "subject", "folder", "cc", "to", "bcc",
     "has_attachments", "priority", "email_type",
@@ -129,9 +138,11 @@ async def email_search(params: EmailSearchInput) -> str:
     For filtered searches (by sender, date, folder, etc.), use email_search_structured.
     For auto-intent detection, use email_smart_search.
     """
-    retriever = get_retriever()
-    results = retriever.search(params.query, top_k=params.top_k)
-    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    def _run():
+        retriever = get_retriever()
+        results = retriever.search(params.query, top_k=params.top_k)
+        return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -153,9 +164,11 @@ async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
     Returns:
         str: Formatted email results from the specified sender.
     """
-    retriever = get_retriever()
-    results = retriever.search_filtered(query=params.query, sender=params.sender, top_k=params.top_k)
-    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    def _run():
+        retriever = get_retriever()
+        results = retriever.search_filtered(query=params.query, sender=params.sender, top_k=params.top_k)
+        return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -178,14 +191,16 @@ async def email_search_by_date(params: EmailSearchByDateInput) -> str:
     Returns:
         str: Formatted email results within the date range.
     """
-    retriever = get_retriever()
-    results = retriever.search_filtered(
-        query=params.query,
-        date_from=params.date_from,
-        date_to=params.date_to,
-        top_k=params.top_k,
-    )
-    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    def _run():
+        retriever = get_retriever()
+        results = retriever.search_filtered(
+            query=params.query,
+            date_from=params.date_from,
+            date_to=params.date_to,
+            top_k=params.top_k,
+        )
+        return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -205,16 +220,18 @@ async def email_list_senders(params: ListSendersInput) -> str:
     Returns:
         str: Formatted list of senders with message counts.
     """
-    retriever = get_retriever()
-    senders = retriever.list_senders(limit=params.limit)
-    if not senders:
-        return "No senders found in the archive."
+    def _run():
+        retriever = get_retriever()
+        senders = retriever.list_senders(limit=params.limit)
+        if not senders:
+            return "No senders found in the archive."
 
-    lines = [f"Top {len(senders)} senders in the archive:\n"]
-    for entry in senders:
-        label = entry.get("name") or entry.get("email") or "unknown"
-        lines.append(f"  {entry['count']:>5} emails — {label}")
-    return sanitize_untrusted_text("\n".join(lines))
+        lines = [f"Top {len(senders)} senders in the archive:\n"]
+        for entry in senders:
+            label = entry.get("name") or entry.get("email") or "unknown"
+            lines.append(f"  {entry['count']:>5} emails — {label}")
+        return sanitize_untrusted_text("\n".join(lines))
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -231,8 +248,10 @@ async def email_stats() -> str:
     Returns:
         str: JSON-formatted statistics about the email archive.
     """
-    retriever = get_retriever()
-    return json.dumps(retriever.stats(), indent=2)
+    def _run():
+        retriever = get_retriever()
+        return json.dumps(retriever.stats(), indent=2)
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -247,33 +266,35 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
     hybrid BM25 search, and query expansion. For simple unfiltered queries,
     email_search is faster.
     """
-    retriever = get_retriever()
-    search_kwargs = _build_search_kwargs(params)
+    def _run():
+        retriever = get_retriever()
+        search_kwargs = _build_search_kwargs(params)
 
-    results = retriever.search_filtered(**search_kwargs)
-    payload = retriever.serialize_results(params.query, results)
-    payload["top_k"] = params.top_k
-    payload["filters"] = {
-        "sender": params.sender,
-        "subject": params.subject,
-        "folder": params.folder,
-        "cc": params.cc,
-        "to": params.to,
-        "bcc": params.bcc,
-        "has_attachments": params.has_attachments,
-        "priority": params.priority,
-        "email_type": params.email_type,
-        "date_from": params.date_from,
-        "date_to": params.date_to,
-        "min_score": params.min_score,
-        "rerank": params.rerank,
-        "hybrid": params.hybrid,
-        "topic_id": params.topic_id,
-        "cluster_id": params.cluster_id,
-        "expand_query": params.expand_query,
-    }
-    payload["model"] = get_settings().embedding_model
-    return json.dumps(payload, indent=2)
+        results = retriever.search_filtered(**search_kwargs)
+        payload = retriever.serialize_results(params.query, results)
+        payload["top_k"] = params.top_k
+        payload["filters"] = {
+            "sender": params.sender,
+            "subject": params.subject,
+            "folder": params.folder,
+            "cc": params.cc,
+            "to": params.to,
+            "bcc": params.bcc,
+            "has_attachments": params.has_attachments,
+            "priority": params.priority,
+            "email_type": params.email_type,
+            "date_from": params.date_from,
+            "date_to": params.date_to,
+            "min_score": params.min_score,
+            "rerank": params.rerank,
+            "hybrid": params.hybrid,
+            "topic_id": params.topic_id,
+            "cluster_id": params.cluster_id,
+            "expand_query": params.expand_query,
+        }
+        payload["model"] = get_settings().embedding_model
+        return json.dumps(payload, indent=2)
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -295,9 +316,11 @@ async def email_search_by_recipient(params: EmailSearchByRecipientInput) -> str:
     Returns:
         str: Formatted email results sent to the specified recipient.
     """
-    retriever = get_retriever()
-    results = retriever.search_filtered(query=params.query, to=params.recipient, top_k=params.top_k)
-    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    def _run():
+        retriever = get_retriever()
+        results = retriever.search_filtered(query=params.query, to=params.recipient, top_k=params.top_k)
+        return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -313,16 +336,18 @@ async def email_list_folders() -> str:
     Returns:
         str: Formatted list of folders with email counts.
     """
-    retriever = get_retriever()
-    folders = retriever.list_folders()
+    def _run():
+        retriever = get_retriever()
+        folders = retriever.list_folders()
 
-    if not folders:
-        return "No folders found in the archive."
+        if not folders:
+            return "No folders found in the archive."
 
-    lines = [f"Folders in the email archive ({len(folders)} total):\n"]
-    for entry in folders:
-        lines.append(f"  {entry['count']:>5} emails - {entry['folder']}")
-    return "\n".join(lines)
+        lines = [f"Folders in the email archive ({len(folders)} total):\n"]
+        for entry in folders:
+            lines.append(f"  {entry['count']:>5} emails - {entry['folder']}")
+        return "\n".join(lines)
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -353,23 +378,25 @@ async def email_ingest(params: EmailIngestInput) -> str:
     Returns:
         str: JSON summary of the ingestion run.
     """
-    from .ingest import ingest
+    def _run():
+        from .ingest import ingest
 
-    try:
-        stats = ingest(
-            olm_path=params.olm_path,
-            max_emails=params.max_emails,
-            dry_run=params.dry_run,
-            extract_attachments=params.extract_attachments,
-            extract_entities=params.extract_entities,
-            embed_images=params.embed_images,
-        )
-    except FileNotFoundError as exc:
-        return json.dumps({"error": str(exc)})
-    except Exception as exc:  # noqa: BLE001
-        return json.dumps({"error": str(exc)})
+        try:
+            stats = ingest(
+                olm_path=params.olm_path,
+                max_emails=params.max_emails,
+                dry_run=params.dry_run,
+                extract_attachments=params.extract_attachments,
+                extract_entities=params.extract_entities,
+                embed_images=params.embed_images,
+            )
+        except FileNotFoundError as exc:
+            return json.dumps({"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": str(exc)})
 
-    return json.dumps(stats, indent=2)
+        return json.dumps(stats, indent=2)
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -391,14 +418,16 @@ async def email_search_thread(params: EmailSearchThreadInput) -> str:
     Returns:
         str: Formatted thread of emails sorted chronologically.
     """
-    retriever = get_retriever()
-    results = retriever.search_by_thread(
-        conversation_id=params.conversation_id,
-        top_k=params.top_k,
-    )
-    if not results:
-        return "No emails found for this conversation thread."
-    return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    def _run():
+        retriever = get_retriever()
+        results = retriever.search_by_thread(
+            conversation_id=params.conversation_id,
+            top_k=params.top_k,
+        )
+        if not results:
+            return "No emails found for this conversation thread."
+        return sanitize_untrusted_text(retriever.format_results_for_claude(results))
+    return await _offload(_run)
 
 
 # ── Write Tool Annotations ────────────────────────────────────
@@ -423,6 +452,7 @@ class ToolDeps:
 
     get_retriever = staticmethod(get_retriever)
     get_email_db = staticmethod(get_email_db)
+    offload = staticmethod(_offload)
     tool_annotations = staticmethod(_tool_annotations)
     write_tool_annotations = staticmethod(_write_tool_annotations)
     build_search_kwargs = staticmethod(_build_search_kwargs)
@@ -448,25 +478,27 @@ async def email_model_info() -> str:
     Shows which embedding model is loaded, whether sparse and ColBERT features
     are available, the compute device, and batch size settings.
     """
-    retriever = get_retriever()
-    settings = get_settings()
+    def _run():
+        retriever = get_retriever()
+        settings = get_settings()
 
-    info: dict = {
-        "embedding_model": settings.embedding_model,
-        "device": str(getattr(retriever.embedder, "device", "unknown")),
-        "backend": type(getattr(retriever.embedder, "_model", retriever.embedder)).__name__,
-        "sparse_enabled": getattr(settings, "sparse_enabled", False),
-        "colbert_rerank_enabled": getattr(settings, "colbert_rerank_enabled", False),
-        "batch_size": getattr(settings, "embedding_batch_size", 0),
-    }
+        info: dict = {
+            "embedding_model": settings.embedding_model,
+            "device": str(getattr(retriever.embedder, "device", "unknown")),
+            "backend": type(getattr(retriever.embedder, "_model", retriever.embedder)).__name__,
+            "sparse_enabled": getattr(settings, "sparse_enabled", False),
+            "colbert_rerank_enabled": getattr(settings, "colbert_rerank_enabled", False),
+            "batch_size": getattr(settings, "embedding_batch_size", 0),
+        }
 
-    # Check multi-vector capabilities
-    multi = getattr(retriever, "embedder", None)
-    if multi:
-        info["has_sparse"] = getattr(multi, "has_sparse", False)
-        info["has_colbert"] = getattr(multi, "has_colbert", False)
+        # Check multi-vector capabilities
+        multi = getattr(retriever, "embedder", None)
+        if multi:
+            info["has_sparse"] = getattr(multi, "has_sparse", False)
+            info["has_colbert"] = getattr(multi, "has_colbert", False)
 
-    return json.dumps(info, indent=2)
+        return json.dumps(info, indent=2)
+    return await _offload(_run)
 
 
 @mcp.tool(
@@ -479,30 +511,32 @@ async def email_sparse_status() -> str:
     Shows whether sparse vectors are stored, the count, and whether
     the in-memory sparse index is built.
     """
-    settings = get_settings()
-    db = get_email_db()
+    def _run():
+        settings = get_settings()
+        db = get_email_db()
 
-    status: dict = {
-        "sparse_enabled": getattr(settings, "sparse_enabled", False),
-        "sparse_vector_count": 0,
-        "index_built": False,
-    }
+        status: dict = {
+            "sparse_enabled": getattr(settings, "sparse_enabled", False),
+            "sparse_vector_count": 0,
+            "index_built": False,
+        }
 
-    if db:
-        count_method = getattr(db, "sparse_vector_count", None)
-        if count_method:
-            status["sparse_vector_count"] = count_method()
+        if db:
+            count_method = getattr(db, "sparse_vector_count", None)
+            if count_method:
+                status["sparse_vector_count"] = count_method()
 
-    # Check if retriever has a built sparse index
-    try:
-        retriever = get_retriever()
-        sparse_idx = getattr(retriever, "_sparse_index", None)
-        if sparse_idx:
-            status["index_built"] = getattr(sparse_idx, "_built", False)
-    except Exception:  # noqa: BLE001
-        pass
+        # Check if retriever has a built sparse index
+        try:
+            retriever = get_retriever()
+            sparse_idx = getattr(retriever, "_sparse_index", None)
+            if sparse_idx:
+                status["index_built"] = getattr(sparse_idx, "_built", False)
+        except Exception:  # noqa: BLE001
+            pass
 
-    return json.dumps(status, indent=2)
+        return json.dumps(status, indent=2)
+    return await _offload(_run)
 
 
 # ── Entry Point ────────────────────────────────────────────────

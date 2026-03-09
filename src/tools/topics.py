@@ -26,13 +26,15 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of cluster summaries.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.cluster_summary()
-        if not results:
-            return json.dumps({"error": "No clusters available. Run ingestion with --cluster."})
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.cluster_summary()
+            if not results:
+                return json.dumps({"error": "No clusters available. Run ingestion with --cluster."})
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_find_similar", annotations=deps.tool_annotations("Find Similar Emails"))
     async def email_find_similar(params: FindSimilarInput) -> str:
@@ -47,15 +49,17 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of similar emails with similarity scores.
         """
-        if not params.uid and not params.query:
-            return json.dumps({"error": "Provide either uid or query."})
+        def _run():
+            if not params.uid and not params.query:
+                return json.dumps({"error": "Provide either uid or query."})
 
-        retriever = deps.get_retriever()
-        if params.query:
-            results = retriever.search(params.query, top_k=params.top_k)
-            return deps.sanitize(retriever.format_results_for_claude(results))
+            retriever = deps.get_retriever()
+            if params.query:
+                results = retriever.search(params.query, top_k=params.top_k)
+                return deps.sanitize(retriever.format_results_for_claude(results))
 
-        return json.dumps({"error": "UID-based similarity requires embeddings. Use query instead."})
+            return json.dumps({"error": "UID-based similarity requires embeddings. Use query instead."})
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_cluster_emails", annotations=deps.tool_annotations("Emails in Cluster"))
     async def email_cluster_emails(params: ClusterEmailsInput) -> str:
@@ -67,11 +71,13 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of emails in the cluster.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.emails_in_cluster(params.cluster_id, limit=params.limit)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.emails_in_cluster(params.cluster_id, limit=params.limit)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_topics", annotations=deps.tool_annotations("List Discovered Topics"))
     async def email_topics() -> str:
@@ -83,13 +89,15 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of {id, label, top_words, email_count} entries.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.topic_distribution()
-        if not results:
-            return json.dumps({"error": "No topics available. Run ingestion with --extract-keywords."})
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.topic_distribution()
+            if not results:
+                return json.dumps({"error": "No topics available. Run ingestion with --extract-keywords."})
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_search_by_topic", annotations=deps.tool_annotations("Search Emails by Topic"))
     async def email_search_by_topic(params: SearchByTopicInput) -> str:
@@ -101,11 +109,13 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of emails with topic weight.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.emails_by_topic(params.topic_id, limit=params.limit)
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.emails_by_topic(params.topic_id, limit=params.limit)
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_keywords", annotations=deps.tool_annotations("Top Keywords"))
     async def email_keywords(params: TopKeywordsInput) -> str:
@@ -119,13 +129,15 @@ def register(mcp, deps) -> None:
         Returns:
             JSON list of {keyword, avg_score, email_count} entries.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        results = db.top_keywords(sender=params.sender, folder=params.folder, limit=params.limit)
-        if not results:
-            return json.dumps({"error": "No keywords available. Run ingestion with --extract-keywords."})
-        return json.dumps(results, indent=2)
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            results = db.top_keywords(sender=params.sender, folder=params.folder, limit=params.limit)
+            if not results:
+                return json.dumps({"error": "No keywords available. Run ingestion with --extract-keywords."})
+            return json.dumps(results, indent=2)
+        return await deps.offload(_run)
 
     @mcp.tool(name="email_query_suggestions", annotations=deps.tool_annotations("Query Suggestions"))
     async def email_query_suggestions(params: QuerySuggestionsInput) -> str:
@@ -134,11 +146,13 @@ def register(mcp, deps) -> None:
         Returns categorized suggestions including top senders, folders,
         and entities to help discover relevant search queries.
         """
-        db = deps.get_email_db()
-        if not db:
-            return deps.DB_UNAVAILABLE
-        from ..query_suggestions import QuerySuggester
+        def _run():
+            db = deps.get_email_db()
+            if not db:
+                return deps.DB_UNAVAILABLE
+            from ..query_suggestions import QuerySuggester
 
-        suggester = QuerySuggester(db)
-        result = suggester.suggest(limit=params.limit)
-        return json.dumps(result, indent=2)
+            suggester = QuerySuggester(db)
+            result = suggester.suggest(limit=params.limit)
+            return json.dumps(result, indent=2)
+        return await deps.offload(_run)
