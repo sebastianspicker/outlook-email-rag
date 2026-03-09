@@ -1357,6 +1357,60 @@ class EmailDatabase:
         self.conn.commit()
         return cur.rowcount > 0
 
+    def update_v7_metadata(self, email: Email) -> bool:
+        """Update schema-v7 metadata fields for an existing email.
+
+        Populates categories, thread_topic, inference_classification,
+        is_calendar_message, references_json, and related tables
+        (email_categories, attachments). Returns True if updated.
+        """
+        categories_json = json.dumps(getattr(email, "categories", []) or [])
+        references_json = json.dumps(getattr(email, "references", []) or [])
+
+        cur = self.conn.cursor()
+        cur.execute(
+            """UPDATE emails
+               SET categories = ?, thread_topic = ?, inference_classification = ?,
+                   is_calendar_message = ?, references_json = ?
+             WHERE uid = ?""",
+            (
+                categories_json,
+                getattr(email, "thread_topic", "") or "",
+                getattr(email, "inference_classification", "") or "",
+                int(getattr(email, "is_calendar_message", False)),
+                references_json,
+                email.uid,
+            ),
+        )
+        if cur.rowcount == 0:
+            return False
+
+        # Upsert categories
+        for cat in getattr(email, "categories", []) or []:
+            cur.execute(
+                "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
+                (email.uid, cat),
+            )
+
+        # Upsert attachments
+        cur.execute("DELETE FROM attachments WHERE email_uid = ?", (email.uid,))
+        for att in getattr(email, "attachments", []) or []:
+            cur.execute(
+                "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
+                "VALUES(?,?,?,?,?,?)",
+                (
+                    email.uid,
+                    att.get("name", ""),
+                    att.get("mime_type", ""),
+                    att.get("size", 0),
+                    att.get("content_id", ""),
+                    int(bool(att.get("content_id"))),
+                ),
+            )
+
+        self.conn.commit()
+        return True
+
     def all_uids(self) -> set[str]:
         """Return all UIDs in the database."""
         rows = self.conn.execute("SELECT uid FROM emails").fetchall()

@@ -671,3 +671,73 @@ def test_ingest_inserts_exchange_entities(monkeypatch, tmp_path):
     assert "exchange_url" in entity_types
     assert "exchange_email" in entity_types
     db.close()
+
+
+def test_reingest_metadata_backfills_v7_fields(monkeypatch, tmp_path):
+    """reingest_metadata should update categories, thread_topic, etc. for existing emails."""
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+    from src.email_db import EmailDatabase
+    from src.parse_olm import Email
+
+    # First ingest: basic email without v7 metadata
+    basic_email = Email(
+        message_id="<msg1@test.com>",
+        subject="Test",
+        sender_name="Sender",
+        sender_email="sender@test.com",
+        to=["r@test.com"],
+        cc=[],
+        bcc=[],
+        date="2024-01-01T10:00:00",
+        body_text="Hello",
+        body_html="",
+        folder="Inbox",
+        has_attachments=False,
+    )
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: [basic_email])
+    monkeypatch.setattr(
+        ingest_mod, "chunk_email",
+        lambda e: [{"chunk_id": f"{e.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+    ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+
+    # Now simulate re-parse with v7 metadata
+    enriched_email = Email(
+        message_id="<msg1@test.com>",
+        subject="Test",
+        sender_name="Sender",
+        sender_email="sender@test.com",
+        to=["r@test.com"],
+        cc=[],
+        bcc=[],
+        date="2024-01-01T10:00:00",
+        body_text="Hello",
+        body_html="",
+        folder="Inbox",
+        has_attachments=False,
+        categories=["Important", "Project X"],
+        thread_topic="Test Thread",
+        is_calendar_message=True,
+        exchange_extracted_emails=["vendor@example.com"],
+    )
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: [enriched_email])
+
+    result = ingest_mod.reingest_metadata("mock.olm", sqlite_path=sqlite_file)
+    assert result["updated"] == 1
+    assert result["exchange_entities_inserted"] == 1
+
+    db = EmailDatabase(sqlite_file)
+    row = db.conn.execute(
+        "SELECT categories, thread_topic, is_calendar_message FROM emails"
+    ).fetchone()
+    assert "Important" in row["categories"]
+    assert row["thread_topic"] == "Test Thread"
+    assert row["is_calendar_message"] == 1
+
+    cats = db.conn.execute("SELECT category FROM email_categories").fetchall()
+    assert {r["category"] for r in cats} == {"Important", "Project X"}
+    db.close()

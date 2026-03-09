@@ -542,6 +542,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Re-parse OLM to backfill body_text/body_html. With --force, also updates subjects and sender names.",
     )
     parser.add_argument(
+        "--reingest-metadata",
+        action="store_true",
+        help="Re-parse OLM to backfill v7 metadata (categories, thread_topic, calendar, references, attachments).",
+    )
+    parser.add_argument(
         "--reembed",
         action="store_true",
         help="Re-chunk and re-embed all emails from corrected SQLite body text into ChromaDB.",
@@ -575,6 +580,11 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.reingest_bodies:
         result = reingest_bodies(args.olm_path, sqlite_path=args.sqlite_path, force=args.force)
+        print(result["message"])
+        raise SystemExit(0)
+
+    if args.reingest_metadata:
+        result = reingest_metadata(args.olm_path, sqlite_path=args.sqlite_path)
         print(result["message"])
         raise SystemExit(0)
 
@@ -689,6 +699,61 @@ def reingest_bodies(
         "updated": updated,
         "total_missing": len(missing_uids),
         "message": f"Updated {updated} of {len(missing_uids)} emails with body text.",
+    }
+
+
+def reingest_metadata(
+    olm_path: str,
+    sqlite_path: str | None = None,
+) -> dict:
+    """Backfill schema-v7 metadata for existing emails in SQLite.
+
+    Re-parses the OLM file and updates existing rows with categories,
+    thread_topic, inference_classification, is_calendar_message,
+    references_json, and populates email_categories + attachments tables.
+    Also inserts Exchange-extracted entities. Does not re-embed.
+    """
+    settings = get_settings()
+    from .email_db import EmailDatabase
+
+    resolved_sqlite = sqlite_path or settings.sqlite_path
+    email_db = EmailDatabase(resolved_sqlite)
+
+    all_uids = email_db.all_uids()
+    if not all_uids:
+        email_db.close()
+        return {"updated": 0, "total": 0, "message": "No emails in database."}
+
+    logger.info("Re-ingesting v7 metadata for %d emails", len(all_uids))
+    updated = 0
+    exchange_entities_inserted = 0
+
+    for email in parse_olm(olm_path):
+        if email.uid not in all_uids:
+            continue
+
+        if email_db.update_v7_metadata(email):
+            updated += 1
+
+        # Insert Exchange-extracted entities
+        exchange_entities = _exchange_entities_from_email(email)
+        if exchange_entities:
+            email_db.insert_entities_batch(email.uid, exchange_entities)
+            exchange_entities_inserted += len(exchange_entities)
+
+        if updated % 100 == 0 and updated > 0:
+            logger.info("Updated %d / %d emails", updated, len(all_uids))
+
+    email_db.close()
+    logger.info("Metadata re-ingestion complete: %d updated, %d exchange entities", updated, exchange_entities_inserted)
+    return {
+        "updated": updated,
+        "total": len(all_uids),
+        "exchange_entities_inserted": exchange_entities_inserted,
+        "message": (
+            f"Updated {updated} of {len(all_uids)} emails with v7 metadata. "
+            f"{exchange_entities_inserted} Exchange entities inserted."
+        ),
     }
 
 

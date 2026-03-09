@@ -515,6 +515,16 @@ class ReingestBodiesInput(StrictInput):
     )
 
 
+class ReingestMetadataInput(StrictInput):
+    """Input for backfilling v7 metadata from OLM."""
+
+    olm_path: str = Field(
+        ...,
+        description="Absolute path to the .olm file to re-read metadata from.",
+        min_length=1,
+    )
+
+
 class ReembedInput(StrictInput):
     """Input for re-embedding all emails from corrected SQLite body text."""
 

@@ -1,6 +1,6 @@
 # Email RAG — Instructions for Claude
 
-You have access to a local email archive via 67 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
+You have access to a local email archive via 71 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
 
 ## How to Search
 
@@ -16,6 +16,9 @@ Start broad, then narrow down:
 - `email_search_by_entity` — find emails mentioning an organization, URL, or phone number
 - `email_find_people` — search by person name mentioned in email bodies
 - `email_search_thread` — retrieve all emails in a conversation thread
+- `email_search_by_thread_topic` — find all emails sharing a thread topic (more reliable than conversation_id for some threads)
+- `email_list_categories` — list all Outlook categories with email counts
+- `email_browse_calendar` — browse calendar/meeting emails with date filtering
 
 ## How to Analyze
 
@@ -114,6 +117,7 @@ Every action is logged with SHA-256 hashes and timestamps:
 - `email_sparse_status` — show sparse vector index status
 - `email_ingest` — trigger ingestion of an .olm file from within Claude
 - `email_reingest_bodies` — backfill full body text for older emails
+- `email_reingest_metadata` — backfill v7 metadata (categories, thread topics, calendar, references, attachments)
 - `email_reembed` — rebuild ChromaDB embeddings from corrected body text in SQLite
 
 ## Tips

@@ -11,6 +11,7 @@ from ..mcp_models import (
     GetFullEmailInput,
     ReembedInput,
     ReingestBodiesInput,
+    ReingestMetadataInput,
 )
 
 
@@ -184,5 +185,33 @@ def register(mcp, deps) -> None:
         try:
             result = reembed(batch_size=params.batch_size)
             return json.dumps(result, indent=2)
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+    @mcp.tool(
+        name="email_reingest_metadata",
+        annotations=deps.tool_annotations("Re-ingest Metadata"),
+    )
+    async def email_reingest_metadata(params: ReingestMetadataInput) -> str:
+        """Backfill v7 metadata for existing emails from an OLM archive.
+
+        Re-parses the OLM file and updates existing SQLite rows with
+        categories, thread_topic, inference_classification,
+        is_calendar_message, references, and attachment details.
+        Also inserts Exchange-extracted entities. Does not re-embed.
+
+        Args:
+            params: olm_path (str) — path to the .olm file.
+
+        Returns:
+            JSON with update count and status message.
+        """
+        from ..ingest import reingest_metadata
+
+        try:
+            result = reingest_metadata(params.olm_path)
+            return json.dumps(result, indent=2)
+        except FileNotFoundError:
+            return json.dumps({"error": f"OLM file not found: {params.olm_path}"})
         except Exception as exc:
             return json.dumps({"error": str(exc)})
