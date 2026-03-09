@@ -367,9 +367,10 @@
     <strong>From:</strong> {{ item.sender_name }} &lt;{{ item.sender_email }}&gt;<br>
     <strong>Subject:</strong> {{ item.subject }}<br>
     {% if item.appendix_ref %}<strong>Source:</strong> Appendix <a href="#appendix-{{ item.appendix_ref }}">{{ item.appendix_ref }}</a><br>{% endif %}
+    {% if item.thread_topic %}<strong>Thread:</strong> {{ item.thread_topic }}<br>{% endif %}
     {% if item.created_at_formatted %}<strong>Collected:</strong> {{ item.created_at_formatted }}<br>{% endif %}
-    <strong>Email UID:</strong> <span style="font-family: monospace; font-size: 10px;">{{ item.email_uid }}</span><br>
-    <span class="item-notes"><strong>Notes:</strong> {{ item.notes }}</span>
+    <strong>Email UID:</strong> <span style="font-family: monospace; font-size: 10px;">{{ item.email_uid }}</span>
+    {% if item.has_notes %}<br><strong>Notes:</strong> {{ item.notes }}{% endif %}
   </div>
 </div>
 {% endfor %}
@@ -505,12 +506,6 @@ document.querySelectorAll('[data-verified]').forEach(function(el) {
   }
 });
 
-// Hide empty notes
-document.querySelectorAll('.item-notes').forEach(function(el) {
-  if (!el.textContent.trim() || el.textContent.trim() === 'None') {
-    el.parentNode.style.display = 'none';
-  }
-});
 </script>
 
 </body>

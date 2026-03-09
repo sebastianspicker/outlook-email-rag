@@ -491,3 +491,49 @@ def test_print_css_removes_scroll(db):
     html = result["html"]
 
     assert "max-height: none" in html
+
+
+# ── evidence details: thread topic, notes ────────────────────
+
+
+def test_thread_topic_shown(db):
+    """Thread topic should appear when populated on source email."""
+    db.conn.execute(
+        "UPDATE emails SET thread_topic = ? WHERE uid = ?",
+        ("Budget Discussion", "uid-1"),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Budget Discussion" in html
+    assert "<strong>Thread:</strong>" in html
+
+
+def test_notes_hidden_when_empty(db):
+    """Notes label should not appear for items with no notes."""
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    # Default fixtures have empty notes — "Notes:" should be absent
+    assert "<strong>Notes:</strong>" not in html
+
+
+def test_notes_shown_when_present(db):
+    """Notes text should appear when populated."""
+    # Update the first evidence item to have notes
+    db.conn.execute(
+        "UPDATE evidence_items SET notes = ? WHERE id = 1",
+        ("Important context about this incident.",),
+    )
+    db.conn.commit()
+
+    gen = DossierGenerator(db)
+    result = gen.generate()
+    html = result["html"]
+
+    assert "Important context about this incident." in html
+    assert "<strong>Notes:</strong>" in html

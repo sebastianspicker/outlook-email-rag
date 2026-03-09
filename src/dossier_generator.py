@@ -107,11 +107,24 @@ class DossierGenerator:
             else:
                 enriched_items.append(item)
 
-        # Number evidence items and format dates
+        # Number evidence items, format dates, enrich with thread topic and notes
         for idx, item in enumerate(enriched_items, 1):
             item["evidence_number"] = f"E-{idx}"
             item["date_formatted"] = _format_date(item.get("date"))
             item["created_at_formatted"] = _format_date(item.get("created_at"))
+            # Fetch thread_topic from source email
+            uid = item.get("email_uid")
+            if uid:
+                row = self._db.conn.execute(
+                    "SELECT thread_topic FROM emails WHERE uid = ?", (uid,),
+                ).fetchone()
+                item["thread_topic"] = (row["thread_topic"] if row and row["thread_topic"] else "")
+            else:
+                item["thread_topic"] = ""
+            # Clean up notes — hide "None" and empty strings
+            raw_notes = item.get("notes") or ""
+            item["notes"] = raw_notes if raw_notes and raw_notes != "None" else ""
+            item["has_notes"] = "1" if item["notes"] else ""
 
         # Gather source emails (deduplicated)
         email_uids = list({item.get("email_uid") for item in enriched_items if item.get("email_uid")})
