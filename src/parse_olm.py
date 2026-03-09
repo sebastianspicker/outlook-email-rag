@@ -811,23 +811,104 @@ def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
         for part in msg.walk():
             ct = part.get_content_type()
             if ct == "text/plain" and not body_text:
-                payload = part.get_content()
+                try:
+                    payload = part.get_content()
+                except Exception:
+                    continue
                 if isinstance(payload, str):
                     body_text = payload
             elif ct == "text/html" and not body_html:
-                payload = part.get_content()
+                try:
+                    payload = part.get_content()
+                except Exception:
+                    continue
                 if isinstance(payload, str):
                     body_html = payload
+            elif ct == "text/calendar" and not body_text:
+                try:
+                    payload = part.get_content()
+                except Exception:
+                    continue
+                if isinstance(payload, str):
+                    body_text = _calendar_to_text(payload)
     else:
         ct = msg.get_content_type()
-        payload = msg.get_content()
+        try:
+            payload = msg.get_content()
+        except Exception:
+            payload = None
         if isinstance(payload, str):
             if ct == "text/html":
                 body_html = payload
+            elif ct == "text/calendar":
+                body_text = _calendar_to_text(payload)
             else:
                 body_text = payload
 
+    # Fallback for multipart emails with only calendar or attachment parts
+    if not body_text and not body_html and msg.is_multipart():
+        content_types = {
+            part.get_content_type() for part in msg.walk() if not part.is_multipart()
+        }
+        if "text/calendar" in content_types:
+            body_text = "[Calendar meeting invitation]"
+        elif content_types:
+            body_text = "[Attachment-only email]"
+
     return body_text.strip(), body_html.strip()
+
+
+def _calendar_to_text(ical_text: str) -> str:
+    """Extract human-readable text from iCalendar (ICS) content.
+
+    No external dependency — uses simple regex patterns to extract
+    SUMMARY, DESCRIPTION, DTSTART, DTEND, LOCATION, ORGANIZER.
+    """
+    if not ical_text:
+        return ""
+    parts: list[str] = []
+
+    def _ical_field(name: str) -> str:
+        # Handle folded lines and parameterized field names (e.g. DTSTART;VALUE=DATE:...)
+        pattern = re.compile(
+            rf"^{re.escape(name)}(?:;[^:]*)?:(.+?)(?=\r?\n[^\t ]|\Z)",
+            re.MULTILINE | re.DOTALL,
+        )
+        m = pattern.search(ical_text)
+        if m:
+            # Unfold continuation lines
+            return re.sub(r"\r?\n[\t ]", "", m.group(1)).strip()
+        return ""
+
+    summary = _ical_field("SUMMARY")
+    if summary:
+        parts.append(f"Meeting: {summary}")
+
+    organizer = _ical_field("ORGANIZER")
+    if organizer:
+        # Strip mailto: prefix
+        organizer = re.sub(r"(?i)mailto:", "", organizer)
+        parts.append(f"Organizer: {organizer}")
+
+    location = _ical_field("LOCATION")
+    if location:
+        parts.append(f"Location: {location}")
+
+    dtstart = _ical_field("DTSTART")
+    if dtstart:
+        parts.append(f"Start: {dtstart}")
+
+    dtend = _ical_field("DTEND")
+    if dtend:
+        parts.append(f"End: {dtend}")
+
+    description = _ical_field("DESCRIPTION")
+    if description:
+        # Unescape common ICS escapes
+        description = description.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";")
+        parts.append(f"\n{description}")
+
+    return "\n".join(parts) if parts else "[Calendar event]"
 
 
 # ── MIME Encoded-Word Decoding ─────────────────────────────────

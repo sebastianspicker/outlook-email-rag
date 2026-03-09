@@ -981,6 +981,74 @@ def test_parse_attachment_content_id():
     assert parsed.attachments[1]["is_inline"] is False
 
 
+def test_calendar_body_extraction():
+    """Calendar-only emails should extract meeting details from ICS content."""
+    from src.parse_olm import _calendar_to_text
+
+    ical = (
+        "BEGIN:VCALENDAR\r\n"
+        "BEGIN:VEVENT\r\n"
+        "SUMMARY:Team Standup\r\n"
+        "DTSTART:20250115T100000Z\r\n"
+        "DTEND:20250115T103000Z\r\n"
+        "LOCATION:Conference Room A\r\n"
+        "ORGANIZER;CN=Alice:mailto:alice@example.com\r\n"
+        "DESCRIPTION:Daily standup meeting\\nBring your updates\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    text = _calendar_to_text(ical)
+    assert "Team Standup" in text
+    assert "Conference Room A" in text
+    assert "alice@example.com" in text
+    assert "Daily standup meeting" in text
+
+
+def test_calendar_body_from_source():
+    """text/calendar MIME parts should be converted to readable text."""
+    from src.parse_olm import _extract_body_from_source
+
+    raw_source = (
+        "From: alice@example.com\r\n"
+        "Content-Type: text/calendar; method=REQUEST\r\n"
+        "\r\n"
+        "BEGIN:VCALENDAR\r\n"
+        "BEGIN:VEVENT\r\n"
+        "SUMMARY:Sprint Review\r\n"
+        "DTSTART:20250120T140000Z\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    body_text, body_html = _extract_body_from_source(raw_source)
+    assert "Sprint Review" in body_text
+
+
+def test_multipart_calendar_fallback():
+    """Multipart email with only calendar parts should get placeholder body."""
+    from src.parse_olm import _extract_body_from_source
+
+    raw_source = (
+        "From: alice@example.com\r\n"
+        "Content-Type: multipart/mixed; boundary=boundary123\r\n"
+        "\r\n"
+        "--boundary123\r\n"
+        "Content-Type: application/ics\r\n"
+        "\r\n"
+        "binary calendar data\r\n"
+        "--boundary123--\r\n"
+    )
+    body_text, body_html = _extract_body_from_source(raw_source)
+    # Should get some fallback text, not empty
+    assert body_text or body_html
+
+
+def test_calendar_to_text_empty():
+    from src.parse_olm import _calendar_to_text
+
+    assert _calendar_to_text("") == ""
+    assert _calendar_to_text("BEGIN:VCALENDAR\nEND:VCALENDAR") == "[Calendar event]"
+
+
 def test_to_dict_includes_new_metadata_fields():
     email = Email(
         message_id="m1", subject="Test", sender_name="", sender_email="a@b.com",
