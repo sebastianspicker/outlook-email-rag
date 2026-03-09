@@ -137,8 +137,12 @@ def register(mcp, deps) -> None:
         full email bodies. Re-reads the OLM file and updates rows where
         body_text is NULL.
 
+        With force=True, re-parses ALL emails and overwrites existing body
+        text. Use after fixing the OLM parser to update truncated/dirty bodies.
+
         Args:
             params: olm_path (str) — path to the .olm file.
+                    force (bool) — overwrite all bodies, not just NULL ones.
 
         Returns:
             JSON with update count and status message.
@@ -146,7 +150,7 @@ def register(mcp, deps) -> None:
         from ..ingest import reingest_bodies
 
         try:
-            result = reingest_bodies(params.olm_path)
+            result = reingest_bodies(params.olm_path, force=params.force)
             return json.dumps(result, indent=2)
         except FileNotFoundError:
             return json.dumps({"error": f"OLM file not found: {params.olm_path}"})

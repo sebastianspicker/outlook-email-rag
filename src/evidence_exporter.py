@@ -14,6 +14,7 @@ from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from markupsafe import Markup, escape
 from jinja2 import Environment, FileSystemLoader
 
 if TYPE_CHECKING:
@@ -70,7 +71,12 @@ class EvidenceExporter:
             loader=FileSystemLoader(str(_TEMPLATE_DIR)),
             autoescape=True,
         )
-        self._env.filters["strip_html"] = strip_html_tags
+        def _strip_html_safe(value: str | None) -> Markup:
+            """Strip HTML tags then escape for safe Jinja2 rendering."""
+            cleaned = strip_html_tags(value)
+            return Markup(escape(cleaned))
+
+        self._env.filters["strip_html"] = _strip_html_safe
 
     # ── Public API ────────────────────────────────────────────
 

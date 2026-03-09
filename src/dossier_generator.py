@@ -150,14 +150,18 @@ class DossierGenerator:
             "dossier_hash": "",  # Placeholder, computed after render
         }
 
+        # Use a fixed placeholder for the hash, render, then compute the
+        # hash on the final document and replace the placeholder in-place.
+        # This ensures the embedded hash matches the actual file content.
+        hash_placeholder = "%%DOSSIER_SHA256_HASH%%"
+        template_vars["dossier_hash"] = hash_placeholder
         html = self._render_template(template_vars)
 
-        # Compute dossier hash
+        # Compute hash of the final document (with placeholder still in it)
+        # then replace placeholder → the hash itself is NOT part of the
+        # hashed content, which is standard for self-referencing hashes.
         dossier_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
-
-        # Re-render with actual hash
-        template_vars["dossier_hash"] = dossier_hash
-        html = self._render_template(template_vars)
+        html = html.replace(hash_placeholder, dossier_hash)
 
         return {
             "html": html,

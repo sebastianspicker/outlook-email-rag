@@ -489,6 +489,11 @@ class ReingestBodiesInput(StrictInput):
         description="Absolute path to the .olm file to re-read bodies from.",
         min_length=1,
     )
+    force: bool = Field(
+        default=False,
+        description="Force re-parse ALL emails, overwriting existing body text. "
+        "Use after fixing parser bugs to update previously truncated/dirty bodies.",
+    )
 
 
 # ── Export & Browse Inputs ──────────────────────────────────

@@ -26,8 +26,8 @@ from typing import IO, Generator
 from lxml import etree
 
 logger = logging.getLogger(__name__)
-MAX_XML_BYTES = 10_000_000
-MAX_XML_FILES = 200_000
+MAX_XML_BYTES = int(os.environ.get("OLM_MAX_XML_BYTES", 50_000_000))  # 50 MB default
+MAX_XML_FILES = int(os.environ.get("OLM_MAX_XML_FILES", 500_000))
 MAX_TOTAL_XML_BYTES = 20_000_000_000  # 20 GB — safe because parse_olm is a generator
 
 _NS_OUTLOOK = {"o": "http://schemas.microsoft.com/outlook/mac/2011"}
@@ -247,7 +247,8 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     """Parse a single email XML file from the OLM archive."""
     try:
         root = etree.fromstring(xml_bytes, parser=_new_xml_parser())
-    except etree.XMLSyntaxError:
+    except etree.XMLSyntaxError as exc:
+        logger.warning("Failed to parse email XML %s: %s", source_path, exc)
         return None
 
     ns = _detect_namespace(root)
@@ -297,7 +298,8 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     is_read = _find_text(root, "OPFMessageGetIsRead", ns).lower() != "false"
 
     # ── Fallback: parse OPFMessageCopySource headers ───────
-    raw_source = _find_text(root, "OPFMessageCopySource", ns)
+    raw_source_el = _find(root, "OPFMessageCopySource", ns)
+    raw_source = "".join(raw_source_el.itertext()) if raw_source_el is not None else ""
     if raw_source:
         if not message_id:
             message_id = _extract_header(raw_source, "Message-ID").strip("<>")
@@ -341,6 +343,10 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
 
     # ── Attachments ────────────────────────────────────────
     attachment_names, attachments = _extract_attachments(root, ns)
+
+    # Decode MIME encoded-words in subject and sender name
+    subject = _decode_mime_words(subject) if subject else ""
+    sender_name = _decode_mime_words(sender_name) if sender_name else ""
 
     # Default subject
     if not subject:
@@ -516,7 +522,8 @@ def _extract_attachment_contents(
 
     try:
         root = etree.fromstring(xml_bytes, parser=_new_xml_parser())
-    except etree.XMLSyntaxError:
+    except etree.XMLSyntaxError as exc:
+        logger.warning("Failed to parse attachment XML %s: %s", xml_path, exc)
         return []
 
     ns = _detect_namespace(root)
@@ -635,6 +642,28 @@ def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
     return body_text.strip(), body_html.strip()
 
 
+# ── MIME Encoded-Word Decoding ─────────────────────────────────
+
+
+def _decode_mime_words(value: str) -> str:
+    """Decode MIME encoded-word sequences like =?iso-8859-1?Q?...?=."""
+    if "=?" not in value:
+        return value
+    from email.header import decode_header
+
+    try:
+        parts = decode_header(value)
+    except Exception:
+        return value
+    decoded: list[str] = []
+    for part, charset in parts:
+        if isinstance(part, bytes):
+            decoded.append(part.decode(charset or "utf-8", errors="replace"))
+        else:
+            decoded.append(part)
+    return "".join(decoded)
+
+
 # ── RFC 2822 Header Extraction ────────────────────────────────
 
 
@@ -645,7 +674,7 @@ def _extract_header(source: str, header_name: str) -> str:
     Stops at the blank line separating headers from body.
     """
     pattern = re.compile(
-        rf"^{re.escape(header_name)}:\s*(.+?)(?=\n\S|\n\n|\Z)",
+        rf"^{re.escape(header_name)}:[ \t]*(.+?)(?=\n\S|\n\n|\Z)",
         re.IGNORECASE | re.MULTILINE | re.DOTALL,
     )
     match = pattern.search(source)
@@ -690,8 +719,10 @@ def _extract_name_from_header(source: str, header_name: str) -> str:
 
 
 def _parse_address_list(raw: str) -> list[str]:
-    """Parse a comma-separated list of addresses into email strings."""
+    """Parse a comma/semicolon-separated list of addresses into email strings."""
     raw = raw.replace("&lt;", "<").replace("&gt;", ">")
+    # Outlook uses both commas and semicolons as separators
+    raw = raw.replace(";", ",")
     addresses: list[str] = []
     for part in raw.split(","):
         part = part.strip()

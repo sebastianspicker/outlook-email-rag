@@ -1092,11 +1092,22 @@ class EmailDatabase:
         }
 
     def update_body_text(self, uid: str, body_text: str, body_html: str) -> bool:
-        """Update body_text and body_html for an existing email. Returns True if updated."""
-        cur = self.conn.execute(
-            "UPDATE emails SET body_text = ?, body_html = ? WHERE uid = ?",
-            (body_text, body_html, uid),
-        )
+        """Update body_text and body_html for an existing email.
+
+        Only overwrites body_html if the new value is non-empty, to avoid
+        losing good HTML content when the re-parsed email lacks an HTML body.
+        Returns True if updated.
+        """
+        if body_html:
+            cur = self.conn.execute(
+                "UPDATE emails SET body_text = ?, body_html = ? WHERE uid = ?",
+                (body_text, body_html, uid),
+            )
+        else:
+            cur = self.conn.execute(
+                "UPDATE emails SET body_text = ? WHERE uid = ?",
+                (body_text, uid),
+            )
         self.conn.commit()
         return cur.rowcount > 0
 
