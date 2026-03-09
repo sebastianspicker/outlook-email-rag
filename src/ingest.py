@@ -385,6 +385,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Re-parse OLM to backfill body_text/body_html. With --force, also updates subjects and sender names.",
     )
     parser.add_argument(
+        "--reembed",
+        action="store_true",
+        help="Re-chunk and re-embed all emails from corrected SQLite body text into ChromaDB.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-parse all emails (use with --reingest-bodies to overwrite existing body text and headers).",
@@ -413,6 +418,15 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.reingest_bodies:
         result = reingest_bodies(args.olm_path, sqlite_path=args.sqlite_path, force=args.force)
+        print(result["message"])
+        raise SystemExit(0)
+
+    if args.reembed:
+        result = reembed(
+            chromadb_path=args.chromadb_path,
+            sqlite_path=args.sqlite_path,
+            batch_size=args.batch_size,
+        )
         print(result["message"])
         raise SystemExit(0)
 
@@ -518,6 +532,83 @@ def reingest_bodies(
         "updated": updated,
         "total_missing": len(missing_uids),
         "message": f"Updated {updated} of {len(missing_uids)} emails with body text.",
+    }
+
+
+def reembed(
+    chromadb_path: str | None = None,
+    sqlite_path: str | None = None,
+    batch_size: int = 100,
+) -> dict:
+    """Re-chunk and re-embed all emails from corrected SQLite body text.
+
+    Reads body_text from SQLite (already fixed by --reingest-bodies --force),
+    re-chunks each email, and upserts new embeddings into ChromaDB.  Old chunks
+    whose IDs no longer exist after re-chunking are deleted.  Sparse vectors
+    are updated via INSERT OR REPLACE.
+
+    This is the recommended way to rebuild search quality after parser fixes
+    without a full reset-and-reingest cycle.
+    """
+    settings = get_settings()
+    from .chunker import chunk_email
+    from .email_db import EmailDatabase
+    from .embedder import EmailEmbedder
+
+    resolved_sqlite = sqlite_path or settings.sqlite_path
+    email_db = EmailDatabase(resolved_sqlite)
+    embedder = EmailEmbedder(chromadb_path=chromadb_path)
+
+    all_uids = email_db.all_uids()
+    if not all_uids:
+        email_db.close()
+        return {"reembedded": 0, "total": 0, "message": "No emails in database."}
+
+    logger.info("Re-embedding %d emails from SQLite body text", len(all_uids))
+
+    reembedded = 0
+    chunks_deleted = 0
+    chunks_added = 0
+    skipped_no_body = 0
+
+    for uid in sorted(all_uids):
+        email_dict = email_db.get_email_for_reembed(uid)
+        if email_dict is None:
+            skipped_no_body += 1
+            continue
+
+        # Delete old chunks (ChromaDB + sparse)
+        deleted = embedder.delete_chunks_by_uid(uid)
+        email_db.delete_sparse_by_uid(uid)
+        chunks_deleted += deleted
+
+        # Re-chunk and upsert
+        chunks = chunk_email(email_dict)
+        added = embedder.upsert_chunks(chunks, batch_size=batch_size)
+        chunks_added += added
+        reembedded += 1
+
+        if reembedded % 100 == 0:
+            logger.info(
+                "Re-embedded %d / %d emails (%d chunks)",
+                reembedded, len(all_uids), chunks_added,
+            )
+
+    email_db.close()
+    logger.info(
+        "Re-embedding complete: %d emails, %d chunks deleted, %d chunks added, %d skipped (no body)",
+        reembedded, chunks_deleted, chunks_added, skipped_no_body,
+    )
+    return {
+        "reembedded": reembedded,
+        "total": len(all_uids),
+        "chunks_deleted": chunks_deleted,
+        "chunks_added": chunks_added,
+        "skipped_no_body": skipped_no_body,
+        "message": (
+            f"Re-embedded {reembedded} of {len(all_uids)} emails "
+            f"({chunks_added} chunks). {skipped_no_body} skipped (no body text)."
+        ),
     }
 
 

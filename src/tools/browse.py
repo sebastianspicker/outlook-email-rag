@@ -9,6 +9,7 @@ from ..mcp_models import (
     ExportSingleInput,
     ExportThreadInput,
     GetFullEmailInput,
+    ReembedInput,
     ReingestBodiesInput,
 )
 
@@ -156,5 +157,31 @@ def register(mcp, deps) -> None:
             return json.dumps(result, indent=2)
         except FileNotFoundError:
             return json.dumps({"error": f"OLM file not found: {params.olm_path}"})
+        except Exception as exc:
+            return json.dumps({"error": str(exc)})
+
+    @mcp.tool(
+        name="email_reembed",
+        annotations=deps.tool_annotations("Re-embed All Emails"),
+    )
+    async def email_reembed(params: ReembedInput) -> str:
+        """Re-chunk and re-embed all emails from corrected SQLite body text.
+
+        Reads the (already fixed) body_text from SQLite, re-chunks each email,
+        and upserts new embeddings into ChromaDB.  Run this after
+        ``--reingest-bodies --force`` to rebuild search quality without a full
+        reset-and-reingest cycle.
+
+        Args:
+            params: batch_size (int) — chunks per embedding batch (default 100).
+
+        Returns:
+            JSON with re-embed count, chunk stats, and status message.
+        """
+        from ..ingest import reembed
+
+        try:
+            result = reembed(batch_size=params.batch_size)
+            return json.dumps(result, indent=2)
         except Exception as exc:
             return json.dumps({"error": str(exc)})

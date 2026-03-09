@@ -343,6 +343,68 @@ def test_update_headers_nonexistent_uid():
     db.close()
 
 
+# ── delete_sparse_by_uid ───────────────────────────────────────────
+
+
+def test_delete_sparse_by_uid():
+    import struct
+
+    db = EmailDatabase(":memory:")
+    email = _make_email()
+    db.insert_email(email)
+    # Insert fake sparse vectors for two chunks
+    for i in range(2):
+        cid = f"{email.uid}__{i}"
+        token_blob = struct.pack("<1i", 42)
+        weight_blob = struct.pack("<1f", 0.5)
+        db.conn.execute(
+            "INSERT INTO sparse_vectors(chunk_id, token_ids, weights, num_tokens) VALUES(?,?,?,?)",
+            (cid, token_blob, weight_blob, 1),
+        )
+    db.conn.commit()
+
+    deleted = db.delete_sparse_by_uid(email.uid)
+    assert deleted == 2
+    remaining = db.conn.execute("SELECT COUNT(*) FROM sparse_vectors").fetchone()[0]
+    assert remaining == 0
+    db.close()
+
+
+# ── get_email_for_reembed ─────────────────────────────────────────
+
+
+def test_get_email_for_reembed_returns_dict():
+    db = EmailDatabase(":memory:")
+    email = _make_email(body_text="Hello world")
+    db.insert_email(email)
+
+    result = db.get_email_for_reembed(email.uid)
+    assert result is not None
+    assert result["uid"] == email.uid
+    assert result["body"] == "Hello world"
+    assert result["subject"] == email.subject
+    assert result["email_type"] == "original"
+    db.close()
+
+
+def test_get_email_for_reembed_returns_none_for_empty_body():
+    db = EmailDatabase(":memory:")
+    email = _make_email(body_text="")
+    db.insert_email(email)
+    # Force body_text to empty in DB
+    db.conn.execute("UPDATE emails SET body_text = '' WHERE uid = ?", (email.uid,))
+    db.conn.commit()
+
+    assert db.get_email_for_reembed(email.uid) is None
+    db.close()
+
+
+def test_get_email_for_reembed_returns_none_for_missing_uid():
+    db = EmailDatabase(":memory:")
+    assert db.get_email_for_reembed("nonexistent") is None
+    db.close()
+
+
 # ── uids_missing_body ──────────────────────────────────────────────
 
 

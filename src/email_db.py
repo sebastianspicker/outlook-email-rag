@@ -1147,6 +1147,51 @@ class EmailDatabase:
         ).fetchall()
         return {r["uid"] for r in rows}
 
+    def delete_sparse_by_uid(self, uid: str) -> int:
+        """Delete sparse vectors for all chunks of an email. Returns count deleted."""
+        cur = self.conn.execute(
+            "DELETE FROM sparse_vectors WHERE chunk_id LIKE ?",
+            (f"{uid}__%",),
+        )
+        self.conn.commit()
+        return cur.rowcount
+
+    def get_email_for_reembed(self, uid: str) -> dict | None:
+        """Read an email from SQLite in the dict format expected by chunk_email().
+
+        Returns None if the UID is not found or body_text is empty.
+        """
+        full = self.get_email_full(uid)
+        if not full:
+            return None
+        body = full.get("body_text") or ""
+        if not body.strip():
+            return None
+        return {
+            "uid": full["uid"],
+            "message_id": full.get("message_id", ""),
+            "subject": full.get("subject", ""),
+            "sender_name": full.get("sender_name", ""),
+            "sender_email": full.get("sender_email", ""),
+            "to": full.get("to", []),
+            "cc": full.get("cc", []),
+            "bcc": full.get("bcc", []),
+            "date": full.get("date", ""),
+            "body": body,
+            "folder": full.get("folder", ""),
+            "has_attachments": bool(full.get("has_attachments") or full.get("attachment_count")),
+            "attachment_names": [],
+            "attachments": [],
+            "attachment_count": full.get("attachment_count", 0),
+            "conversation_id": full.get("conversation_id", ""),
+            "in_reply_to": full.get("in_reply_to", ""),
+            "references": [],
+            "priority": full.get("priority", 0),
+            "is_read": bool(full.get("is_read", True)),
+            "email_type": full.get("email_type", "original"),
+            "base_subject": full.get("base_subject", ""),
+        }
+
     # ------------------------------------------------------------------
     # Network queries (Phase 4)
     # ------------------------------------------------------------------

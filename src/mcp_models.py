@@ -496,6 +496,16 @@ class ReingestBodiesInput(StrictInput):
     )
 
 
+class ReembedInput(StrictInput):
+    """Input for re-embedding all emails from corrected SQLite body text."""
+
+    batch_size: int = Field(
+        default=100,
+        description="Number of chunks to embed per batch.",
+        ge=1,
+    )
+
+
 # ── Export & Browse Inputs ──────────────────────────────────
 
 

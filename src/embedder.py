@@ -143,6 +143,50 @@ class EmailEmbedder:
         except Exception:
             logger.debug("Failed to store sparse vectors", exc_info=True)
 
+    def delete_chunks_by_uid(self, uid: str) -> int:
+        """Delete all chunks for an email UID from ChromaDB. Returns count deleted."""
+        existing = self.get_existing_ids(refresh=False)
+        chunk_ids = [cid for cid in existing if cid.startswith(f"{uid}__")]
+        if not chunk_ids:
+            return 0
+        self.collection.delete(ids=chunk_ids)
+        existing.difference_update(chunk_ids)
+        return len(chunk_ids)
+
+    def upsert_chunks(
+        self,
+        chunks: list[EmailChunk],
+        batch_size: int = 100,
+    ) -> int:
+        """Re-embed and upsert chunks in ChromaDB (overwrites existing). Returns count."""
+        if not chunks:
+            return 0
+
+        added = 0
+        for batch in _iter_batches(chunks, batch_size):
+            texts = [chunk.text for chunk in batch]
+            ids = [chunk.chunk_id for chunk in batch]
+            metadatas = [chunk.metadata for chunk in batch]
+
+            result: MultiVectorResult = self.embedder.encode_all(texts)
+            embeddings = to_builtin_list(result.dense)
+
+            self.collection.upsert(
+                ids=ids,
+                embeddings=embeddings,
+                documents=texts,
+                metadatas=metadatas,
+            )
+
+            if result.sparse is not None:
+                self._store_sparse(ids, result.sparse)
+
+            existing = self.get_existing_ids(refresh=False)
+            existing.update(ids)
+            added += len(batch)
+
+        return added
+
     def count(self) -> int:
         """Total number of chunks in the database."""
         return self.collection.count()
