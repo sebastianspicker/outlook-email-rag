@@ -190,6 +190,14 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
         default=None,
         description="Filter by calendar/meeting messages. True = only calendar, False = exclude.",
     )
+    attachment_name: Optional[str] = Field(
+        default=None,
+        description="Filter by attachment filename (partial match). E.g., 'report' or 'budget.xlsx'.",
+    )
+    attachment_type: Optional[str] = Field(
+        default=None,
+        description="Filter by attachment file extension. E.g., 'pdf', 'docx', 'xlsx'.",
+    )
 
 
 class EmailSearchThreadInput(StrictInput):

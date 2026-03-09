@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import collections
 import logging
-import math
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +11,14 @@ from typing import Any
 from .config import resolve_runtime_settings
 from .formatting import estimate_tokens, format_context_block
 from .multi_vector_embedder import MultiVectorEmbedder
+from .result_filters import (
+    _deduplicate_by_email,
+    _email_dedup_key,
+    _json_safe,
+    _normalize_filter,
+    _safe_json_float,
+    apply_metadata_filters,
+)
 from .storage import get_chroma_client, get_collection, iter_collection_metadatas
 
 logger = logging.getLogger(__name__)
@@ -27,13 +34,6 @@ _MAX_FETCH_ATTEMPTS = 6
 
 # Query embedding cache — avoids re-encoding identical queries
 _QUERY_CACHE_MAX = 128
-
-
-def _normalize_filter(value: str | None) -> str | None:
-    """Strip whitespace and convert empty strings to None."""
-    if isinstance(value, str):
-        value = value.strip()
-    return value or None
 
 
 @dataclass
@@ -231,6 +231,8 @@ class EmailRetriever:
         expand_query: bool = False,
         category: str | None = None,
         is_calendar: bool | None = None,
+        attachment_name: str | None = None,
+        attachment_type: str | None = None,
     ) -> list[SearchResult]:
         """Search with optional filters.
 
@@ -266,6 +268,8 @@ class EmailRetriever:
         if email_type:
             email_type = email_type.lower()
         category = _normalize_filter(category)
+        attachment_name = _normalize_filter(attachment_name)
+        attachment_type = _normalize_filter(attachment_type)
 
         if top_k <= 0:
             raise ValueError("top_k must be a positive integer.")
@@ -279,6 +283,7 @@ class EmailRetriever:
             or to or bcc or has_attachments is not None or priority is not None
             or min_score is not None or email_type or allowed_uids is not None
             or category or is_calendar is not None
+            or attachment_name or attachment_type
         )
 
         # Determine effective rerank/hybrid from args or config
@@ -306,33 +311,16 @@ class EmailRetriever:
             raw_count = len(raw_candidates)
 
             if has_filters:
-                # Build string filter args: [(needle, metadata_keys, match_type), ...]
-                _sf = self._STRING_FILTERS
-                string_filters = [
-                    (sender,     *_sf["sender"]),
-                    (subject,    *_sf["subject"]),
-                    (folder,     *_sf["folder"]),
-                    (cc,         *_sf["cc"]),
-                    (to,         *_sf["to"]),
-                    (bcc,        *_sf["bcc"]),
-                    (email_type, *_sf["email_type"]),
-                ]
-                filtered = [
-                    result
-                    for result in raw_candidates
-                    if all(
-                        self._matches_string(result, needle, keys, mtype)
-                        for needle, keys, mtype in string_filters
-                    )
-                    and self._matches_date_from(result, date_from)
-                    and self._matches_date_to(result, date_to)
-                    and self._matches_has_attachments(result, has_attachments)
-                    and self._matches_priority(result, priority)
-                    and self._matches_min_score(result, min_score)
-                    and self._matches_allowed_uids(result, allowed_uids)
-                    and self._matches_category(result, category)
-                    and self._matches_is_calendar(result, is_calendar)
-                ]
+                filtered = apply_metadata_filters(
+                    raw_candidates,
+                    sender=sender, subject=subject, folder=folder,
+                    cc=cc, to=to, bcc=bcc, email_type=email_type,
+                    date_from=date_from, date_to=date_to,
+                    has_attachments=has_attachments, priority=priority,
+                    min_score=min_score, allowed_uids=allowed_uids,
+                    category=category, is_calendar=is_calendar,
+                    attachment_name=attachment_name, attachment_type=attachment_type,
+                )
             else:
                 filtered = raw_candidates
 
@@ -691,101 +679,6 @@ class EmailRetriever:
         self.client.delete_collection(self.collection_name)
         self.collection = get_collection(self.client, self.collection_name)
 
-    # ── Data-driven string filter matchers ──
-    # Each entry: (metadata_keys, match_type)
-    #   match_type "contains" → needle in value
-    #   match_type "exact"    → needle == value
-    _STRING_FILTERS: dict[str, tuple[tuple[str, ...], str]] = {
-        "sender":     (("sender_email", "sender_name"), "contains"),
-        "subject":    (("subject",), "contains"),
-        "folder":     (("folder",), "contains"),
-        "cc":         (("cc",), "contains"),
-        "to":         (("to",), "contains"),
-        "bcc":        (("bcc",), "contains"),
-        "email_type": (("email_type",), "exact"),
-    }
-
-    @staticmethod
-    def _matches_string(
-        result: SearchResult, needle: str | None,
-        metadata_keys: tuple[str, ...], match_type: str,
-    ) -> bool:
-        """Parameterized string matcher for metadata fields."""
-        if not needle:
-            return True
-        needle_lower = needle.lower()
-        for key in metadata_keys:
-            value = str(result.metadata.get(key, "") or "").lower()
-            if match_type == "contains" and needle_lower in value:
-                return True
-            if match_type == "exact" and needle_lower == value:
-                return True
-        return False
-
-    @staticmethod
-    def _matches_date_from(result: SearchResult, date_from: str | None) -> bool:
-        if not date_from:
-            return True
-        date_prefix = str(result.metadata.get("date", ""))[:10]
-        if not date_prefix:
-            return False
-        return date_prefix >= date_from
-
-    @staticmethod
-    def _matches_date_to(result: SearchResult, date_to: str | None) -> bool:
-        if not date_to:
-            return True
-        date_prefix = str(result.metadata.get("date", ""))[:10]
-        if not date_prefix:
-            return False
-        return date_prefix <= date_to
-
-    @staticmethod
-    def _matches_has_attachments(result: SearchResult, has_attachments: bool | None) -> bool:
-        if has_attachments is None:
-            return True
-        value = str(result.metadata.get("has_attachments", "False"))
-        return (value == "True") == has_attachments
-
-    @staticmethod
-    def _matches_priority(result: SearchResult, priority: int | None) -> bool:
-        if priority is None:
-            return True
-        try:
-            result_priority = int(result.metadata.get("priority", 0))
-        except (TypeError, ValueError):
-            return False
-        return result_priority >= priority
-
-    @staticmethod
-    def _matches_min_score(result: SearchResult, min_score: float | None) -> bool:
-        if min_score is None:
-            return True
-        return result.score >= min_score
-
-    @staticmethod
-    def _matches_allowed_uids(
-        result: SearchResult, allowed_uids: set[str] | None
-    ) -> bool:
-        if allowed_uids is None:
-            return True
-        uid = str(result.metadata.get("uid", "")).strip()
-        return uid in allowed_uids
-
-    @staticmethod
-    def _matches_category(result: SearchResult, category: str | None) -> bool:
-        if not category:
-            return True
-        value = str(result.metadata.get("categories", "") or "").lower()
-        return category.lower() in value
-
-    @staticmethod
-    def _matches_is_calendar(result: SearchResult, is_calendar: bool | None) -> bool:
-        if is_calendar is None:
-            return True
-        value = str(result.metadata.get("is_calendar_message", "False"))
-        return (value.lower() in ("true", "1")) == is_calendar
-
     def _resolve_semantic_uids(
         self,
         topic_id: int | None = None,
@@ -844,59 +737,5 @@ class EmailRetriever:
             logger.debug("Query expansion failed", exc_info=True)
             return query
 
-    @staticmethod
-    def _email_dedup_key(meta: dict[str, Any]) -> str | None:
-        uid = str(meta.get("uid", "")).strip()
-        if uid:
-            return f"uid:{uid}"
-
-        message_id = str(meta.get("message_id", "")).strip()
-        if message_id:
-            return f"msg:{message_id}"
-
-        sender_email = str(meta.get("sender_email", "")).strip().lower()
-        date_value = str(meta.get("date", "")).strip()[:10]
-        subject = str(meta.get("subject", "")).strip().lower()
-
-        if sender_email or date_value or subject:
-            return f"fallback:{sender_email}|{date_value}|{subject}"
-        return None
-
-def _deduplicate_by_email(results: list[SearchResult]) -> list[SearchResult]:
-    """Keep only the best-scoring chunk per unique email UID.
-
-    Results are already sorted by relevance (best first), so the first
-    occurrence of each UID is the best chunk.
-    """
-    seen_uids: set[str] = set()
-    deduped: list[SearchResult] = []
-    for result in results:
-        uid = str(result.metadata.get("uid", "")).strip()
-        if not uid:
-            deduped.append(result)
-            continue
-        if uid in seen_uids:
-            continue
-        seen_uids.add(uid)
-        deduped.append(result)
-    return deduped
-
-
-def _safe_json_float(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number):
-        return None
-    return round(number, 4)
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, float) and not math.isfinite(value):
-        return None
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(v) for v in value]
-    return value
+    # _email_dedup_key is used by list_senders — delegate to result_filters
+    _email_dedup_key = staticmethod(_email_dedup_key)

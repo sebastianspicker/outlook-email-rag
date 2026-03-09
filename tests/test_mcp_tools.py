@@ -383,6 +383,76 @@ async def test_offload_runs_sync_in_thread():
 
 
 @pytest.mark.asyncio
+async def test_email_search_structured_forwards_attachment_filters(monkeypatch):
+    from src import mcp_server
+
+    captured = {}
+
+    class DummyRetriever(_BasicRetriever):
+        def search_filtered(self, **kwargs):
+            captured.update(kwargs)
+            return []
+
+    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
+
+    params = mcp_server.EmailSearchStructuredInput(
+        query="hello",
+        attachment_name="report",
+        attachment_type="pdf",
+    )
+    payload = await mcp_server.email_search_structured(params)
+    data = json.loads(payload)
+
+    assert captured["attachment_name"] == "report"
+    assert captured["attachment_type"] == "pdf"
+    assert data["filters"]["attachment_name"] == "report"
+    assert data["filters"]["attachment_type"] == "pdf"
+
+
+class TestAttachmentFilters:
+    def test_matches_attachment_name_in_names(self):
+        from src.result_filters import _matches_attachment_name
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"attachment_names": "report.pdf, budget.xlsx"}, distance=0.1)
+        assert _matches_attachment_name(r, "report") is True
+        assert _matches_attachment_name(r, "slides") is False
+        assert _matches_attachment_name(r, None) is True
+
+    def test_matches_attachment_name_in_filename(self):
+        from src.result_filters import _matches_attachment_name
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"attachment_filename": "report.pdf"}, distance=0.1)
+        assert _matches_attachment_name(r, "report") is True
+
+    def test_matches_attachment_name_list_metadata(self):
+        from src.result_filters import _matches_attachment_name
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"attachment_names": ["report.pdf", "budget.xlsx"]}, distance=0.1)
+        assert _matches_attachment_name(r, "budget") is True
+
+    def test_matches_attachment_type(self):
+        from src.result_filters import _matches_attachment_type
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"attachment_names": "report.pdf, budget.xlsx"}, distance=0.1)
+        assert _matches_attachment_type(r, "pdf") is True
+        assert _matches_attachment_type(r, "xlsx") is True
+        assert _matches_attachment_type(r, "docx") is False
+        assert _matches_attachment_type(r, None) is True
+
+    def test_matches_attachment_type_with_dot(self):
+        from src.result_filters import _matches_attachment_type
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"attachment_filename": "slides.pptx"}, distance=0.1)
+        assert _matches_attachment_type(r, ".pptx") is True
+        assert _matches_attachment_type(r, "pptx") is True
+
+
+@pytest.mark.asyncio
 async def test_offload_with_args():
     """_offload passes positional and keyword arguments through."""
     from src.mcp_server import _offload
