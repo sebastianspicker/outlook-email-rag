@@ -1,88 +1,55 @@
-"""Email browsing, export, and re-ingestion MCP tools."""
+"""Email browsing and export MCP tools."""
 
 from __future__ import annotations
 
-import json
-
 from ..mcp_models import (
     BrowseInput,
-    ExportSingleInput,
-    ExportThreadInput,
+    EmailExportInput,
     GetFullEmailInput,
-    ReembedInput,
-    ReingestBodiesInput,
-    ReingestMetadataInput,
 )
+from .utils import json_error, json_response, run_with_db
 
 
 def register(mcp, deps) -> None:
     """Register browse and export tools."""
 
     @mcp.tool(
-        name="email_export_thread",
-        annotations=deps.tool_annotations("Export Thread as HTML/PDF"),
+        name="email_export",
+        annotations=deps.idempotent_write_annotations("Export Email as HTML/PDF"),
     )
-    async def email_export_thread(params: ExportThreadInput) -> str:
-        """Export a conversation thread as formatted HTML/PDF.
+    async def email_export(params: EmailExportInput) -> str:
+        """Export a single email or conversation thread as formatted HTML/PDF.
 
+        Provide exactly one of uid (single email) or conversation_id (thread).
         Produces a mail-client-style printout with full headers (From, To, CC,
-        BCC, Date, Subject), body text, and attachment listings for every email
-        in the thread.
+        BCC, Date, Subject), body text, and attachment listings.
 
         Args:
-            params: conversation_id, optional output_path, format ('html'/'pdf').
+            params: uid or conversation_id, optional output_path, format ('html'/'pdf').
 
         Returns:
             JSON with output_path/html content, email_count, and subject.
         """
-        def _run():
+        def _work(db):
             from ..email_exporter import EmailExporter
 
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
             exporter = EmailExporter(db)
-            if params.output_path:
-                result = exporter.export_thread_file(
-                    params.conversation_id, params.output_path, fmt=params.format
-                )
+            if params.uid:
+                if params.output_path:
+                    result = exporter.export_single_file(
+                        params.uid, params.output_path, fmt=params.format,
+                    )
+                else:
+                    result = exporter.export_single_html(params.uid)
             else:
-                result = exporter.export_thread_html(params.conversation_id)
-            return json.dumps(result, indent=2)
-
-        return await deps.offload(_run)
-
-    @mcp.tool(
-        name="email_export_single",
-        annotations=deps.tool_annotations("Export Single Email as HTML/PDF"),
-    )
-    async def email_export_single(params: ExportSingleInput) -> str:
-        """Export a single email as formatted HTML/PDF.
-
-        Args:
-            params: uid, optional output_path, format ('html'/'pdf').
-
-        Returns:
-            JSON with output_path/html content, email_count, and subject.
-        """
-        def _run():
-            from ..email_exporter import EmailExporter
-
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
-            exporter = EmailExporter(db)
-            if params.output_path:
-                result = exporter.export_single_file(
-                    params.uid, params.output_path, fmt=params.format
-                )
-            else:
-                result = exporter.export_single_html(params.uid)
-            return json.dumps(result, indent=2)
-
-        return await deps.offload(_run)
+                if params.output_path:
+                    result = exporter.export_thread_file(
+                        params.conversation_id, params.output_path, fmt=params.format,
+                    )
+                else:
+                    result = exporter.export_thread_html(params.conversation_id)
+            return json_response(result)
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_browse",
@@ -94,18 +61,11 @@ def register(mcp, deps) -> None:
         Use for reading through emails in order without a search query.
         For targeted searches, use email_search or email_search_structured instead.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
+        def _work(db):
             page = db.list_emails_paginated(
-                offset=params.offset,
-                limit=params.limit,
-                folder=params.folder,
-                sender=params.sender,
-                category=params.category,
-                sort_order=params.sort_order.upper(),
+                offset=params.offset, limit=params.limit,
+                folder=params.folder, sender=params.sender,
+                category=params.category, sort_order=params.sort_order.upper(),
             )
 
             if params.include_body:
@@ -114,9 +74,8 @@ def register(mcp, deps) -> None:
                     if full:
                         email["body_text"] = full.get("body_text", "")
 
-            return json.dumps(page, indent=2)
-
-        return await deps.offload(_run)
+            return json_response(page)
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_get_full",
@@ -128,111 +87,9 @@ def register(mcp, deps) -> None:
         Use after finding an email via search to read its full content.
         Required before evidence_add to extract exact quotes from the body text.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
+        def _work(db):
             email = db.get_email_full(params.uid)
             if not email:
-                return json.dumps({"error": f"Email not found: {params.uid}"})
-
-            return json.dumps(email, indent=2)
-
-        return await deps.offload(_run)
-
-    @mcp.tool(
-        name="email_reingest_bodies",
-        annotations=deps.tool_annotations("Re-ingest Email Bodies"),
-    )
-    async def email_reingest_bodies(params: ReingestBodiesInput) -> str:
-        """Re-parse OLM to backfill body_text/body_html for existing SQLite rows.
-
-        Required after upgrading from an older database that did not store
-        full email bodies. Re-reads the OLM file and updates rows where
-        body_text is NULL.
-
-        With force=True, re-parses ALL emails and overwrites existing body
-        text **and** header fields (subject, sender_name, sender_email).
-        Use after fixing the OLM parser to update truncated/dirty bodies
-        or to decode MIME encoded-word subjects stored from earlier ingestions.
-
-        Args:
-            params: olm_path (str) — path to the .olm file.
-                    force (bool) — overwrite all bodies and headers, not just NULL ones.
-
-        Returns:
-            JSON with update count and status message.
-        """
-        def _run():
-            from ..ingest import reingest_bodies
-
-            try:
-                result = reingest_bodies(params.olm_path, force=params.force)
-                return json.dumps(result, indent=2)
-            except FileNotFoundError:
-                return json.dumps({"error": f"OLM file not found: {params.olm_path}"})
-            except Exception as exc:
-                return json.dumps({"error": str(exc)})
-
-        return await deps.offload(_run)
-
-    @mcp.tool(
-        name="email_reembed",
-        annotations=deps.tool_annotations("Re-embed All Emails"),
-    )
-    async def email_reembed(params: ReembedInput) -> str:
-        """Re-chunk and re-embed all emails from corrected SQLite body text.
-
-        Reads the (already fixed) body_text from SQLite, re-chunks each email,
-        and upserts new embeddings into ChromaDB.  Run this after
-        ``--reingest-bodies --force`` to rebuild search quality without a full
-        reset-and-reingest cycle.
-
-        Args:
-            params: batch_size (int) — chunks per embedding batch (default 100).
-
-        Returns:
-            JSON with re-embed count, chunk stats, and status message.
-        """
-        def _run():
-            from ..ingest import reembed
-
-            try:
-                result = reembed(batch_size=params.batch_size)
-                return json.dumps(result, indent=2)
-            except Exception as exc:
-                return json.dumps({"error": str(exc)})
-
-        return await deps.offload(_run)
-
-    @mcp.tool(
-        name="email_reingest_metadata",
-        annotations=deps.tool_annotations("Re-ingest Metadata"),
-    )
-    async def email_reingest_metadata(params: ReingestMetadataInput) -> str:
-        """Backfill v7 metadata for existing emails from an OLM archive.
-
-        Re-parses the OLM file and updates existing SQLite rows with
-        categories, thread_topic, inference_classification,
-        is_calendar_message, references, and attachment details.
-        Also inserts Exchange-extracted entities. Does not re-embed.
-
-        Args:
-            params: olm_path (str) — path to the .olm file.
-
-        Returns:
-            JSON with update count and status message.
-        """
-        def _run():
-            from ..ingest import reingest_metadata
-
-            try:
-                result = reingest_metadata(params.olm_path)
-                return json.dumps(result, indent=2)
-            except FileNotFoundError:
-                return json.dumps({"error": f"OLM file not found: {params.olm_path}"})
-            except Exception as exc:
-                return json.dumps({"error": str(exc)})
-
-        return await deps.offload(_run)
+                return json_error(f"Email not found: {params.uid}")
+            return json_response(email)
+        return await run_with_db(deps, _work)

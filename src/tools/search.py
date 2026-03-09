@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from mcp.types import ToolAnnotations
-
 from ..mcp_models import (
     EmailIngestInput,
-    EmailSearchByDateInput,
-    EmailSearchByRecipientInput,
-    EmailSearchBySenderInput,
     EmailSearchInput,
     EmailSearchStructuredInput,
     EmailSearchThreadInput,
@@ -52,35 +47,6 @@ async def email_search(params: EmailSearchInput) -> str:
     def _run():
         r = _deps.get_retriever()
         return _deps.sanitize(r.format_results_for_claude(r.search(params.query, top_k=params.top_k)))
-    return await _deps.offload(_run)
-
-
-async def email_search_by_sender(params: EmailSearchBySenderInput) -> str:
-    """Search emails filtered by a specific sender.
-
-    Combines semantic search with sender filtering. The sender filter
-    supports partial matching on both name and email address.
-    """
-    def _run():
-        r = _deps.get_retriever()
-        results = r.search_filtered(query=params.query, sender=params.sender, top_k=params.top_k)
-        return _deps.sanitize(r.format_results_for_claude(results))
-    return await _deps.offload(_run)
-
-
-async def email_search_by_date(params: EmailSearchByDateInput) -> str:
-    """Search emails within a specific date range.
-
-    Combines semantic search with date filtering. Provide one or both of
-    date_from and date_to to narrow results to a time period.
-    """
-    def _run():
-        r = _deps.get_retriever()
-        results = r.search_filtered(
-            query=params.query, date_from=params.date_from,
-            date_to=params.date_to, top_k=params.top_k,
-        )
-        return _deps.sanitize(r.format_results_for_claude(results))
     return await _deps.offload(_run)
 
 
@@ -142,19 +108,6 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         }
         payload["model"] = get_settings().embedding_model
         return json_response(payload)
-    return await _deps.offload(_run)
-
-
-async def email_search_by_recipient(params: EmailSearchByRecipientInput) -> str:
-    """Search emails where a specific person is in the To field.
-
-    Combines semantic search with recipient filtering. The recipient filter
-    supports partial matching on the To address field.
-    """
-    def _run():
-        r = _deps.get_retriever()
-        results = r.search_filtered(query=params.query, to=params.recipient, top_k=params.top_k)
-        return _deps.sanitize(r.format_results_for_claude(results))
     return await _deps.offload(_run)
 
 
@@ -221,15 +174,9 @@ def register(mcp_instance, deps) -> None:
 
     ann = deps.tool_annotations
     mcp_instance.tool(name="email_search", annotations=ann("Search Emails"))(email_search)
-    mcp_instance.tool(name="email_search_by_sender", annotations=ann("Search Emails by Sender"))(email_search_by_sender)
-    mcp_instance.tool(name="email_search_by_date", annotations=ann("Search Emails by Date Range"))(email_search_by_date)
     mcp_instance.tool(name="email_list_senders", annotations=ann("List Email Senders"))(email_list_senders)
     mcp_instance.tool(name="email_stats", annotations=ann("Email Archive Stats"))(email_stats)
     mcp_instance.tool(name="email_search_structured", annotations=ann("Search Emails (Structured JSON)"))(email_search_structured)
-    mcp_instance.tool(name="email_search_by_recipient", annotations=ann("Search Emails by Recipient"))(email_search_by_recipient)
     mcp_instance.tool(name="email_list_folders", annotations=ann("List Email Folders"))(email_list_folders)
-    mcp_instance.tool(name="email_ingest", annotations=ToolAnnotations(
-        title="Ingest Email Archive", readOnlyHint=False,
-        destructiveHint=False, idempotentHint=True, openWorldHint=False,
-    ))(email_ingest)
+    mcp_instance.tool(name="email_ingest", annotations=deps.idempotent_write_annotations("Ingest Email Archive"))(email_ingest)
     mcp_instance.tool(name="email_search_thread", annotations=ann("Search Email Thread"))(email_search_thread)

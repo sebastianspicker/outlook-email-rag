@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import json
-
-from mcp.types import ToolAnnotations
-
 from ..mcp_models import (
     ExportNetworkInput,
     GenerateReportInput,
     WritingAnalysisInput,
 )
+from .utils import json_error, json_response, run_with_db
 
 
 def register(mcp, deps) -> None:
@@ -18,13 +15,7 @@ def register(mcp, deps) -> None:
 
     @mcp.tool(
         name="email_generate_report",
-        annotations=ToolAnnotations(
-            title="Generate Archive Report",
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
-        ),
+        annotations=deps.idempotent_write_annotations("Generate Archive Report"),
     )
     async def email_generate_report(params: GenerateReportInput) -> str:
         """Generate a self-contained HTML report of the email archive.
@@ -32,26 +23,16 @@ def register(mcp, deps) -> None:
         The report includes: archive overview, top senders, folder distribution,
         monthly volume, top entities, and response times.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
+        def _work(db):
             from ..report_generator import ReportGenerator
 
-            generator = ReportGenerator(db)
-            generator.generate(title=params.title, output_path=params.output_path)
-            return json.dumps({"status": "ok", "output_path": params.output_path})
-        return await deps.offload(_run)
+            ReportGenerator(db).generate(title=params.title, output_path=params.output_path)
+            return json_response({"status": "ok", "output_path": params.output_path})
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_export_network",
-        annotations=ToolAnnotations(
-            title="Export Communication Network",
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
-        ),
+        annotations=deps.idempotent_write_annotations("Export Communication Network"),
     )
     async def email_export_network(params: ExportNetworkInput) -> str:
         """Export the communication network as GraphML for external visualization.
@@ -59,16 +40,11 @@ def register(mcp, deps) -> None:
         The GraphML format is supported by Gephi, Cytoscape, and other
         network analysis tools.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
+        def _work(db):
             from ..network_analysis import CommunicationNetwork
 
-            net = CommunicationNetwork(db)
-            result = net.export_graphml(params.output_path)
-            return json.dumps(result, indent=2)
-        return await deps.offload(_run)
+            return json_response(CommunicationNetwork(db).export_graphml(params.output_path))
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_writing_analysis",
@@ -109,24 +85,20 @@ def register(mcp, deps) -> None:
             if params.sender:
                 texts = _get_sender_texts(params.sender, max_texts=params.limit)
                 if not texts:
-                    return json.dumps(
-                        {"error": f"No emails found for sender: {params.sender}"}
-                    )
+                    return json_error(f"No emails found for sender: {params.sender}")
                 profile = analyzer.analyze_sender_profile(texts, params.sender)
                 if not profile:
-                    return json.dumps(
-                        {"error": f"Not enough content to analyze: {params.sender}"}
-                    )
-                return json.dumps(profile, indent=2)
+                    return json_error(f"Not enough content to analyze: {params.sender}")
+                return json_response(profile)
 
             # Compare top senders
             if not db:
-                return json.dumps({"error": "SQLite database not available."})
+                return json_error("SQLite database not available.")
 
             try:
                 senders = db.top_senders(limit=params.limit)
             except Exception:
-                return json.dumps({"error": "Could not fetch sender list."})
+                return json_error("Could not fetch sender list.")
 
             profiles = []
             for s in senders:
@@ -138,5 +110,5 @@ def register(mcp, deps) -> None:
                 if profile:
                     profiles.append(profile)
 
-            return json.dumps(profiles, indent=2)
+            return json_response(profiles)
         return await deps.offload(_run)

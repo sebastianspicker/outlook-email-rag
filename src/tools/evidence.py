@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-from mcp.types import ToolAnnotations
-
 from ..mcp_models import (
     CustodyChainInput,
     DossierGenerateInput,
@@ -84,13 +82,7 @@ def register(mcp, deps) -> None:
 
     @mcp.tool(
         name="dossier_generate",
-        annotations=ToolAnnotations(
-            title="Generate Proof Dossier",
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
-        ),
+        annotations=deps.idempotent_write_annotations("Generate Proof Dossier"),
     )
     async def dossier_generate(params: DossierGenerateInput) -> str:
         """Generate a comprehensive proof dossier combining evidence, source emails,
@@ -255,7 +247,7 @@ def register(mcp, deps) -> None:
 
     @mcp.tool(
         name="evidence_export",
-        annotations=deps.tool_annotations("Export Evidence Report"),
+        annotations=deps.idempotent_write_annotations("Export Evidence Report"),
     )
     async def evidence_export(params: EvidenceExportInput) -> str:
         """Export the evidence collection as an HTML report or CSV file.
