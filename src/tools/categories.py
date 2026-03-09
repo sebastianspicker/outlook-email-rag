@@ -2,23 +2,8 @@
 
 from __future__ import annotations
 
-import json
-
-from pydantic import Field
-
-from ..mcp_models import DateRangeInput, PlainInput, StrictInput
-
-
-class ListCategoriesInput(PlainInput):
-    """Input for listing categories."""
-
-    limit: int = Field(default=50, ge=1, le=200, description="Max categories to return.")
-
-
-class BrowseCalendarInput(DateRangeInput, StrictInput):
-    """Input for browsing calendar/meeting emails."""
-
-    limit: int = Field(default=30, ge=1, le=100, description="Max emails to return.")
+from ..mcp_models import BrowseCalendarInput, ListCategoriesInput
+from .utils import json_response, run_with_db
 
 
 def register(mcp, deps) -> None:
@@ -34,20 +19,12 @@ def register(mcp, deps) -> None:
         Returns category names and how many emails are tagged with each.
         Useful for filtering searches by category.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
+        def _work(db):
             cats = db.category_counts()
             if not cats:
-                return json.dumps({"categories": [], "message": "No categories found."})
-
-            return json.dumps({
-                "categories": cats[:params.limit],
-                "total": len(cats),
-            }, indent=2)
-        return await deps.offload(_run)
+                return json_response({"categories": [], "message": "No categories found."})
+            return json_response({"categories": cats[:params.limit], "total": len(cats)})
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="email_browse_calendar",
@@ -58,18 +35,9 @@ def register(mcp, deps) -> None:
 
         Returns emails that were identified as calendar messages by Outlook.
         """
-        def _run():
-            db = deps.get_email_db()
-            if not db:
-                return deps.DB_UNAVAILABLE
-
+        def _work(db):
             emails = db.calendar_emails(
-                date_from=params.date_from,
-                date_to=params.date_to,
-                limit=params.limit,
+                date_from=params.date_from, date_to=params.date_to, limit=params.limit,
             )
-            return json.dumps({
-                "emails": emails,
-                "count": len(emails),
-            }, indent=2)
-        return await deps.offload(_run)
+            return json_response({"emails": emails, "count": len(emails)})
+        return await run_with_db(deps, _work)

@@ -82,58 +82,6 @@ class EmailSearchInput(StrictInput):
     )
 
 
-class EmailSearchBySenderInput(StrictInput):
-    """Input for sender-filtered email search."""
-
-    query: str = Field(
-        ...,
-        description="Natural language search query for the content you're looking for.",
-        min_length=1,
-        max_length=500,
-    )
-    sender: str = Field(
-        ...,
-        description=(
-            "Sender name or email to filter by (partial match supported). "
-            "E.g., 'john' matches 'john.doe@company.com' and 'John Smith'."
-        ),
-        min_length=1,
-    )
-    top_k: int = Field(default=10, ge=1, le=30)
-
-
-class EmailSearchByDateInput(DateRangeInput, StrictInput):
-    """Input for date-filtered email search."""
-
-    query: str = Field(
-        ...,
-        description="Natural language search query.",
-        min_length=1,
-        max_length=500,
-    )
-    top_k: int = Field(default=10, ge=1, le=30)
-
-
-class EmailSearchByRecipientInput(StrictInput):
-    """Input for recipient-filtered email search."""
-
-    query: str = Field(
-        ...,
-        description="Natural language search query for the content you're looking for.",
-        min_length=1,
-        max_length=500,
-    )
-    recipient: str = Field(
-        ...,
-        description=(
-            "Recipient name or email to filter by (partial match on To field). "
-            "E.g., 'alice' matches 'alice@company.com' in the To field."
-        ),
-        min_length=1,
-    )
-    top_k: int = Field(default=10, ge=1, le=30)
-
-
 class EmailSearchStructuredInput(DateRangeInput, StrictInput):
     """Structured JSON search input for automation clients."""
 
@@ -543,14 +491,62 @@ class ReembedInput(StrictInput):
     )
 
 
+# ── Category & Calendar Inputs ──────────────────────────────
+
+
+class ListCategoriesInput(PlainInput):
+    """Input for listing categories."""
+
+    limit: int = Field(default=50, ge=1, le=200, description="Max categories to return.")
+
+
+class BrowseCalendarInput(DateRangeInput, StrictInput):
+    """Input for browsing calendar/meeting emails."""
+
+    limit: int = Field(default=30, ge=1, le=100, description="Max emails to return.")
+
+
+# ── Attachment Inputs ──────────────────────────────────────
+
+
+class ListAttachmentsInput(StrictInput):
+    """Input for browsing attachments."""
+
+    filename: Optional[str] = Field(default=None, description="Filter by filename (partial match).")
+    extension: Optional[str] = Field(default=None, description="Filter by file extension, e.g. 'pdf'.")
+    mime_type: Optional[str] = Field(default=None, description="Filter by MIME type (partial match).")
+    sender: Optional[str] = Field(default=None, description="Filter by sender name or email (partial match).")
+    limit: int = Field(default=50, ge=1, le=200, description="Max attachments to return.")
+    offset: int = Field(default=0, ge=0, description="Pagination offset.")
+
+
+class SearchByAttachmentInput(StrictInput):
+    """Input for finding emails by attachment."""
+
+    filename: Optional[str] = Field(default=None, description="Match attachment filename (partial).")
+    extension: Optional[str] = Field(default=None, description="Match file extension, e.g. 'xlsx'.")
+    mime_type: Optional[str] = Field(default=None, description="Match MIME type (partial).")
+    limit: int = Field(default=50, ge=1, le=200, description="Max emails to return.")
+
+
 # ── Export & Browse Inputs ──────────────────────────────────
 
 
-class ExportThreadInput(StrictInput):
-    """Input for exporting a conversation thread as HTML/PDF."""
+class EmailExportInput(StrictInput):
+    """Input for exporting a single email or conversation thread as HTML/PDF.
 
-    conversation_id: str = Field(
-        ..., description="Conversation thread ID from search results.", min_length=1
+    Provide exactly one of ``uid`` (single email) or ``conversation_id`` (thread).
+    """
+
+    uid: Optional[str] = Field(
+        default=None,
+        description="Email UID to export a single email.",
+        min_length=1,
+    )
+    conversation_id: Optional[str] = Field(
+        default=None,
+        description="Conversation thread ID to export a full thread.",
+        min_length=1,
     )
     output_path: Optional[str] = Field(
         default=None,
@@ -561,21 +557,13 @@ class ExportThreadInput(StrictInput):
         description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
     )
 
-
-class ExportSingleInput(StrictInput):
-    """Input for exporting a single email as HTML/PDF."""
-
-    uid: str = Field(
-        ..., description="Email UID from search results.", min_length=1
-    )
-    output_path: Optional[str] = Field(
-        default=None,
-        description="File path to save export. If omitted, returns HTML string.",
-    )
-    format: str = Field(
-        default="html",
-        description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
-    )
+    @model_validator(mode="after")
+    def exactly_one_id(self):
+        if self.uid and self.conversation_id:
+            raise ValueError("Provide exactly one of uid or conversation_id, not both.")
+        if not self.uid and not self.conversation_id:
+            raise ValueError("Provide exactly one of uid or conversation_id.")
+        return self
 
 
 class BrowseInput(PlainInput):

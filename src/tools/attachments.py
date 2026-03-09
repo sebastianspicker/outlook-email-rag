@@ -2,32 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
-from pydantic import Field
-
-from ..mcp_models import StrictInput
+from ..mcp_models import ListAttachmentsInput, SearchByAttachmentInput
 from .utils import json_response, run_with_db
-
-
-class ListAttachmentsInput(StrictInput):
-    """Input for browsing attachments."""
-
-    filename: Optional[str] = Field(default=None, description="Filter by filename (partial match).")
-    extension: Optional[str] = Field(default=None, description="Filter by file extension, e.g. 'pdf'.")
-    mime_type: Optional[str] = Field(default=None, description="Filter by MIME type (partial match).")
-    sender: Optional[str] = Field(default=None, description="Filter by sender name or email (partial match).")
-    limit: int = Field(default=50, ge=1, le=200, description="Max attachments to return.")
-    offset: int = Field(default=0, ge=0, description="Pagination offset.")
-
-
-class SearchByAttachmentInput(StrictInput):
-    """Input for finding emails by attachment."""
-
-    filename: Optional[str] = Field(default=None, description="Match attachment filename (partial).")
-    extension: Optional[str] = Field(default=None, description="Match file extension, e.g. 'xlsx'.")
-    mime_type: Optional[str] = Field(default=None, description="Match MIME type (partial).")
-    limit: int = Field(default=50, ge=1, le=200, description="Max emails to return.")
 
 
 def register(mcp, deps) -> None:
