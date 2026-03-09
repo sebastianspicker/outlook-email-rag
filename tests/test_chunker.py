@@ -482,3 +482,77 @@ def test_chunk_includes_categories_in_text():
     text = chunks[0].text
     assert "Categories: Project X" in text
     assert "[Calendar/Meeting]" in text
+
+
+# ── Multilingual quoted content stripping ──────────────────────
+
+
+def test_strip_quoted_french_message_dorigine():
+    body = "Bonjour, merci pour votre réponse.\n\n----- Message d'origine -----\nDe: Marie\nObjet: Test\n\nTexte original."
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Bonjour, merci pour votre réponse."
+    assert count > 0
+
+
+def test_strip_quoted_spanish_mensaje_original():
+    body = "De acuerdo, procederé.\n\n--- Mensaje original ---\nDe: Carlos\nAsunto: Reunión\n\nTexto original."
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "De acuerdo, procederé."
+    assert count > 0
+
+
+def test_strip_quoted_dutch_oorspronkelijk_bericht():
+    body = "Bedankt voor de info.\n\n--- Oorspronkelijk bericht ---\nVan: Jan\nOnderwerp: Test\n\nOrigineel tekst."
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Bedankt voor de info."
+    assert count > 0
+
+
+def test_strip_quoted_italian_messaggio_originale():
+    body = "Grazie per la risposta.\n\n--- Messaggio originale ---\nDa: Marco\nOggetto: Test\n\nTesto originale."
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Grazie per la risposta."
+    assert count > 0
+
+
+def test_strip_quoted_french_wrote_pattern():
+    body = "Je suis d'accord.\n\nLe 01/01/2025, Marie a écrit:\n> Texte original"
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Je suis d'accord."
+    assert count > 0
+
+
+def test_strip_quoted_spanish_wrote_pattern():
+    body = "Estoy de acuerdo.\n\nEl 01/01/2025, Carlos escribió:\n> Texto original"
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Estoy de acuerdo."
+    assert count > 0
+
+
+def test_strip_quoted_dutch_wrote_pattern():
+    body = "Akkoord.\n\nOp 01-01-2025 om 10:00 schreef Jan:\n> Origineel bericht"
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Akkoord."
+    assert count > 0
+
+
+def test_strip_quoted_italian_wrote_pattern():
+    body = "Va bene.\n\nIl 01/01/2025, Marco ha scritto:\n> Testo originale"
+    original, count = strip_quoted_content(body, "reply")
+    assert original == "Va bene."
+    assert count > 0
+
+
+def test_strip_signature_cordialement():
+    body = "Veuillez trouver ci-joint le document.\n\nCordialement,\nMarie Dupont"
+    stripped, had_sig = strip_signature(body)
+    assert had_sig is True
+    assert "Veuillez trouver" in stripped
+    assert "Marie Dupont" not in stripped
+
+
+def test_strip_signature_atentamente():
+    body = "Le envío el informe.\n\nAtentamente,\nCarlos García"
+    stripped, had_sig = strip_signature(body)
+    assert had_sig is True
+    assert "informe" in stripped

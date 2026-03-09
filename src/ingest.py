@@ -42,9 +42,11 @@ class _EmbedPipeline:
         self._email_db = email_db
         self._entity_extractor_fn = entity_extractor_fn
         self._batch_size = batch_size
-        self._queue: queue.Queue = queue.Queue(maxsize=2)
+        self._queue: queue.Queue = queue.Queue(maxsize=4)
         self._thread: threading.Thread | None = None
         self._error: BaseException | None = None
+
+        self._detailed_timing = False
 
         # Accumulated stats (written only by consumer thread)
         self.chunks_added = 0
@@ -52,6 +54,9 @@ class _EmbedPipeline:
         self.batches_written = 0
         self.embed_seconds = 0.0
         self.write_seconds = 0.0
+        self.sqlite_seconds = 0.0
+        self.entity_seconds = 0.0
+        self.analytics_seconds = 0.0
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -100,6 +105,10 @@ class _EmbedPipeline:
         if self._email_db and emails:
             t0 = time.monotonic()
             self.sqlite_inserted += self._email_db.insert_emails_batch(emails)
+            dt_sqlite = time.monotonic() - t0
+            self.sqlite_seconds += dt_sqlite
+
+            t1 = time.monotonic()
             has_entities = False
             if self._entity_extractor_fn:
                 for em in emails:
@@ -120,8 +129,40 @@ class _EmbedPipeline:
             # Single commit for all entity inserts in this batch
             if has_entities:
                 self._email_db.conn.commit()
-            dt_write = time.monotonic() - t0
-            self.write_seconds += dt_write
+            dt_entity = time.monotonic() - t1
+            self.entity_seconds += dt_entity
+
+            # Compute language and sentiment analytics
+            t2 = time.monotonic()
+            self._compute_analytics(emails)
+            dt_analytics = time.monotonic() - t2
+            self.analytics_seconds += dt_analytics
+
+            self.write_seconds += dt_sqlite + dt_entity + dt_analytics
+
+
+    def _compute_analytics(self, emails: list) -> None:
+        """Detect language and sentiment for emails in this batch."""
+        if not self._email_db:
+            return
+        from .language_detector import detect_language
+        from .sentiment_analyzer import analyze as analyze_sentiment
+
+        rows = []
+        for em in emails:
+            body = em.clean_body
+            if not body or len(body.strip()) < 20:
+                continue
+            lang = detect_language(body)
+            sent = analyze_sentiment(body)
+            rows.append((
+                lang if lang != "unknown" else None,
+                sent.sentiment,
+                sent.score,
+                em.uid,
+            ))
+        if rows:
+            self._email_db.update_analytics_batch(rows)
 
 
 def _exchange_entities_from_email(email: Any) -> list[tuple[str, str, str]]:
@@ -135,22 +176,22 @@ def _exchange_entities_from_email(email: Any) -> list[tuple[str, str, str]]:
     for link in getattr(email, "exchange_extracted_links", []):
         url = link.get("url", "").strip()
         if url:
-            entities.append((url, "exchange_url", url.lower()))
+            entities.append((url, "url", url.lower()))
 
     for addr in getattr(email, "exchange_extracted_emails", []):
         addr = addr.strip()
         if addr:
-            entities.append((addr, "exchange_email", addr.lower()))
+            entities.append((addr, "email", addr.lower()))
 
     for contact in getattr(email, "exchange_extracted_contacts", []):
         contact = contact.strip()
         if contact:
-            entities.append((contact, "exchange_contact", contact.lower()))
+            entities.append((contact, "person", contact.lower()))
 
     for meeting in getattr(email, "exchange_extracted_meetings", []):
         subject = meeting.get("subject", "").strip()
         if subject:
-            entities.append((subject, "exchange_meeting", subject.lower()))
+            entities.append((subject, "event", subject.lower()))
 
     return entities
 
@@ -233,6 +274,7 @@ def ingest(
     extract_entities: bool = False,
     incremental: bool = False,
     embed_images: bool = False,
+    timing: bool = False,
 ) -> dict:
     """Parse an OLM file and ingest all emails into the vector database."""
     settings = get_settings()
@@ -273,6 +315,9 @@ def ingest(
         resolved_sqlite = sqlite_path or settings.sqlite_path
         email_db = EmailDatabase(resolved_sqlite)
         logger.info("SQLite DB: %s", resolved_sqlite)
+
+    if embedder and email_db:
+        embedder.set_sparse_db(email_db)
 
     # Entity extractor — prefer NLP (spaCy) if available, fall back to regex
     entity_extractor_fn = None
@@ -345,6 +390,8 @@ def ingest(
     total_skipped_incremental = 0
     pending_chunks: list = []
     pending_emails: list = []
+    parse_seconds = 0.0
+    queue_wait_seconds = 0.0
 
     # Set up pipeline for non-dry-run mode
     pipeline: _EmbedPipeline | None = None
@@ -361,12 +408,14 @@ def ingest(
     progress = _make_progress_bar(max_emails, desc="Ingesting", unit="email")
 
     for email in parse_olm(olm_path, extract_attachments=extract_attachments):
+        t_parse_start = time.monotonic()
         total_emails += 1
 
         # Incremental mode: skip already-ingested emails
         if incremental and email_db and email_db.email_exists(email.uid):
             total_skipped_incremental += 1
             progress.update(1)
+            parse_seconds += time.monotonic() - t_parse_start
             continue
         email_dict = email.to_dict()
         chunks = chunk_email(email_dict)
@@ -434,16 +483,22 @@ def ingest(
             logger.info("Reached --max-emails=%s; stopping parse loop.", max_emails)
             break
 
+        parse_seconds += time.monotonic() - t_parse_start
+
         if len(pending_chunks) >= batch_size or len(pending_emails) >= batch_size:
             if pipeline:
+                t_q = time.monotonic()
                 pipeline.submit(list(pending_chunks), list(pending_emails))
+                queue_wait_seconds += time.monotonic() - t_q
                 pending_chunks = []
                 pending_emails = []
 
     # Flush remaining
     if pipeline:
         if pending_chunks or pending_emails:
+            t_q = time.monotonic()
             pipeline.submit(list(pending_chunks), list(pending_emails))
+            queue_wait_seconds += time.monotonic() - t_q
         pipeline.finish()
 
     progress.close()
@@ -454,10 +509,16 @@ def ingest(
     total_batches_written = pipeline.batches_written if pipeline else 0
     sqlite_inserted = pipeline.sqlite_inserted if pipeline else 0
 
-    timing = {}
+    timing_dict: dict[str, float] = {}
     if pipeline:
-        timing["embed_seconds"] = round(pipeline.embed_seconds, 1)
-        timing["write_seconds"] = round(pipeline.write_seconds, 1)
+        timing_dict["embed_seconds"] = round(pipeline.embed_seconds, 1)
+        timing_dict["write_seconds"] = round(pipeline.write_seconds, 1)
+        if timing:
+            timing_dict["parse_seconds"] = round(parse_seconds, 1)
+            timing_dict["queue_wait_seconds"] = round(queue_wait_seconds, 1)
+            timing_dict["sqlite_seconds"] = round(pipeline.sqlite_seconds, 1)
+            timing_dict["entity_seconds"] = round(pipeline.entity_seconds, 1)
+            timing_dict["analytics_seconds"] = round(pipeline.analytics_seconds, 1)
 
     stats: dict[str, Any] = {
         "emails_parsed": total_emails,
@@ -475,7 +536,7 @@ def ingest(
         "extract_entities": extract_entities,
         "incremental": incremental,
         "elapsed_seconds": round(elapsed, 1),
-        "timing": timing,
+        "timing": timing_dict,
     }
 
     # Record ingestion completion
@@ -559,9 +620,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Re-chunk and re-embed all emails from corrected SQLite body text into ChromaDB.",
     )
     parser.add_argument(
+        "--reingest-analytics",
+        action="store_true",
+        help="Backfill language detection and sentiment analysis for emails missing analytics data.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-parse all emails (use with --reingest-bodies to overwrite existing body text and headers).",
+    )
+    parser.add_argument(
+        "--timing",
+        action="store_true",
+        help="Show per-phase timing breakdown (parse, embed, sqlite, entities, analytics).",
     )
     parser.add_argument("--yes", action="store_true", help="Confirm destructive operations.")
     parser.add_argument(
@@ -595,6 +666,11 @@ def main(argv: list[str] | None = None) -> None:
         print(result["message"])
         raise SystemExit(0)
 
+    if args.reingest_analytics:
+        result = reingest_analytics(sqlite_path=args.sqlite_path)
+        print(result["message"])
+        raise SystemExit(0)
+
     if args.reembed:
         result = reembed(
             chromadb_path=args.chromadb_path,
@@ -616,6 +692,7 @@ def main(argv: list[str] | None = None) -> None:
             extract_entities=args.extract_entities,
             incremental=args.incremental,
             embed_images=args.embed_images,
+            timing=args.timing,
         )
     except FileNotFoundError as exc:
         print(str(exc))
@@ -764,6 +841,57 @@ def reingest_metadata(
     }
 
 
+def reingest_analytics(
+    sqlite_path: str | None = None,
+) -> dict:
+    """Backfill detected_language and sentiment for emails missing analytics.
+
+    Scans all emails in SQLite where detected_language or sentiment_label
+    is NULL, runs the zero-dependency language detector and sentiment
+    analyzer, and batch-updates the rows.
+    """
+    settings = get_settings()
+    from .email_db import EmailDatabase
+    from .language_detector import detect_language
+    from .sentiment_analyzer import analyze as analyze_sentiment
+
+    resolved_sqlite = sqlite_path or settings.sqlite_path
+    email_db = EmailDatabase(resolved_sqlite)
+
+    rows = email_db.conn.execute(
+        "SELECT uid, body_text FROM emails "
+        "WHERE (detected_language IS NULL OR sentiment_label IS NULL) "
+        "AND body_text IS NOT NULL AND LENGTH(TRIM(body_text)) >= 20"
+    ).fetchall()
+
+    total_missing = len(rows)
+    if not total_missing:
+        email_db.close()
+        return {"updated": 0, "total_missing": 0, "message": "All emails already have analytics data."}
+
+    logger.info("Computing analytics for %d emails", total_missing)
+    batch: list[tuple[str | None, str | None, float | None, str]] = []
+    for row in rows:
+        body = row["body_text"]
+        lang = detect_language(body)
+        sent = analyze_sentiment(body)
+        batch.append((
+            lang if lang != "unknown" else None,
+            sent.sentiment,
+            sent.score,
+            row["uid"],
+        ))
+
+    updated = email_db.update_analytics_batch(batch)
+    email_db.close()
+    logger.info("Analytics backfill complete: %d updated", updated)
+    return {
+        "updated": updated,
+        "total_missing": total_missing,
+        "message": f"Computed language and sentiment for {updated} emails.",
+    }
+
+
 def reembed(
     chromadb_path: str | None = None,
     sqlite_path: str | None = None,
@@ -886,15 +1014,29 @@ def format_ingestion_summary(stats: dict[str, Any]) -> list[str]:
         if stats.get("skipped_incremental", 0) > 0:
             lines.append(f"Skipped (incremental): {stats['skipped_incremental']}")
 
-    timing = stats.get("timing")
-    if timing:
+    timing_info = stats.get("timing")
+    if timing_info:
         parts = []
-        if timing.get("embed_seconds"):
-            parts.append(f"embed={timing['embed_seconds']}s")
-        if timing.get("write_seconds"):
-            parts.append(f"write={timing['write_seconds']}s")
+        if timing_info.get("embed_seconds"):
+            parts.append(f"embed={timing_info['embed_seconds']}s")
+        if timing_info.get("write_seconds"):
+            parts.append(f"write={timing_info['write_seconds']}s")
         if parts:
             lines.append(f"Timing: {', '.join(parts)}")
+        # Detailed sub-phase breakdown (when --timing flag is used)
+        detail_keys = [
+            ("parse_seconds", "parse"),
+            ("queue_wait_seconds", "queue_wait"),
+            ("sqlite_seconds", "sqlite"),
+            ("entity_seconds", "entities"),
+            ("analytics_seconds", "analytics"),
+        ]
+        detail_parts = []
+        for key, label in detail_keys:
+            if key in timing_info:
+                detail_parts.append(f"{label}={timing_info[key]}s")
+        if detail_parts:
+            lines.append(f"  Breakdown: {', '.join(detail_parts)}")
 
     lines.append(f"Elapsed: {stats['elapsed_seconds']}s")
     return lines

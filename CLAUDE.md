@@ -1,16 +1,13 @@
 # Email RAG — Instructions for Claude
 
-You have access to a local email archive via 74 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
+You have access to a local email archive via 70 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
 
 ## How to Search
 
 Start broad, then narrow down:
 
 - `email_search` — general semantic search (start here for most queries)
-- `email_search_by_sender` — when the user names a specific person
-- `email_search_by_date` — when a time period matters
-- `email_search_by_recipient` — search by To field
-- `email_search_structured` — power search combining sender, subject, folder, CC, To, BCC, date range, attachment filter (has_attachments, attachment_name, attachment_type), priority, email type, topic, cluster, reranking, and hybrid search
+- `email_search_structured` — power search combining sender, subject, folder, CC, To, BCC, date range, attachment filter (has_attachments, attachment_name, attachment_type), priority, email type, topic, cluster, reranking, and hybrid search. Also replaces the old per-field convenience wrappers (search by sender, date, recipient).
 - `email_smart_search` — auto-detects intent (person names, topics) and routes accordingly
 - `email_find_similar` — find emails similar to a known one (great for pattern discovery)
 - `email_search_by_entity` — find emails mentioning an organization, URL, or phone number
@@ -88,8 +85,7 @@ Use these canonical categories:
 - `evidence_export` — export evidence collection as HTML report or CSV
 - `dossier_generate` — generate comprehensive proof dossier (HTML/PDF) combining evidence, source emails, relationship analysis, and chain of custody
 - `dossier_preview` — preview dossier contents before generating
-- `email_export_thread` — export a conversation thread as formatted HTML/PDF
-- `email_export_single` — export a single email as formatted HTML/PDF
+- `email_export` — export a single email (by uid) or conversation thread (by conversation_id) as formatted HTML/PDF
 - `email_generate_report` — generate an HTML overview report of the entire archive
 - `email_export_network` — export communication network as GraphML for Gephi/Cytoscape
 
@@ -121,11 +117,11 @@ Every action is logged with SHA-256 hashes and timestamps:
 
 ## Diagnostics
 
-- `email_model_info` — show embedding model, backend, device, sparse and ColBERT status
-- `email_sparse_status` — show sparse vector index status
+- `email_diagnostics` — show embedding model, backend, device, sparse/ColBERT status, and sparse index info
 - `email_ingest` — trigger ingestion of an .olm file from within Claude
 - `email_reingest_bodies` — backfill full body text for older emails
 - `email_reingest_metadata` — backfill v7 metadata (categories, thread topics, calendar, references, attachments)
+- `email_reingest_analytics` — backfill language detection and sentiment analysis for emails missing analytics data
 - `email_reembed` — rebuild ChromaDB embeddings from corrected body text in SQLite
 
 ## Tips

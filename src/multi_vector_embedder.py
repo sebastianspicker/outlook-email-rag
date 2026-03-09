@@ -9,12 +9,15 @@ is available, maximizing throughput on Apple Silicon MPS.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from .config import resolve_device, resolve_embedding_batch_size
+
+_MPS_CLEAR_INTERVAL = int(os.environ.get("MPS_CACHE_CLEAR_INTERVAL", "10"))
 
 logger = logging.getLogger(__name__)
 
@@ -54,16 +57,19 @@ class MultiVectorEmbedder:
         sparse_enabled: bool = False,
         colbert_enabled: bool = False,
         batch_size: int = 0,
+        mps_float16: bool = False,
     ) -> None:
         self.model_name = model_name
         self._device_spec = device
         self.device = resolve_device(device)
         self._sparse_enabled = sparse_enabled
         self._colbert_enabled = colbert_enabled
+        self._mps_float16 = mps_float16
         self.batch_size = batch_size or resolve_embedding_batch_size(self.device)
 
         self._model: Any = None
         self._backend: _BackendInfo | None = None
+        self._encode_count: int = 0
 
     @property
     def backend(self) -> _BackendInfo:
@@ -104,7 +110,10 @@ class MultiVectorEmbedder:
         except ImportError:
             return False
 
-        use_fp16 = self.device not in ("mps", "cpu")
+        if self.device == "mps":
+            use_fp16 = self._mps_float16
+        else:
+            use_fp16 = self.device not in ("cpu",)
         logger.info(
             "Loading BGEM3FlagModel: %s (device=%s, fp16=%s, sparse=%s, colbert=%s)",
             self.model_name,
@@ -232,8 +241,11 @@ class MultiVectorEmbedder:
         return MultiVectorResult(dense=_to_list_of_lists(vecs))
 
     def _mps_cache_clear(self) -> None:
-        """Free MPS GPU cache after batch processing."""
+        """Free MPS GPU cache periodically (every _MPS_CLEAR_INTERVAL encodes)."""
         if self.device == "mps":
+            self._encode_count += 1
+            if self._encode_count % _MPS_CLEAR_INTERVAL != 0:
+                return
             try:
                 import torch
 

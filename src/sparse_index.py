@@ -72,12 +72,17 @@ class SparseIndex:
         self,
         query_sparse: dict[int, float],
         top_k: int = 10,
+        normalize: bool = False,
     ) -> list[tuple[str, float]]:
         """Search using dot-product scoring against query sparse vector.
 
         Args:
             query_sparse: Query sparse vector {token_id: weight}.
             top_k: Number of results to return.
+            normalize: If True, divide each document score by its L2 norm
+                to reduce bias toward longer documents. Default False
+                because BGE-M3 learned sparse vectors are designed for
+                raw dot-product scoring.
 
         Returns:
             List of (chunk_id, score) tuples, highest score first.
@@ -98,6 +103,12 @@ class SparseIndex:
 
         if not scores:
             return []
+
+        if normalize:
+            for chunk_id in scores:
+                norm = self._doc_norms.get(chunk_id, 0.0)
+                if norm > 0:
+                    scores[chunk_id] /= norm
 
         # Sort by score descending
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)

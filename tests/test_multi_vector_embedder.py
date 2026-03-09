@@ -388,7 +388,8 @@ def test_mps_cache_clear_no_torch():
     """_mps_cache_clear should not raise even if torch is missing."""
     emb = MultiVectorEmbedder.__new__(MultiVectorEmbedder)
     emb.device = "mps"
-    # Should not raise
+    emb._encode_count = 9  # next call hits interval=10
+    # Should not raise even when torch import fails
     emb._mps_cache_clear()
 
 
@@ -396,4 +397,102 @@ def test_mps_cache_clear_skipped_on_cpu():
     """_mps_cache_clear should be a no-op on CPU."""
     emb = MultiVectorEmbedder.__new__(MultiVectorEmbedder)
     emb.device = "cpu"
+    emb._encode_count = 0
     emb._mps_cache_clear()  # Should not raise or do anything
+
+
+def test_mps_cache_clear_throttled(monkeypatch):
+    """Cache clear should only fire every N calls, not every call."""
+    import src.multi_vector_embedder as mve_mod
+
+    monkeypatch.setattr(mve_mod, "_MPS_CLEAR_INTERVAL", 3)
+
+    emb = MultiVectorEmbedder.__new__(MultiVectorEmbedder)
+    emb.device = "mps"
+    emb._encode_count = 0
+
+    clear_calls = []
+    mock_torch = MagicMock()
+    mock_torch.mps.empty_cache = lambda: clear_calls.append(1)
+
+    with patch.dict("sys.modules", {"torch": mock_torch}):
+        for _ in range(9):
+            emb._mps_cache_clear()
+
+    # Should fire at counts 3, 6, 9 → 3 times
+    assert len(clear_calls) == 3
+    assert emb._encode_count == 9
+
+
+def test_mps_cache_clear_every_call_with_interval_1(monkeypatch):
+    """MPS_CACHE_CLEAR_INTERVAL=1 should restore every-call behavior."""
+    import src.multi_vector_embedder as mve_mod
+
+    monkeypatch.setattr(mve_mod, "_MPS_CLEAR_INTERVAL", 1)
+
+    emb = MultiVectorEmbedder.__new__(MultiVectorEmbedder)
+    emb.device = "mps"
+    emb._encode_count = 0
+
+    clear_calls = []
+    mock_torch = MagicMock()
+    mock_torch.mps.empty_cache = lambda: clear_calls.append(1)
+
+    with patch.dict("sys.modules", {"torch": mock_torch}):
+        for _ in range(5):
+            emb._mps_cache_clear()
+
+    assert len(clear_calls) == 5
+
+
+# ── MPS float16 opt-in ────────────────────────────────────────────────
+
+
+def test_mps_float16_setting_from_env(monkeypatch):
+    monkeypatch.setenv("MPS_FLOAT16", "true")
+    from src.config import Settings
+
+    settings = Settings.from_env()
+    assert settings.mps_float16 is True
+
+
+@patch.dict("sys.modules", {"FlagEmbedding": MagicMock()})
+def test_mps_fp16_used_when_opted_in():
+    """When mps_float16=True, FlagModel should load with use_fp16=True on MPS."""
+    import sys
+
+    calls = []
+
+    class SpyFlagModel(FakeFlagModel):
+        def __init__(self, model_name, device="cpu", use_fp16=False):
+            super().__init__(model_name, device, use_fp16)
+            calls.append({"device": device, "use_fp16": use_fp16})
+
+    flag_mod = sys.modules["FlagEmbedding"]
+    flag_mod.BGEM3FlagModel = SpyFlagModel
+
+    emb = MultiVectorEmbedder(model_name="BAAI/bge-m3", device="cpu", mps_float16=True)
+    emb.device = "mps"
+    emb._load_model()
+    assert calls[0]["use_fp16"] is True
+
+
+@patch.dict("sys.modules", {"FlagEmbedding": MagicMock()})
+def test_mps_fp32_by_default():
+    """By default, MPS should use fp32 (mps_float16=False)."""
+    import sys
+
+    calls = []
+
+    class SpyFlagModel(FakeFlagModel):
+        def __init__(self, model_name, device="cpu", use_fp16=False):
+            super().__init__(model_name, device, use_fp16)
+            calls.append({"device": device, "use_fp16": use_fp16})
+
+    flag_mod = sys.modules["FlagEmbedding"]
+    flag_mod.BGEM3FlagModel = SpyFlagModel
+
+    emb = MultiVectorEmbedder(model_name="BAAI/bge-m3", device="cpu", mps_float16=False)
+    emb.device = "mps"
+    emb._load_model()
+    assert calls[0]["use_fp16"] is False

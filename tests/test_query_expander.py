@@ -158,12 +158,13 @@ class TestCLINewFlags:
 
 class TestRetrieverSemanticFilters:
     def test_matches_allowed_uids(self):
-        from src.retriever import EmailRetriever, SearchResult
+        from src.result_filters import _matches_allowed_uids
+        from src.retriever import SearchResult
 
         r = SearchResult(
             chunk_id="c1", text="test", metadata={"uid": "abc"}, distance=0.1
         )
-        assert EmailRetriever._matches_allowed_uids(r, None) is True
-        assert EmailRetriever._matches_allowed_uids(r, {"abc", "def"}) is True
-        assert EmailRetriever._matches_allowed_uids(r, {"xyz"}) is False
-        assert EmailRetriever._matches_allowed_uids(r, set()) is False
+        assert _matches_allowed_uids(r, None) is True
+        assert _matches_allowed_uids(r, {"abc", "def"}) is True
+        assert _matches_allowed_uids(r, {"xyz"}) is False
+        assert _matches_allowed_uids(r, set()) is False

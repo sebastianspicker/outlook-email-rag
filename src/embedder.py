@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Iterable
 
 from .chunker import EmailChunk
@@ -34,6 +35,8 @@ class EmailEmbedder:
 
         self._embedder: MultiVectorEmbedder | None = None
         self._existing_ids_cache: set[str] | None = None
+        self._sparse_db: object | None = None  # injected via set_sparse_db()
+        self._sparse_db_fallback: object | None = None  # lazy singleton
 
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
@@ -49,6 +52,7 @@ class EmailEmbedder:
                 sparse_enabled=self.settings.sparse_enabled,
                 colbert_enabled=self.settings.colbert_rerank_enabled,
                 batch_size=batch_size,
+                mps_float16=self.settings.mps_float16,
             )
         return self._embedder
 
@@ -57,10 +61,23 @@ class EmailEmbedder:
         """Backward-compatible alias for ``embedder``."""
         return self.embedder
 
+    def set_sparse_db(self, db: object) -> None:
+        """Inject a shared database connection for sparse vector storage."""
+        self._sparse_db = db
+
+    def close(self) -> None:
+        """Close any fallback database connection created by _store_sparse."""
+        if self._sparse_db_fallback is not None:
+            self._sparse_db_fallback.close()
+            self._sparse_db_fallback = None
+
     def get_existing_ids(self, refresh: bool = False) -> set[str]:
         """Get all known chunk IDs, cached for current embedder lifecycle."""
         if self._existing_ids_cache is None or refresh:
-            self._existing_ids_cache = set(iter_collection_ids(self.collection))
+            if self.collection.count() == 0:
+                self._existing_ids_cache = set()
+            else:
+                self._existing_ids_cache = set(iter_collection_ids(self.collection))
         return self._existing_ids_cache
 
     def add_chunks(
@@ -99,6 +116,7 @@ class EmailEmbedder:
             )
 
         added = 0
+        t_start = time.monotonic()
         for batch in _iter_batches(new_chunks, batch_size):
             texts = [chunk.text for chunk in batch]
             ids = [chunk.chunk_id for chunk in batch]
@@ -121,23 +139,33 @@ class EmailEmbedder:
             existing.update(ids)
             added += len(batch)
             if show_progress:
-                logger.info("Stored %s/%s chunks...", added, len(new_chunks))
+                elapsed = time.monotonic() - t_start
+                rate = added / elapsed if elapsed > 0 else 0
+                logger.info(
+                    "Stored %s/%s chunks (%.1fs, %.0f chunks/s)...",
+                    added, len(new_chunks), elapsed, rate,
+                )
 
         return added
 
     def _store_sparse(self, ids: list[str], sparse_vectors: list[dict[int, float]]) -> None:
         """Persist sparse vectors to SQLite alongside dense in ChromaDB."""
         try:
-            import os
+            # Use injected DB first, then lazy-cached fallback
+            db = self._sparse_db
+            if db is None:
+                if self._sparse_db_fallback is None:
+                    import os
 
-            sqlite_path = self.settings.sqlite_path
-            if not sqlite_path or not os.path.exists(sqlite_path):
-                logger.debug("Sparse vectors available but no SQLite DB found, skipping storage.")
-                return
+                    sqlite_path = self.settings.sqlite_path
+                    if not sqlite_path or not os.path.exists(sqlite_path):
+                        logger.debug("Sparse vectors available but no SQLite DB found, skipping storage.")
+                        return
 
-            from .email_db import EmailDatabase
+                    from .email_db import EmailDatabase
 
-            db = EmailDatabase(sqlite_path)
+                    self._sparse_db_fallback = EmailDatabase(sqlite_path)
+                db = self._sparse_db_fallback
             inserted = db.insert_sparse_batch(ids, sparse_vectors)
             logger.debug("Stored %d sparse vectors in SQLite.", inserted)
         except Exception:

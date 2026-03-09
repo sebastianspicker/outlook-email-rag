@@ -108,6 +108,9 @@ class _MockEmbedder:
         self._count += len(chunks)
         return len(chunks)
 
+    def set_sparse_db(self, db):
+        pass
+
 
 def test_ingest_populates_sqlite(monkeypatch, tmp_path):
     import src.ingest as ingest_mod
@@ -612,11 +615,11 @@ def test_exchange_entities_from_email_extracts_all_types():
     assert len(entities) == 4
 
     types = {e[1] for e in entities}
-    assert types == {"exchange_url", "exchange_email", "exchange_contact", "exchange_meeting"}
+    assert types == {"url", "email", "person", "event"}
 
     # Check normalized forms are lowercased
     for text, etype, norm in entities:
-        assert norm == text.lower() or norm == text.lower()
+        assert norm == text.lower()
 
 
 def test_exchange_entities_from_email_empty():
@@ -668,9 +671,182 @@ def test_ingest_inserts_exchange_entities(monkeypatch, tmp_path):
         "SELECT entity_text, entity_type FROM entities ORDER BY entity_type"
     ).fetchall()
     entity_types = {row["entity_type"] for row in entities}
-    assert "exchange_url" in entity_types
-    assert "exchange_email" in entity_types
+    assert "url" in entity_types
+    assert "email" in entity_types
     db.close()
+
+
+def test_reingest_analytics_backfills_missing(tmp_path):
+    """reingest_analytics() should populate language/sentiment for emails missing them."""
+    from src.email_db import EmailDatabase
+    from src.ingest import reingest_analytics
+
+    sqlite_file = str(tmp_path / "test.db")
+    db = EmailDatabase(sqlite_file)
+    from src.parse_olm import Email
+
+    email = Email(
+        message_id="<analytics1@test.com>",
+        subject="Test",
+        sender_name="Alice",
+        sender_email="alice@test.com",
+        to=["bob@test.com"],
+        cc=[],
+        bcc=[],
+        date="2024-01-01T10:00:00",
+        body_text="Thank you very much for the wonderful and excellent presentation. "
+                  "I really appreciate the great work done by the team.",
+        body_html="",
+        folder="Inbox",
+        has_attachments=False,
+    )
+    db.insert_email(email)
+
+    # Confirm analytics columns are NULL initially
+    row = db.conn.execute("SELECT detected_language, sentiment_label FROM emails").fetchone()
+    assert row["detected_language"] is None
+    assert row["sentiment_label"] is None
+    db.close()
+
+    result = reingest_analytics(sqlite_path=sqlite_file)
+    assert result["updated"] == 1
+
+    db2 = EmailDatabase(sqlite_file)
+    row = db2.conn.execute("SELECT detected_language, sentiment_label, sentiment_score FROM emails").fetchone()
+    assert row["detected_language"] == "en"
+    assert row["sentiment_label"] is not None
+    db2.close()
+
+
+def test_ingest_computes_language_and_sentiment(monkeypatch, tmp_path):
+    """Ingest should auto-populate detected_language and sentiment columns."""
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+    from src.email_db import EmailDatabase
+    from src.parse_olm import Email
+
+    email = Email(
+        message_id="<lang1@test.com>",
+        subject="Thank you",
+        sender_name="Alice",
+        sender_email="alice@test.com",
+        to=["bob@test.com"],
+        cc=[],
+        bcc=[],
+        date="2024-01-01T10:00:00",
+        body_text="Thank you so much for the excellent work on this project. "
+                  "I really appreciate your help and the team has been great.",
+        body_html="",
+        folder="Inbox",
+        has_attachments=False,
+    )
+
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: [email])
+    monkeypatch.setattr(
+        ingest_mod, "chunk_email",
+        lambda e: [{"chunk_id": f"{e.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+    ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+
+    db = EmailDatabase(sqlite_file)
+    row = db.conn.execute(
+        "SELECT detected_language, sentiment_label, sentiment_score FROM emails"
+    ).fetchone()
+    assert row["detected_language"] == "en"
+    assert row["sentiment_label"] == "positive"
+    assert row["sentiment_score"] > 0
+    db.close()
+
+
+def test_exchange_entities_dedup_with_regex(tmp_path):
+    """Exchange and regex entities with the same normalized_form and type should deduplicate."""
+    from src.email_db import EmailDatabase
+
+    db = EmailDatabase(":memory:")
+    email = _make_mock_email(1)
+    db.insert_email(email)
+
+    # Simulate regex extractor inserting a URL entity
+    db.insert_entities_batch(email.uid, [
+        ("https://example.com", "url", "https://example.com"),
+    ])
+
+    # Now simulate Exchange extractor inserting the same URL (canonical type)
+    from src.ingest import _exchange_entities_from_email
+    from src.parse_olm import Email
+
+    exchange_email = Email(
+        message_id="<msg1@test.com>",
+        subject="Test",
+        sender_name="Sender",
+        sender_email="sender@test.com",
+        to=["r@test.com"],
+        cc=[],
+        bcc=[],
+        date="2024-01-01T10:00:00",
+        body_text="Body",
+        body_html="",
+        folder="Inbox",
+        has_attachments=False,
+        exchange_extracted_links=[{"url": "https://example.com"}],
+    )
+    exchange_entities = _exchange_entities_from_email(exchange_email)
+    assert exchange_entities[0][1] == "url"  # canonical type, not exchange_url
+
+    # Insert exchange entities — ON CONFLICT should deduplicate
+    db.insert_entities_batch(email.uid, exchange_entities)
+
+    # Should be only ONE entity row for this URL
+    rows = db.conn.execute(
+        "SELECT * FROM entities WHERE normalized_form = 'https://example.com'"
+    ).fetchall()
+    assert len(rows) == 1
+    db.close()
+
+
+def test_timing_flag_parsed():
+    args = parse_args(["data/file.olm", "--timing"])
+    assert args.timing is True
+
+
+def test_timing_flag_default():
+    args = parse_args(["data/file.olm"])
+    assert args.timing is False
+
+
+def test_format_ingestion_summary_detailed_timing():
+    from src.ingest import format_ingestion_summary
+
+    lines = format_ingestion_summary(
+        {
+            "emails_parsed": 10,
+            "chunks_created": 20,
+            "chunks_added": 18,
+            "chunks_skipped": 2,
+            "batches_written": 3,
+            "total_in_db": 99,
+            "dry_run": False,
+            "elapsed_seconds": 10.5,
+            "timing": {
+                "embed_seconds": 6.0,
+                "write_seconds": 3.0,
+                "parse_seconds": 1.2,
+                "queue_wait_seconds": 0.3,
+                "sqlite_seconds": 1.5,
+                "entity_seconds": 0.8,
+                "analytics_seconds": 0.7,
+            },
+        }
+    )
+
+    assert any("Timing:" in line for line in lines)
+    assert any("Breakdown:" in line for line in lines)
+    assert any("parse=1.2s" in line for line in lines)
+    assert any("sqlite=1.5s" in line for line in lines)
+    assert any("analytics=0.7s" in line for line in lines)
 
 
 def test_reingest_metadata_backfills_v7_fields(monkeypatch, tmp_path):

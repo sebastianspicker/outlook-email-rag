@@ -32,17 +32,52 @@ class EmailChunk:
 MAX_CHUNK_CHARS = 1500
 OVERLAP_CHARS = 200
 
-# Quoted-content separators (English + German)
+# Quoted-content separators (multilingual)
 _QUOTED_SEPARATORS = [
+    # English
     re.compile(r"^-{3,}\s*Original Message\s*-{3,}", re.IGNORECASE | re.MULTILINE),
-    re.compile(r"^-{3,}\s*Urspr[uü]ngliche Nachricht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^-{3,}\s*Forwarded message\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # German
+    re.compile(r"^-{3,}\s*Urspr[uü]ngliche Nachricht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^-{3,}\s*Weitergeleitete Nachricht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # French
+    re.compile(r"^-{3,}\s*Message d'origine\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Message transf[ée]r[ée]\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Spanish
+    re.compile(r"^-{3,}\s*Mensaje original\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Mensaje reenviado\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Dutch
+    re.compile(r"^-{3,}\s*Oorspronkelijk bericht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Doorgestuurd bericht\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Italian
+    re.compile(r"^-{3,}\s*Messaggio originale\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Messaggio inoltrato\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Portuguese
+    re.compile(r"^-{3,}\s*Mensagem original\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Mensagem encaminhada\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Swedish
+    re.compile(r"^-{3,}\s*Ursprungligt meddelande\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Vidarebefordrat meddelande\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Danish
+    re.compile(r"^-{3,}\s*Oprindelig meddelelse\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Videresendt meddelelse\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    # Polish
+    re.compile(r"^-{3,}\s*Oryginalna wiadomo[śs][ćc]\s*-{3,}", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^-{3,}\s*Przekazana wiadomo[śs][ćc]\s*-{3,}", re.IGNORECASE | re.MULTILINE),
 ]
 
-# "On ... wrote:" / "Am ... schrieb:" markers
+# "On ... wrote:" / multilingual equivalents
 _WROTE_PATTERN = re.compile(
-    r"^(On .+ wrote|Am .+ schrieb[^:]*)\s*:\s*$",
+    r"^(On .+ wrote"             # English
+    r"|Am .+ schrieb[^:]*"       # German
+    r"|Le .+ a [ée]crit"         # French
+    r"|El .+ escribi[óo]"        # Spanish
+    r"|Op .+ schreef[^:]*"       # Dutch
+    r"|Il .+ ha scritto"         # Italian
+    r"|Em .+ escreveu"           # Portuguese
+    r"|Den .+ skrev"             # Swedish / Danish
+    r"|W dniu .+ napisa[łl]"     # Polish
+    r")\s*:\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -56,7 +91,9 @@ _SENT_FROM = re.compile(
 _CLOSING_PHRASES = re.compile(
     r"^(Best regards|Kind regards|Regards|Mit freundlichen Gr[uü][ßs]en|"
     r"Cheers|Thanks|Thank you|Viele Gr[uü][ßs]e|Liebe Gr[uü][ßs]e|Sincerely|"
-    r"Best wishes|Warm regards),?\s*$",
+    r"Best wishes|Warm regards|"
+    r"Cordialement|Atentamente|Cordiali saluti|Atenciosamente|"
+    r"Med v[aä]nliga h[aä]lsningar|Med venlig hilsen|Z powa[żz]aniem),?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 

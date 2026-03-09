@@ -2,7 +2,8 @@
 
 import pytest
 
-from src.retriever import EmailRetriever, SearchResult
+from src.result_filters import STRING_FILTERS, _matches_string
+from src.retriever import SearchResult
 from src.web_ui import build_active_filter_labels
 
 # --------------------------------------------------------------------------
@@ -21,8 +22,8 @@ def _make_result(email_type: str = "original", uid: str = "u1") -> SearchResult:
 
 def _match_email_type(result: SearchResult, needle: str | None) -> bool:
     """Helper: call _matches_string with the email_type filter config."""
-    keys, mtype = EmailRetriever._STRING_FILTERS["email_type"]
-    return EmailRetriever._matches_string(result, needle, keys, mtype)
+    keys, mtype = STRING_FILTERS["email_type"]
+    return _matches_string(result, needle, keys, mtype)
 
 
 def test_matches_email_type_exact():

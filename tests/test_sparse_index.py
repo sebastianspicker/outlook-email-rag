@@ -159,6 +159,39 @@ def test_sparse_index_build_from_db():
     assert results[0][0] == "doc_a"
 
 
+def test_sparse_search_with_normalization():
+    """A short focused doc should rank above a long diluted doc when normalize=True."""
+    vectors = {
+        # Short doc: focused on token 1
+        "short_focused": {1: 0.9},
+        # Long doc: mentions token 1 weakly among many tokens
+        "long_diluted": {1: 0.5, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5},
+    }
+    idx = SparseIndex()
+    idx.build_from_vectors(vectors)
+
+    # Without normalization, long_diluted has a lower raw score but still token 1
+    results_raw = idx.search({1: 1.0}, top_k=10, normalize=False)
+    # short_focused: 0.9, long_diluted: 0.5 — short wins in raw too
+    assert results_raw[0][0] == "short_focused"
+
+    # Now give long_diluted a higher raw dot product on query token
+    vectors2 = {
+        "short_focused": {1: 0.5},
+        "long_diluted": {1: 0.6, 2: 0.8, 3: 0.7, 4: 0.6, 5: 0.5},
+    }
+    idx2 = SparseIndex()
+    idx2.build_from_vectors(vectors2)
+
+    # Without normalization, long_diluted wins (0.6 > 0.5)
+    results_raw2 = idx2.search({1: 1.0}, top_k=10, normalize=False)
+    assert results_raw2[0][0] == "long_diluted"
+
+    # With normalization, short_focused should win (0.5/0.5=1.0 vs 0.6/1.3≈0.46)
+    results_norm = idx2.search({1: 1.0}, top_k=10, normalize=True)
+    assert results_norm[0][0] == "short_focused"
+
+
 def test_schema_v5_migration():
     """Ensure schema v5 creates sparse_vectors table."""
     db = EmailDatabase(":memory:")

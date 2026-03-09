@@ -224,32 +224,11 @@ def test_structured_input_rejects_invalid_dates():
         )
 
 
-def test_by_date_input_rejects_invalid_dates():
-    from src import mcp_server
-
-    with pytest.raises(ValidationError):
-        mcp_server.EmailSearchByDateInput(
-            query="hello",
-            date_from="2024/01/01",
-        )
-
-
 def test_structured_input_rejects_invalid_date_order():
     from src import mcp_server
 
     with pytest.raises(ValidationError):
         mcp_server.EmailSearchStructuredInput(
-            query="hello",
-            date_from="2024-05-01",
-            date_to="2024-01-01",
-        )
-
-
-def test_by_date_input_rejects_invalid_date_order():
-    from src import mcp_server
-
-    with pytest.raises(ValidationError):
-        mcp_server.EmailSearchByDateInput(
             query="hello",
             date_from="2024-05-01",
             date_to="2024-01-01",
@@ -311,8 +290,9 @@ def test_ingest_input_accepts_extract_attachments_and_embed_images():
 
 
 @pytest.mark.asyncio
-async def test_email_model_info_returns_json(monkeypatch):
-    from src import mcp_server
+async def test_email_diagnostics_returns_json(monkeypatch):
+    from src.mcp_server import ToolDeps, _offload
+    from src.tools import diagnostics
 
     class DummyEmbedder:
         device = "cpu"
@@ -322,34 +302,24 @@ async def test_email_model_info_returns_json(monkeypatch):
 
     class DummyRetriever:
         embedder = DummyEmbedder()
+        _sparse_index = None
 
-    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
+    class MockDeps:
+        get_retriever = staticmethod(lambda: DummyRetriever())
+        get_email_db = staticmethod(lambda: None)
+        offload = staticmethod(_offload)
 
-    output = await mcp_server.email_model_info()
+    monkeypatch.setattr(diagnostics, "_deps", MockDeps)
+
+    output = await diagnostics.email_diagnostics()
     data = json.loads(output)
 
     assert "embedding_model" in data
     assert "device" in data
     assert "sparse_enabled" in data
     assert "colbert_rerank_enabled" in data
-
-
-@pytest.mark.asyncio
-async def test_email_sparse_status_returns_json(monkeypatch):
-    from src import mcp_server
-
-    class DummyRetriever:
-        _sparse_index = None
-
-    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
-    monkeypatch.setattr(mcp_server, "get_email_db", lambda: None)
-
-    output = await mcp_server.email_sparse_status()
-    data = json.loads(output)
-
-    assert "sparse_enabled" in data
     assert "sparse_vector_count" in data
-    assert "index_built" in data
+    assert "sparse_index_built" in data
 
 
 def test_all_tool_modules_importable():

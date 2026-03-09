@@ -1,3 +1,4 @@
+import os
 
 
 def test_settings_defaults(monkeypatch):
@@ -142,6 +143,45 @@ def test_resolve_device_auto_no_torch(monkeypatch):
     from src.config import resolve_device
 
     assert resolve_device("auto") == "cpu"
+
+
+def test_get_system_memory_gb_returns_positive():
+    from src.config import _get_system_memory_gb
+
+    mem = _get_system_memory_gb()
+    assert mem > 0
+
+
+def test_resolve_embedding_batch_size_mps_memory_tiers(monkeypatch):
+    from src import config
+
+    monkeypatch.setattr(config, "resolve_device", lambda _d: "mps")
+
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 8.0)
+    assert config.resolve_embedding_batch_size("mps") == 16
+
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 16.0)
+    assert config.resolve_embedding_batch_size("mps") == 32
+
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 36.0)
+    assert config.resolve_embedding_batch_size("mps") == 48
+
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 64.0)
+    assert config.resolve_embedding_batch_size("mps") == 48
+
+
+def test_resolve_embedding_batch_size_mps_detection_fallback(monkeypatch):
+    """When os.sysconf raises, _get_system_memory_gb returns 8.0 → MPS batch = 16."""
+    from src import config
+
+    def _raise(*_a):
+        raise ValueError("unsupported")
+
+    monkeypatch.setattr(os, "sysconf", _raise)
+    monkeypatch.setattr(config, "resolve_device", lambda _d: "mps")
+
+    assert config._get_system_memory_gb() == 8.0
+    assert config.resolve_embedding_batch_size("mps") == 16
 
 
 def test_iter_collection_ids_returns_all_pages():

@@ -8,6 +8,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 
+def _get_system_memory_gb() -> float:
+    """Return total system memory in GB. Falls back to 8.0 on error."""
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        return (pages * page_size) / (1024**3)
+    except (ValueError, OSError, AttributeError):
+        return 8.0
+
+
 def resolve_device(device: str = "auto") -> str:
     """Resolve device string to the best available compute backend.
 
@@ -37,10 +47,19 @@ def resolve_device(device: str = "auto") -> str:
 def resolve_embedding_batch_size(device: str = "auto") -> int:
     """Return a sensible default embedding batch size for the device.
 
-    MPS needs smaller batches to avoid memory pressure on unified memory.
+    MPS batch size is auto-tuned based on available system memory.
+    BGE-M3 weights are ~1.2 GB; larger batches use more activation memory
+    but remain well within headroom on 16 GB+ unified memory machines.
     """
     resolved = device if device != "auto" else resolve_device(device)
     if resolved == "mps":
+        mem_gb = _get_system_memory_gb()
+        if mem_gb >= 36:
+            return 48
+        if mem_gb >= 16:
+            return 32
+        if mem_gb >= 8:
+            return 16
         return 8
     if resolved == "cuda":
         return 32
@@ -64,6 +83,7 @@ class Settings:
     sparse_enabled: bool = False
     colbert_rerank_enabled: bool = False
     embedding_batch_size: int = 0  # 0 = auto-detect via resolve_embedding_batch_size
+    mps_float16: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -82,6 +102,7 @@ class Settings:
             sparse_enabled=os.getenv("SPARSE_ENABLED", "").lower() in ("1", "true", "yes"),
             colbert_rerank_enabled=os.getenv("COLBERT_RERANK_ENABLED", "").lower() in ("1", "true", "yes"),
             embedding_batch_size=_int_from_env("EMBEDDING_BATCH_SIZE", cls.embedding_batch_size, min_value=0, max_value=256),
+            mps_float16=os.getenv("MPS_FLOAT16", "").lower() in ("1", "true", "yes"),
         )
 
 
@@ -113,6 +134,7 @@ def resolve_runtime_settings(
         sparse_enabled=base.sparse_enabled,
         colbert_rerank_enabled=base.colbert_rerank_enabled,
         embedding_batch_size=base.embedding_batch_size,
+        mps_float16=base.mps_float16,
     )
 
 
