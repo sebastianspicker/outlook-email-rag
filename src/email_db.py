@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
 import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from .db_analytics import AnalyticsMixin
+from .db_custody import CustodyMixin
+from .db_entities import EntityMixin
+from .db_evidence import EvidenceMixin
 
 if TYPE_CHECKING:
     from src.parse_olm import Email
@@ -217,6 +221,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_uid ON attachments(email_uid);
 CREATE INDEX IF NOT EXISTS idx_attachments_inline ON attachments(is_inline);
+CREATE INDEX IF NOT EXISTS idx_attachments_name ON attachments(name);
 """
 
 _CATEGORIES_SCHEMA_SQL = """\
@@ -247,8 +252,15 @@ def _parse_address(raw: str) -> tuple[str, str]:
     return (raw, "")
 
 
-class EmailDatabase:
-    """SQLite-backed relational store for email metadata."""
+class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin):
+    """SQLite-backed relational store for email metadata.
+
+    Method groups are organized into mixins for maintainability:
+    - ``CustodyMixin`` — chain-of-custody audit trail and ingestion tracking
+    - ``EvidenceMixin`` — evidence item CRUD, verification, search
+    - ``EntityMixin`` — NLP entity insert, search, timeline
+    - ``AnalyticsMixin`` — clusters, topics, keywords, contacts, relationships
+    """
 
     def __init__(self, db_path: str = ":memory:") -> None:
         self._db_path = db_path
@@ -743,330 +755,6 @@ class EmailDatabase:
         )
 
     # ------------------------------------------------------------------
-    # Entity operations (Phase 6)
-    # ------------------------------------------------------------------
-
-    def insert_entities_batch(
-        self, email_uid: str, entities: list[tuple[str, str, str]], *, commit: bool = True
-    ) -> None:
-        """Insert extracted entities for an email.
-
-        Each entity is (entity_text, entity_type, normalized_form).
-
-        Args:
-            commit: If False, skip the final commit (caller is responsible).
-        """
-        cur = self.conn.cursor()
-        for text, etype, norm in entities:
-            cur.execute(
-                """INSERT INTO entities(entity_text, entity_type, normalized_form)
-                   VALUES(?, ?, ?)
-                   ON CONFLICT(normalized_form, entity_type) DO UPDATE SET
-                     entity_text = excluded.entity_text""",
-                (text, etype, norm),
-            )
-            entity_id = cur.execute(
-                "SELECT id FROM entities WHERE normalized_form=? AND entity_type=?",
-                (norm, etype),
-            ).fetchone()["id"]
-            cur.execute(
-                """INSERT INTO entity_mentions(entity_id, email_uid, mention_count)
-                   VALUES(?, ?, 1)
-                   ON CONFLICT(entity_id, email_uid) DO UPDATE SET
-                     mention_count = entity_mentions.mention_count + 1""",
-                (entity_id, email_uid),
-            )
-        if commit:
-            self.conn.commit()
-
-    def search_by_entity(
-        self, entity_text: str, entity_type: str | None = None, limit: int = 20
-    ) -> list[dict]:
-        """Find emails mentioning an entity (LIKE match)."""
-        if entity_type:
-            rows = self.conn.execute(
-                """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
-                          ent.entity_text, ent.entity_type
-                   FROM entity_mentions em
-                   JOIN entities ent ON em.entity_id = ent.id
-                   JOIN emails e ON em.email_uid = e.uid
-                   WHERE ent.normalized_form LIKE ? AND ent.entity_type = ?
-                   ORDER BY e.date DESC LIMIT ?""",
-                (f"%{entity_text.lower()}%", entity_type, limit),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
-                          ent.entity_text, ent.entity_type
-                   FROM entity_mentions em
-                   JOIN entities ent ON em.entity_id = ent.id
-                   JOIN emails e ON em.email_uid = e.uid
-                   WHERE ent.normalized_form LIKE ?
-                   ORDER BY e.date DESC LIMIT ?""",
-                (f"%{entity_text.lower()}%", limit),
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def top_entities(self, entity_type: str | None = None, limit: int = 20) -> list[dict]:
-        """Most frequently mentioned entities."""
-        if entity_type:
-            rows = self.conn.execute(
-                """SELECT ent.entity_text, ent.entity_type, ent.normalized_form,
-                          SUM(em.mention_count) AS total_mentions,
-                          COUNT(DISTINCT em.email_uid) AS email_count
-                   FROM entities ent
-                   JOIN entity_mentions em ON ent.id = em.entity_id
-                   WHERE ent.entity_type = ?
-                   GROUP BY ent.id
-                   ORDER BY total_mentions DESC LIMIT ?""",
-                (entity_type, limit),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                """SELECT ent.entity_text, ent.entity_type, ent.normalized_form,
-                          SUM(em.mention_count) AS total_mentions,
-                          COUNT(DISTINCT em.email_uid) AS email_count
-                   FROM entities ent
-                   JOIN entity_mentions em ON ent.id = em.entity_id
-                   GROUP BY ent.id
-                   ORDER BY total_mentions DESC LIMIT ?""",
-                (limit,),
-            ).fetchall()
-        return [dict(r) for r in rows]
-
-    def people_in_emails(self, name_query: str, limit: int = 20) -> list[dict]:
-        """Find emails mentioning a person by name (LIKE match on person entities)."""
-        rows = self.conn.execute(
-            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
-                      ent.entity_text AS person_name
-               FROM entity_mentions em
-               JOIN entities ent ON em.entity_id = ent.id
-               JOIN emails e ON em.email_uid = e.uid
-               WHERE ent.entity_type = 'person'
-                 AND ent.normalized_form LIKE ?
-               ORDER BY e.date DESC LIMIT ?""",
-            (f"%{name_query.lower()}%", limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def entity_timeline(
-        self, entity_text: str, period: str = "month"
-    ) -> list[dict]:
-        """Show how often an entity appears over time.
-
-        Args:
-            entity_text: Entity text to search for (partial match).
-            period: 'day', 'week', or 'month'.
-
-        Returns:
-            List of {period, count} dicts.
-        """
-        if period == "day":
-            date_expr = "substr(e.date, 1, 10)"
-        elif period == "week":
-            # ISO week: YYYY-Www
-            date_expr = "strftime('%Y-W%W', e.date)"
-        else:
-            date_expr = "substr(e.date, 1, 7)"
-
-        rows = self.conn.execute(
-            f"""SELECT {date_expr} AS period, COUNT(*) AS count
-                FROM entity_mentions em
-                JOIN entities ent ON em.entity_id = ent.id
-                JOIN emails e ON em.email_uid = e.uid
-                WHERE ent.normalized_form LIKE ?
-                GROUP BY period
-                ORDER BY period""",
-            (f"%{entity_text.lower()}%",),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def entity_co_occurrences(self, entity_text: str, limit: int = 20) -> list[dict]:
-        """Entities that co-occur with the given entity in the same emails."""
-        rows = self.conn.execute(
-            """SELECT ent2.entity_text, ent2.entity_type, ent2.normalized_form,
-                      COUNT(*) AS co_occurrence_count
-               FROM entity_mentions em1
-               JOIN entities ent1 ON em1.entity_id = ent1.id
-               JOIN entity_mentions em2 ON em1.email_uid = em2.email_uid
-               JOIN entities ent2 ON em2.entity_id = ent2.id
-               WHERE ent1.normalized_form LIKE ? AND ent2.id != ent1.id
-               GROUP BY ent2.id
-               ORDER BY co_occurrence_count DESC LIMIT ?""",
-            (f"%{entity_text.lower()}%", limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    # ------------------------------------------------------------------
-    # Cluster operations (Phase C)
-    # ------------------------------------------------------------------
-
-    def insert_clusters_batch(
-        self, assignments: list[tuple[str, int, float]]
-    ) -> None:
-        """Insert cluster assignments.
-
-        Each tuple: (email_uid, cluster_id, distance_to_centroid).
-        """
-        cur = self.conn.cursor()
-        for uid, cluster_id, distance in assignments:
-            cur.execute(
-                """INSERT OR REPLACE INTO email_clusters(email_uid, cluster_id, distance)
-                   VALUES(?, ?, ?)""",
-                (uid, cluster_id, distance),
-            )
-        self.conn.commit()
-
-    def insert_cluster_info(self, clusters: list[dict]) -> None:
-        """Insert cluster metadata.
-
-        Each dict: {cluster_id, size, representative_uid, label}.
-        """
-        cur = self.conn.cursor()
-        for c in clusters:
-            cur.execute(
-                """INSERT OR REPLACE INTO cluster_info(cluster_id, size, representative_uid, label)
-                   VALUES(?, ?, ?, ?)""",
-                (c["cluster_id"], c["size"], c.get("representative_uid"), c.get("label")),
-            )
-        self.conn.commit()
-
-    def emails_in_cluster(self, cluster_id: int, limit: int = 50) -> list[dict]:
-        """Get emails in a specific cluster."""
-        rows = self.conn.execute(
-            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
-                      ec.distance
-               FROM email_clusters ec
-               JOIN emails e ON ec.email_uid = e.uid
-               WHERE ec.cluster_id = ?
-               ORDER BY ec.distance LIMIT ?""",
-            (cluster_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def cluster_summary(self) -> list[dict]:
-        """Get all clusters with sizes and representative info."""
-        rows = self.conn.execute(
-            """SELECT ci.cluster_id, ci.size, ci.representative_uid, ci.label,
-                      e.subject AS representative_subject
-               FROM cluster_info ci
-               LEFT JOIN emails e ON ci.representative_uid = e.uid
-               ORDER BY ci.size DESC"""
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    # ------------------------------------------------------------------
-    # Keyword / Topic operations (Phase B)
-    # ------------------------------------------------------------------
-
-    def insert_keywords_batch(
-        self, email_uid: str, keywords: list[tuple[str, float]]
-    ) -> None:
-        """Insert keyword/score pairs for an email."""
-        cur = self.conn.cursor()
-        for keyword, score in keywords:
-            cur.execute(
-                """INSERT OR REPLACE INTO email_keywords(email_uid, keyword, score)
-                   VALUES(?, ?, ?)""",
-                (email_uid, keyword, score),
-            )
-        self.conn.commit()
-
-    def insert_topics(self, topics: list[dict]) -> None:
-        """Insert topic definitions.
-
-        Each dict: {id: int, label: str, top_words: list[str]}.
-        """
-        import json
-
-        cur = self.conn.cursor()
-        for topic in topics:
-            cur.execute(
-                "INSERT OR REPLACE INTO topics(id, label, top_words) VALUES(?, ?, ?)",
-                (topic["id"], topic["label"], json.dumps(topic["top_words"])),
-            )
-        self.conn.commit()
-
-    def insert_email_topics_batch(
-        self, email_uid: str, topic_weights: list[tuple[int, float]]
-    ) -> None:
-        """Insert topic assignments for an email."""
-        cur = self.conn.cursor()
-        for topic_id, weight in topic_weights:
-            cur.execute(
-                """INSERT OR REPLACE INTO email_topics(email_uid, topic_id, weight)
-                   VALUES(?, ?, ?)""",
-                (email_uid, topic_id, weight),
-            )
-        self.conn.commit()
-
-    def top_keywords(
-        self,
-        sender: str | None = None,
-        folder: str | None = None,
-        limit: int = 30,
-    ) -> list[dict]:
-        """Aggregate top keywords, optionally filtered by sender or folder."""
-        query = """SELECT ek.keyword, ROUND(AVG(ek.score), 4) AS avg_score,
-                          COUNT(DISTINCT ek.email_uid) AS email_count
-                   FROM email_keywords ek"""
-        conditions = []
-        params: list = []
-
-        if sender or folder:
-            query += " JOIN emails e ON ek.email_uid = e.uid"
-            if sender:
-                conditions.append("e.sender_email = ?")
-                params.append(sender)
-            if folder:
-                conditions.append("e.folder = ?")
-                params.append(folder)
-
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-
-        query += " GROUP BY ek.keyword ORDER BY avg_score DESC LIMIT ?"
-        params.append(limit)
-
-        rows = self.conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
-
-    def emails_by_topic(self, topic_id: int, limit: int = 30) -> list[dict]:
-        """Get emails assigned to a specific topic, ranked by weight."""
-        rows = self.conn.execute(
-            """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
-                      et.weight
-               FROM email_topics et
-               JOIN emails e ON et.email_uid = e.uid
-               WHERE et.topic_id = ?
-               ORDER BY et.weight DESC LIMIT ?""",
-            (topic_id, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def topic_distribution(self) -> list[dict]:
-        """Get all topics with their email counts."""
-        import json
-
-        rows = self.conn.execute(
-            """SELECT t.id, t.label, t.top_words,
-                      COUNT(et.email_uid) AS email_count
-               FROM topics t
-               LEFT JOIN email_topics et ON t.id = et.topic_id
-               GROUP BY t.id
-               ORDER BY email_count DESC"""
-        ).fetchall()
-        return [
-            {
-                "id": r["id"],
-                "label": r["label"],
-                "top_words": json.loads(r["top_words"]),
-                "email_count": r["email_count"],
-            }
-            for r in rows
-        ]
-
-    # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------
 
@@ -1176,6 +864,134 @@ class EmailDatabase:
             "SELECT name, mime_type, size, content_id, is_inline FROM attachments WHERE email_uid = ?",
             (uid,),
         ).fetchall()
+        return [dict(r) for r in rows]
+
+    def attachment_stats(self) -> dict:
+        """Aggregate attachment statistics: counts, sizes, type distribution."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS total, COALESCE(SUM(size), 0) AS total_size FROM attachments"
+        ).fetchone()
+        total_attachments = row["total"]
+        total_size = row["total_size"]
+
+        emails_with = self.conn.execute(
+            "SELECT COUNT(DISTINCT email_uid) AS cnt FROM attachments"
+        ).fetchone()["cnt"]
+
+        # Extension distribution
+        ext_rows = self.conn.execute(
+            """SELECT
+                   CASE WHEN INSTR(name, '.') > 0
+                        THEN LOWER(SUBSTR(name, INSTR(name, '.') - LENGTH(name)))
+                        ELSE '' END AS ext,
+                   COUNT(*) AS cnt,
+                   COALESCE(SUM(size), 0) AS total_size
+               FROM attachments
+               GROUP BY ext ORDER BY cnt DESC LIMIT 30"""
+        ).fetchall()
+        by_extension = [
+            {"extension": r["ext"], "count": r["cnt"], "total_size": r["total_size"]}
+            for r in ext_rows
+        ]
+
+        # Top filenames
+        top_rows = self.conn.execute(
+            "SELECT name, COUNT(*) AS cnt FROM attachments GROUP BY name ORDER BY cnt DESC LIMIT 20"
+        ).fetchall()
+        top_filenames = [{"name": r["name"], "count": r["cnt"]} for r in top_rows]
+
+        return {
+            "total_attachments": total_attachments,
+            "total_size_bytes": total_size,
+            "emails_with_attachments": emails_with,
+            "by_extension": by_extension,
+            "top_filenames": top_filenames,
+        }
+
+    def list_attachments(
+        self,
+        *,
+        filename: str | None = None,
+        extension: str | None = None,
+        mime_type: str | None = None,
+        sender: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Browse attachments with optional filters. Joins with emails table."""
+        query = (
+            "SELECT a.name, a.mime_type, a.size, a.is_inline,"
+            " a.email_uid, e.subject, e.sender_email, e.date"
+            " FROM attachments a JOIN emails e ON a.email_uid = e.uid"
+        )
+        conditions: list[str] = []
+        params: list = []
+        if filename:
+            conditions.append("a.name LIKE ?")
+            params.append(f"%{filename}%")
+        if extension:
+            ext = extension if extension.startswith(".") else f".{extension}"
+            conditions.append("LOWER(a.name) LIKE ?")
+            params.append(f"%{ext.lower()}")
+        if mime_type:
+            conditions.append("a.mime_type LIKE ?")
+            params.append(f"%{mime_type}%")
+        if sender:
+            conditions.append("(e.sender_email LIKE ? OR e.sender_name LIKE ?)")
+            params.extend([f"%{sender}%", f"%{sender}%"])
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        # Get total count
+        count_query = query.replace(
+            "SELECT a.name, a.mime_type, a.size, a.is_inline,"
+            " a.email_uid, e.subject, e.sender_email, e.date",
+            "SELECT COUNT(*) AS cnt",
+        )
+        total = self.conn.execute(count_query, params).fetchone()["cnt"]
+
+        query += " ORDER BY e.date DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = self.conn.execute(query, params).fetchall()
+        return {
+            "attachments": [dict(r) for r in rows],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+
+    def search_emails_by_attachment(
+        self,
+        *,
+        filename: str | None = None,
+        extension: str | None = None,
+        mime_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Find emails with matching attachments. Returns email rows + matching_attachments."""
+        query = (
+            "SELECT e.uid, e.subject, e.sender_email, e.sender_name, e.date, e.folder,"
+            " GROUP_CONCAT(a.name, ', ') AS matching_attachments,"
+            " COUNT(a.id) AS match_count"
+            " FROM emails e JOIN attachments a ON e.uid = a.email_uid"
+        )
+        conditions: list[str] = []
+        params: list = []
+        if filename:
+            conditions.append("a.name LIKE ?")
+            params.append(f"%{filename}%")
+        if extension:
+            ext = extension if extension.startswith(".") else f".{extension}"
+            conditions.append("LOWER(a.name) LIKE ?")
+            params.append(f"%{ext.lower()}")
+        if mime_type:
+            conditions.append("a.mime_type LIKE ?")
+            params.append(f"%{mime_type}%")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " GROUP BY e.uid ORDER BY e.date DESC LIMIT ?"
+        params.append(limit)
+        rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
     def thread_by_references(self, message_id: str, limit: int = 50) -> list[dict]:
@@ -1475,8 +1291,8 @@ class EmailDatabase:
             "body": body,
             "folder": full.get("folder", ""),
             "has_attachments": bool(full.get("has_attachments") or full.get("attachment_count")),
-            "attachment_names": [],
-            "attachments": [],
+            "attachment_names": [a["name"] for a in full.get("attachments", []) if a.get("name")],
+            "attachments": full.get("attachments", []),
             "attachment_count": full.get("attachment_count", 0),
             "conversation_id": full.get("conversation_id", ""),
             "in_reply_to": full.get("in_reply_to", ""),
@@ -1492,774 +1308,10 @@ class EmailDatabase:
         }
 
     # ------------------------------------------------------------------
-    # Network queries (Phase 4)
+    # Evidence management (see EvidenceMixin)
+    # Ingestion tracking (see CustodyMixin)
+    # Chain of custody (see CustodyMixin)
     # ------------------------------------------------------------------
-
-    def top_contacts(self, email_address: str, limit: int = 20) -> list[dict]:
-        """Top communication partners (bidirectional frequency)."""
-        rows = self.conn.execute(
-            """SELECT partner, SUM(cnt) AS total
-               FROM (
-                 SELECT recipient_email AS partner, email_count AS cnt
-                 FROM communication_edges WHERE sender_email = ?
-                 UNION ALL
-                 SELECT sender_email AS partner, email_count AS cnt
-                 FROM communication_edges WHERE recipient_email = ?
-               )
-               GROUP BY partner ORDER BY total DESC LIMIT ?""",
-            (email_address, email_address, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def communication_between(self, email_a: str, email_b: str) -> dict:
-        """Bidirectional stats between two addresses."""
-        a_to_b = self.conn.execute(
-            "SELECT email_count, first_date, last_date FROM communication_edges WHERE sender_email=? AND recipient_email=?",
-            (email_a, email_b),
-        ).fetchone()
-        b_to_a = self.conn.execute(
-            "SELECT email_count, first_date, last_date FROM communication_edges WHERE sender_email=? AND recipient_email=?",
-            (email_b, email_a),
-        ).fetchone()
-
-        a_to_b_count = a_to_b["email_count"] if a_to_b else 0
-        b_to_a_count = b_to_a["email_count"] if b_to_a else 0
-        dates = [
-            d
-            for d in [
-                a_to_b["first_date"] if a_to_b else None,
-                b_to_a["first_date"] if b_to_a else None,
-            ]
-            if d
-        ]
-        last_dates = [
-            d
-            for d in [
-                a_to_b["last_date"] if a_to_b else None,
-                b_to_a["last_date"] if b_to_a else None,
-            ]
-            if d
-        ]
-        return {
-            "a_to_b": a_to_b_count,
-            "b_to_a": b_to_a_count,
-            "total": a_to_b_count + b_to_a_count,
-            "first_date": min(dates) if dates else "",
-            "last_date": max(last_dates) if last_dates else "",
-        }
-
-    def all_edges(self) -> list[tuple[str, str, int]]:
-        """All communication edges for graph building."""
-        rows = self.conn.execute(
-            "SELECT sender_email, recipient_email, email_count FROM communication_edges"
-        ).fetchall()
-        return [(r["sender_email"], r["recipient_email"], r["email_count"]) for r in rows]
-
-    # ------------------------------------------------------------------
-    # Relationship queries
-    # ------------------------------------------------------------------
-
-    def shared_recipients_query(
-        self, sender_emails: list[str], min_shared: int = 2
-    ) -> list[dict]:
-        """Find recipients who received emails from multiple specified senders.
-
-        Returns:
-            List of {"recipient": str, "senders": [str], "total_emails": int}
-        """
-        if len(sender_emails) < 2:
-            return []
-
-        placeholders = ",".join("?" for _ in sender_emails)
-        rows = self.conn.execute(
-            f"""SELECT r.address AS recipient,
-                       GROUP_CONCAT(DISTINCT e.sender_email) AS senders,
-                       COUNT(*) AS total_emails
-                FROM recipients r
-                JOIN emails e ON r.email_uid = e.uid
-                WHERE e.sender_email IN ({placeholders})
-                  AND r.type IN ('to', 'cc')
-                GROUP BY r.address
-                HAVING COUNT(DISTINCT e.sender_email) >= ?
-                ORDER BY total_emails DESC""",
-            [*sender_emails, min_shared],
-        ).fetchall()
-
-        return [
-            {
-                "recipient": r["recipient"],
-                "senders": r["senders"].split(",") if r["senders"] else [],
-                "total_emails": r["total_emails"],
-            }
-            for r in rows
-        ]
-
-    def sender_activity_timeline(self, sender_emails: list[str]) -> list[dict]:
-        """All email timestamps for specified senders, ordered by date.
-
-        Returns:
-            List of {"sender_email": str, "date": str, "uid": str, "subject": str}
-        """
-        if not sender_emails:
-            return []
-
-        placeholders = ",".join("?" for _ in sender_emails)
-        rows = self.conn.execute(
-            f"""SELECT sender_email, date, uid, subject
-                FROM emails
-                WHERE sender_email IN ({placeholders})
-                  AND date IS NOT NULL
-                ORDER BY date ASC""",
-            sender_emails,
-        ).fetchall()
-
-        return [dict(r) for r in rows]
-
-    # ------------------------------------------------------------------
-    # Temporal queries (Phase 5)
-    # ------------------------------------------------------------------
-
-    def email_dates(
-        self,
-        date_from: str | None = None,
-        date_to: str | None = None,
-        sender: str | None = None,
-    ) -> list[str]:
-        """Return all email dates, optionally filtered."""
-        query = "SELECT date FROM emails WHERE 1=1"
-        params: list[str] = []
-        if date_from:
-            query += " AND date >= ?"
-            params.append(date_from)
-        if date_to:
-            query += " AND date <= ?"
-            params.append(date_to)
-        if sender:
-            query += " AND sender_email = ?"
-            params.append(sender)
-        rows = self.conn.execute(query, params).fetchall()
-        return [r["date"] for r in rows if r["date"]]
-
-    def response_pairs(
-        self, sender: str | None = None, limit: int = 100
-    ) -> list[dict]:
-        """Join reply→original via in_reply_to = message_id."""
-        query = """
-            SELECT reply.sender_email AS reply_sender,
-                   reply.date AS reply_date,
-                   original.sender_email AS original_sender,
-                   original.date AS original_date
-            FROM emails reply
-            JOIN emails original ON reply.in_reply_to = original.message_id
-            WHERE reply.in_reply_to != '' AND original.message_id != ''
-        """
-        params: list[str] = []
-        if sender:
-            query += " AND reply.sender_email = ?"
-            params.append(sender)
-        query += " ORDER BY reply.date DESC LIMIT ?"
-        params.append(str(limit))
-        rows = self.conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
-
-    # ------------------------------------------------------------------
-    # Ingestion tracking
-    # ------------------------------------------------------------------
-
-    def record_ingestion_start(
-        self,
-        olm_path: str,
-        olm_sha256: str | None = None,
-        file_size_bytes: int | None = None,
-        custodian: str = "system",
-    ) -> int:
-        """Record the start of an ingestion run. Returns run ID."""
-        from datetime import datetime, timezone
-
-        cur = self.conn.execute(
-            """INSERT INTO ingestion_runs(olm_path, started_at, olm_sha256, file_size_bytes, custodian)
-               VALUES(?, ?, ?, ?, ?)""",
-            (
-                olm_path,
-                datetime.now(timezone.utc).isoformat(),
-                olm_sha256,
-                file_size_bytes,
-                custodian,
-            ),
-        )
-        self.conn.commit()
-        run_id = cur.lastrowid  # type: ignore[return-value]
-
-        self.log_custody_event(
-            "ingest_start",
-            target_type="ingestion_run",
-            target_id=str(run_id),
-            details={
-                "olm_path": olm_path,
-                "olm_sha256": olm_sha256,
-                "file_size_bytes": file_size_bytes,
-            },
-            content_hash=olm_sha256,
-            actor=custodian,
-        )
-        return run_id
-
-    def record_ingestion_complete(self, run_id: int, stats: dict) -> None:
-        """Record the completion of an ingestion run."""
-        from datetime import datetime, timezone
-
-        self.conn.execute(
-            "UPDATE ingestion_runs SET completed_at=?, emails_parsed=?, emails_inserted=?, status='completed' WHERE id=?",
-            (
-                datetime.now(timezone.utc).isoformat(),
-                stats.get("emails_parsed", 0),
-                stats.get("emails_inserted", 0),
-                run_id,
-            ),
-        )
-        self.conn.commit()
-
-    def last_ingestion(self, olm_path: str | None = None) -> dict | None:
-        """Return the most recent completed ingestion run."""
-        if olm_path:
-            row = self.conn.execute(
-                "SELECT * FROM ingestion_runs WHERE olm_path=? AND status='completed' ORDER BY id DESC LIMIT 1",
-                (olm_path,),
-            ).fetchone()
-        else:
-            row = self.conn.execute(
-                "SELECT * FROM ingestion_runs WHERE status='completed' ORDER BY id DESC LIMIT 1",
-            ).fetchone()
-        return dict(row) if row else None
-
-    # ------------------------------------------------------------------
-    # Evidence management
-    # ------------------------------------------------------------------
-
-    def add_evidence(
-        self,
-        email_uid: str,
-        category: str,
-        key_quote: str,
-        summary: str,
-        relevance: int,
-        notes: str = "",
-    ) -> dict:
-        """Add an evidence item linked to an email.
-
-        Auto-populates sender/date/recipients/subject from the email record.
-        Runs quote verification immediately against the email body.
-
-        Args:
-            email_uid: UID of the source email (must exist).
-            category: Evidence category (e.g. discrimination, harassment).
-            key_quote: Exact quote from the email body.
-            summary: Brief description of why this is evidence.
-            relevance: 1-5 rating (1=tangential, 5=critical).
-            notes: Optional notes for the lawyer.
-
-        Returns:
-            Dict with the created evidence item including id and verified status.
-
-        Raises:
-            ValueError: If email_uid does not exist in the database.
-        """
-        # Validate email exists and fetch metadata
-        email_row = self.conn.execute(
-            "SELECT sender_name, sender_email, date, subject, body_text FROM emails WHERE uid = ?",
-            (email_uid,),
-        ).fetchone()
-        if not email_row:
-            raise ValueError(f"Email not found: {email_uid}")
-
-        # Build recipients string from recipients table
-        recip_rows = self.conn.execute(
-            "SELECT address, display_name FROM recipients WHERE email_uid = ? AND type = 'to'",
-            (email_uid,),
-        ).fetchall()
-        recipients = ", ".join(
-            f"{r['display_name']} <{r['address']}>" if r["display_name"] else r["address"]
-            for r in recip_rows
-        )
-
-        # Verify quote against body
-        body_text = email_row["body_text"] or ""
-        verified = 1 if key_quote.strip() and key_quote.strip().lower() in body_text.lower() else 0
-
-        content_hash = self.compute_content_hash(f"{email_uid}|{category}|{key_quote}")
-
-        cur = self.conn.execute(
-            """INSERT INTO evidence_items
-               (email_uid, category, key_quote, summary, relevance,
-                sender_name, sender_email, date, recipients, subject, notes, verified,
-                content_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                email_uid, category, key_quote, summary, relevance,
-                email_row["sender_name"], email_row["sender_email"],
-                email_row["date"], recipients, email_row["subject"],
-                notes, verified, content_hash,
-            ),
-        )
-        self.conn.commit()
-        new_id = cur.lastrowid
-
-        self.log_custody_event(
-            "evidence_add",
-            target_type="evidence",
-            target_id=str(new_id),
-            details={
-                "email_uid": email_uid,
-                "category": category,
-                "relevance": relevance,
-                "summary": summary[:200],
-            },
-            content_hash=content_hash,
-        )
-
-        return {
-            "id": new_id,
-            "email_uid": email_uid,
-            "category": category,
-            "key_quote": key_quote,
-            "summary": summary,
-            "relevance": relevance,
-            "sender_name": email_row["sender_name"],
-            "sender_email": email_row["sender_email"],
-            "date": email_row["date"],
-            "recipients": recipients,
-            "subject": email_row["subject"],
-            "notes": notes,
-            "verified": verified,
-            "content_hash": content_hash,
-        }
-
-    def list_evidence(
-        self,
-        category: str | None = None,
-        min_relevance: int | None = None,
-        email_uid: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> dict:
-        """List evidence items with optional filters.
-
-        Returns:
-            {"items": [...], "total": int}
-        """
-        conditions: list[str] = []
-        params: list = []
-
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            conditions.append("relevance >= ?")
-            params.append(min_relevance)
-        if email_uid:
-            conditions.append("email_uid = ?")
-            params.append(email_uid)
-
-        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-
-        total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where}", params
-        ).fetchone()
-        total = total_row["c"]
-
-        rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ? OFFSET ?",
-            [*params, limit, offset],
-        ).fetchall()
-
-        return {
-            "items": [dict(r) for r in rows],
-            "total": total,
-        }
-
-    def get_evidence(self, evidence_id: int) -> dict | None:
-        """Get a single evidence item by ID."""
-        row = self.conn.execute(
-            "SELECT * FROM evidence_items WHERE id = ?", (evidence_id,)
-        ).fetchone()
-        return dict(row) if row else None
-
-    def update_evidence(self, evidence_id: int, **fields) -> bool:
-        """Update fields on an evidence item.
-
-        Allowed fields: category, key_quote, summary, relevance, notes.
-        Sets updated_at automatically. Re-verifies if key_quote changes.
-        Logs a custody event with a snapshot of old values.
-
-        Returns:
-            True if the item was updated, False if not found.
-        """
-        allowed = {"category", "key_quote", "summary", "relevance", "notes"}
-        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
-        if not updates:
-            return False
-
-        # Check item exists and snapshot old values
-        existing = self.conn.execute(
-            "SELECT * FROM evidence_items WHERE id = ?", (evidence_id,)
-        ).fetchone()
-        if not existing:
-            return False
-        old_values = {k: existing[k] for k in updates}
-
-        # Re-verify if key_quote changed
-        if "key_quote" in updates:
-            body_row = self.conn.execute(
-                "SELECT body_text FROM emails WHERE uid = ?",
-                (existing["email_uid"],),
-            ).fetchone()
-            body_text = (body_row["body_text"] or "") if body_row else ""
-            new_quote = updates["key_quote"].strip()
-            updates["verified"] = 1 if new_quote and new_quote.lower() in body_text.lower() else 0
-
-        # Recompute content hash
-        category = updates.get("category", existing["category"])
-        key_quote = updates.get("key_quote", existing["key_quote"])
-        new_hash = self.compute_content_hash(f"{existing['email_uid']}|{category}|{key_quote}")
-        updates["content_hash"] = new_hash
-
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        set_clause += ", updated_at = datetime('now')"
-        params = list(updates.values()) + [evidence_id]
-
-        cur = self.conn.execute(
-            f"UPDATE evidence_items SET {set_clause} WHERE id = ?",
-            params,
-        )
-        self.conn.commit()
-
-        if cur.rowcount > 0:
-            self.log_custody_event(
-                "evidence_update",
-                target_type="evidence",
-                target_id=str(evidence_id),
-                details={"old_values": old_values, "new_values": {k: v for k, v in updates.items() if k != "content_hash"}},
-                content_hash=new_hash,
-            )
-        return cur.rowcount > 0
-
-    def remove_evidence(self, evidence_id: int) -> bool:
-        """Delete an evidence item by ID. Logs custody event with snapshot. Returns True if deleted."""
-        # Snapshot before deletion
-        existing = self.conn.execute(
-            "SELECT * FROM evidence_items WHERE id = ?", (evidence_id,)
-        ).fetchone()
-
-        cur = self.conn.execute(
-            "DELETE FROM evidence_items WHERE id = ?", (evidence_id,)
-        )
-        self.conn.commit()
-
-        if cur.rowcount > 0 and existing:
-            snapshot = dict(existing)
-            self.log_custody_event(
-                "evidence_remove",
-                target_type="evidence",
-                target_id=str(evidence_id),
-                details={
-                    "email_uid": snapshot.get("email_uid"),
-                    "category": snapshot.get("category"),
-                    "key_quote": snapshot.get("key_quote", "")[:200],
-                    "relevance": snapshot.get("relevance"),
-                    "summary": snapshot.get("summary", "")[:200],
-                },
-                content_hash=snapshot.get("content_hash"),
-            )
-        return cur.rowcount > 0
-
-    def verify_evidence_quotes(self) -> dict:
-        """Verify all evidence quotes against actual email body text.
-
-        For each evidence item, checks if key_quote appears (case-insensitive)
-        in the linked email's body_text. Updates the verified column.
-
-        Returns:
-            {"verified": int, "failed": int, "failures": [{"evidence_id": ..., "key_quote_preview": ..., "email_uid": ...}, ...]}
-        """
-        rows = self.conn.execute(
-            """SELECT ei.id, ei.key_quote, ei.email_uid, e.body_text
-               FROM evidence_items ei
-               JOIN emails e ON ei.email_uid = e.uid"""
-        ).fetchall()
-
-        verified_count = 0
-        failed_count = 0
-        failures: list[dict] = []
-
-        for row in rows:
-            body_text = row["body_text"] or ""
-            quote = (row["key_quote"] or "").strip()
-            is_verified = 1 if quote and quote.lower() in body_text.lower() else 0
-
-            self.conn.execute(
-                "UPDATE evidence_items SET verified = ? WHERE id = ?",
-                (is_verified, row["id"]),
-            )
-
-            if is_verified:
-                verified_count += 1
-            else:
-                failed_count += 1
-                failures.append({
-                    "evidence_id": row["id"],
-                    "key_quote_preview": quote[:80] + ("..." if len(quote) > 80 else ""),
-                    "email_uid": row["email_uid"],
-                })
-
-        self.conn.commit()
-        return {
-            "verified": verified_count,
-            "failed": failed_count,
-            "total": verified_count + failed_count,
-            "failures": failures,
-        }
-
-    def evidence_stats(self) -> dict:
-        """Return evidence collection statistics.
-
-        Returns:
-            {"total": int, "verified": int, "unverified": int,
-             "by_category": [{"category": str, "count": int}, ...],
-             "by_relevance": [{"relevance": int, "count": int}, ...]}
-        """
-        total_row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM evidence_items"
-        ).fetchone()
-        total = total_row["c"]
-
-        verified_row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM evidence_items WHERE verified = 1"
-        ).fetchone()
-        verified = verified_row["c"]
-
-        cat_rows = self.conn.execute(
-            "SELECT category, COUNT(*) AS count FROM evidence_items GROUP BY category ORDER BY count DESC"
-        ).fetchall()
-
-        rel_rows = self.conn.execute(
-            "SELECT relevance, COUNT(*) AS count FROM evidence_items GROUP BY relevance ORDER BY relevance DESC"
-        ).fetchall()
-
-        return {
-            "total": total,
-            "verified": verified,
-            "unverified": total - verified,
-            "by_category": [dict(r) for r in cat_rows],
-            "by_relevance": [dict(r) for r in rel_rows],
-        }
-
-    # ── Evidence: extended queries ────────────────────────────
-
-    EVIDENCE_CATEGORIES: list[str] = [
-        "discrimination", "harassment", "sexual_harassment",
-        "insult", "bossing", "retaliation", "exclusion",
-        "microaggression", "hostile_environment", "other",
-    ]
-
-    def search_evidence(
-        self,
-        query: str,
-        category: str | None = None,
-        min_relevance: int | None = None,
-        limit: int = 50,
-    ) -> dict:
-        """Search evidence items by text across key_quote, summary, and notes.
-
-        Returns:
-            {"items": [...], "total": int, "query": str}
-        """
-        conditions = ["(key_quote LIKE ? OR summary LIKE ? OR notes LIKE ?)"]
-        pattern = f"%{query}%"
-        params: list = [pattern, pattern, pattern]
-
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            conditions.append("relevance >= ?")
-            params.append(min_relevance)
-
-        where = " WHERE " + " AND ".join(conditions)
-
-        total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where}", params
-        ).fetchone()
-
-        rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ?",
-            [*params, limit],
-        ).fetchall()
-
-        return {
-            "items": [dict(r) for r in rows],
-            "total": total_row["c"],
-            "query": query,
-        }
-
-    def evidence_timeline(
-        self,
-        category: str | None = None,
-        min_relevance: int | None = None,
-    ) -> list[dict]:
-        """Return evidence items in chronological order for narrative building.
-
-        Returns:
-            List of evidence items ordered by date ascending.
-        """
-        conditions: list[str] = []
-        params: list = []
-
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            conditions.append("relevance >= ?")
-            params.append(min_relevance)
-
-        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-
-        rows = self.conn.execute(
-            f"""SELECT id, email_uid, date, category, relevance, summary, key_quote,
-                       sender_name, sender_email, subject, verified
-                FROM evidence_items{where}
-                ORDER BY date ASC""",
-            params,
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-    def evidence_categories(self) -> list[dict]:
-        """Return all canonical categories with current evidence counts.
-
-        Returns:
-            List of {"category": str, "count": int} for all 10 canonical categories.
-        """
-        count_rows = self.conn.execute(
-            "SELECT category, COUNT(*) AS count FROM evidence_items GROUP BY category"
-        ).fetchall()
-        counts = {r["category"]: r["count"] for r in count_rows}
-
-        return [
-            {"category": cat, "count": counts.get(cat, 0)}
-            for cat in self.EVIDENCE_CATEGORIES
-        ]
-
-    # ── Chain of custody ────────────────────────────────────
-
-    @staticmethod
-    def compute_content_hash(content: str) -> str:
-        """SHA-256 hash of a content string."""
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-    def log_custody_event(
-        self,
-        action: str,
-        target_type: str | None = None,
-        target_id: str | None = None,
-        details: dict | None = None,
-        content_hash: str | None = None,
-        actor: str = "system",
-    ) -> int:
-        """Record a chain-of-custody event. Returns event ID."""
-        cur = self.conn.execute(
-            """INSERT INTO custody_chain
-               (action, actor, target_type, target_id, details, content_hash)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                action,
-                actor,
-                target_type,
-                target_id,
-                json.dumps(details) if details else None,
-                content_hash,
-            ),
-        )
-        self.conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
-
-    def get_custody_chain(
-        self,
-        target_type: str | None = None,
-        target_id: str | None = None,
-        action: str | None = None,
-        limit: int = 100,
-    ) -> list[dict]:
-        """Retrieve custody events with optional filters."""
-        conditions: list[str] = []
-        params: list = []
-
-        if target_type:
-            conditions.append("target_type = ?")
-            params.append(target_type)
-        if target_id:
-            conditions.append("target_id = ?")
-            params.append(target_id)
-        if action:
-            conditions.append("action = ?")
-            params.append(action)
-
-        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-        rows = self.conn.execute(
-            f"SELECT * FROM custody_chain{where} ORDER BY timestamp DESC LIMIT ?",
-            [*params, limit],
-        ).fetchall()
-
-        result = []
-        for r in rows:
-            d = dict(r)
-            if d.get("details"):
-                try:
-                    d["details"] = json.loads(d["details"])
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            result.append(d)
-        return result
-
-    def email_provenance(self, email_uid: str) -> dict:
-        """Full provenance for an email: ingestion run, custody events."""
-        email_row = self.conn.execute(
-            "SELECT uid, message_id, sender_email, date, subject, content_sha256 FROM emails WHERE uid = ?",
-            (email_uid,),
-        ).fetchone()
-        if not email_row:
-            return {"error": f"Email not found: {email_uid}"}
-
-        # Find ingestion run that contains this email (via olm_path match)
-        run_row = self.conn.execute(
-            "SELECT * FROM ingestion_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-
-        custody_events = self.get_custody_chain(
-            target_type="email", target_id=email_uid
-        )
-
-        return {
-            "email": dict(email_row),
-            "ingestion_run": dict(run_row) if run_row else None,
-            "custody_events": custody_events,
-        }
-
-    def evidence_provenance(self, evidence_id: int) -> dict:
-        """Full provenance for evidence: item details, source email, custody history."""
-        item = self.get_evidence(evidence_id)
-        if not item:
-            return {"error": f"Evidence not found: {evidence_id}"}
-
-        email_prov = self.email_provenance(item["email_uid"])
-
-        evidence_events = self.get_custody_chain(
-            target_type="evidence", target_id=str(evidence_id)
-        )
-
-        return {
-            "evidence": item,
-            "source_email": email_prov,
-            "custody_events": evidence_events,
-        }
 
     def emails_by_base_subject(
         self, min_group_size: int = 2
