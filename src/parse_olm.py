@@ -329,6 +329,10 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
             if refs_raw:
                 references = _parse_references(refs_raw)
 
+    # ── Fallback: extract body from raw RFC 2822 source ─────
+    if not body_text and not body_html and raw_source:
+        body_text, body_html = _extract_body_from_source(raw_source)
+
     # ── Fallback: OPFMessageCopyPreview for body ───────────
     if not body_text and not body_html:
         preview = _find_text(root, "OPFMessageCopyPreview", ns)
@@ -582,6 +586,55 @@ def _parse_int(value: str, default: int = 0) -> int:
         return default
 
 
+# ── RFC 2822 Body Extraction ──────────────────────────────────
+
+
+def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
+    """Extract body text and HTML from raw RFC 2822 source.
+
+    When OLM has no OPFMessageCopyBody/HTMLBody elements, the full email
+    (headers + body) is in OPFMessageCopySource.  This function splits
+    headers from body at the first blank line, then handles MIME multipart
+    and Content-Transfer-Encoding.
+    """
+    import email
+    import email.policy
+
+    try:
+        msg = email.message_from_string(raw_source, policy=email.policy.default)
+    except Exception:
+        # Fallback: simple header/body split
+        parts = raw_source.split("\n\n", 1)
+        if len(parts) == 2:
+            return parts[1].strip(), ""
+        return "", ""
+
+    body_text = ""
+    body_html = ""
+
+    if msg.is_multipart():
+        for part in msg.walk():
+            ct = part.get_content_type()
+            if ct == "text/plain" and not body_text:
+                payload = part.get_content()
+                if isinstance(payload, str):
+                    body_text = payload
+            elif ct == "text/html" and not body_html:
+                payload = part.get_content()
+                if isinstance(payload, str):
+                    body_html = payload
+    else:
+        ct = msg.get_content_type()
+        payload = msg.get_content()
+        if isinstance(payload, str):
+            if ct == "text/html":
+                body_html = payload
+            else:
+                body_text = payload
+
+    return body_text.strip(), body_html.strip()
+
+
 # ── RFC 2822 Header Extraction ────────────────────────────────
 
 
@@ -764,7 +817,7 @@ def _clean_text(text: str) -> str:
 
 def _new_xml_parser() -> etree.XMLParser:
     """Create a parser with safe defaults for untrusted XML."""
-    return etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=False)
+    return etree.XMLParser(resolve_entities=False, no_network=True, huge_tree=True)
 
 
 def _read_limited_bytes(stream: IO[bytes], byte_limit: int, chunk_size: int = 64 * 1024) -> bytes:
