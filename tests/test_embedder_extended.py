@@ -173,3 +173,76 @@ def test_store_sparse_fallback_creates_one_connection(tmp_path):
 
     embedder.close()
     assert embedder._sparse_db_fallback is None
+
+
+# ── warmup ────────────────────────────────────────────────────────
+
+
+def test_warmup_forces_model_load(tmp_path):
+    """warmup() should trigger model loading and a test encode."""
+    embedder = EmailEmbedder(chromadb_path=str(tmp_path / "db"))
+    assert embedder._embedder is None  # not yet loaded
+    embedder.warmup()
+    assert embedder._embedder is not None  # now loaded
+
+
+# ── encode-then-store (single GPU pass) ──────────────────────────
+
+
+def test_add_chunks_encodes_all_at_once(tmp_path, monkeypatch):
+    """add_chunks() should call encode_all() exactly once regardless of storage batch_size."""
+    embedder = EmailEmbedder(chromadb_path=str(tmp_path / "db"))
+
+    encode_call_count = 0
+    original_encode_all = embedder.embedder.encode_all
+
+    def _counting_encode(texts):
+        nonlocal encode_call_count
+        encode_call_count += 1
+        return original_encode_all(texts)
+
+    monkeypatch.setattr(embedder.embedder, "encode_all", _counting_encode)
+
+    chunks = [_make_chunk(uid=f"uid{i}", index=0) for i in range(10)]
+    # storage batch_size=3 means 4 ChromaDB writes, but only 1 encode call
+    added = embedder.add_chunks(chunks, batch_size=3)
+    assert added == 10
+    assert encode_call_count == 1
+
+
+def test_add_chunks_handles_pre_embedded_chunks(tmp_path):
+    """Pre-embedded chunks should be stored without re-encoding."""
+    embedder = EmailEmbedder(chromadb_path=str(tmp_path / "db"))
+
+    pre_embedded = EmailChunk(
+        uid="img1",
+        chunk_id="img1__0",
+        text="[Image: photo.jpg]",
+        metadata={"uid": "img1", "chunk_type": "image"},
+        embedding=[0.5, 0.6, 0.7],
+    )
+    text_chunk = _make_chunk(uid="txt1", index=0)
+
+    added = embedder.add_chunks([pre_embedded, text_chunk], batch_size=100)
+    assert added == 2
+    assert embedder.count() == 2
+
+
+def test_upsert_chunks_encodes_all_at_once(tmp_path, monkeypatch):
+    """upsert_chunks() should call encode_all() exactly once."""
+    embedder = EmailEmbedder(chromadb_path=str(tmp_path / "db"))
+
+    encode_call_count = 0
+    original_encode_all = embedder.embedder.encode_all
+
+    def _counting_encode(texts):
+        nonlocal encode_call_count
+        encode_call_count += 1
+        return original_encode_all(texts)
+
+    monkeypatch.setattr(embedder.embedder, "encode_all", _counting_encode)
+
+    chunks = [_make_chunk(uid=f"uid{i}", index=0) for i in range(5)]
+    added = embedder.upsert_chunks(chunks, batch_size=2)
+    assert added == 5
+    assert encode_call_count == 1

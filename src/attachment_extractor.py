@@ -42,6 +42,19 @@ def is_image_attachment(filename: str) -> bool:
     return _get_extension(filename) in _IMAGE_EXTENSIONS
 
 
+_image_embedder: object | None = None
+
+
+def _get_image_embedder():
+    """Return the module-level ImageEmbedder singleton (lazy-init)."""
+    global _image_embedder
+    if _image_embedder is None:
+        from .image_embedder import ImageEmbedder
+
+        _image_embedder = ImageEmbedder()
+    return _image_embedder
+
+
 def extract_image_embedding(filename: str, content: bytes) -> list[float] | None:
     """Encode an image attachment into a 1024-d embedding vector.
 
@@ -59,9 +72,7 @@ def extract_image_embedding(filename: str, content: bytes) -> list[float] | None
         return None
 
     try:
-        from .image_embedder import ImageEmbedder
-
-        embedder = ImageEmbedder()
+        embedder = _get_image_embedder()
         if not embedder.is_available:
             return None
         return embedder.encode_image(content)

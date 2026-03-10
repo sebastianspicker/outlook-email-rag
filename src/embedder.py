@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Iterable
 
 from .chunker import EmailChunk
 from .config import resolve_runtime_settings
@@ -80,13 +79,25 @@ class EmailEmbedder:
                 self._existing_ids_cache = set(iter_collection_ids(self.collection))
         return self._existing_ids_cache
 
+    def warmup(self) -> None:
+        """Force model load and run a test encode to ensure GPU readiness.
+
+        Call this before starting a long ingestion run so that HuggingFace
+        downloads and model loading happen upfront, not inside the first batch.
+        """
+        self.embedder.warmup()
+
     def add_chunks(
         self,
         chunks: list[EmailChunk],
         show_progress: bool = True,
-        batch_size: int = 100,
+        batch_size: int = 500,
     ) -> int:
-        """Embed and store chunks in ChromaDB and return number of inserted chunks."""
+        """Embed and store chunks in ChromaDB and return number of inserted chunks.
+
+        Encoding is performed in a single pass for maximum GPU throughput.
+        ChromaDB storage uses ``batch_size`` for HNSW-friendly writes.
+        """
         if batch_size <= 0:
             raise ValueError("batch_size must be a positive integer.")
 
@@ -115,57 +126,54 @@ class EmailEmbedder:
                 len(chunks) - len(new_chunks),
             )
 
-        added = 0
         t_start = time.monotonic()
-        for batch in _iter_batches(new_chunks, batch_size):
-            # Separate pre-embedded chunks from those needing encoding
-            needs_encoding: list[EmailChunk] = []
-            pre_embedded: list[EmailChunk] = []
-            for chunk in batch:
-                if chunk.embedding is not None:
-                    pre_embedded.append(chunk)
-                else:
-                    needs_encoding.append(chunk)
 
-            all_ids: list[str] = []
-            all_embeddings: list[list[float]] = []
-            all_texts: list[str] = []
-            all_metadatas: list[dict] = []
+        # ── Encode ALL chunks in one pass (maximises GPU throughput) ────
+        needs_encoding = [c for c in new_chunks if c.embedding is None]
+        pre_embedded = [c for c in new_chunks if c.embedding is not None]
 
-            # Encode chunks that need it
-            if needs_encoding:
-                texts = [c.text for c in needs_encoding]
-                result: MultiVectorResult = self.embedder.encode_all(texts)
-                encoded_embeddings = to_builtin_list(result.dense)
+        encoded_embeddings: list[list[float]] = []
+        if needs_encoding:
+            texts = [c.text for c in needs_encoding]
+            result: MultiVectorResult = self.embedder.encode_all(texts)
+            encoded_embeddings = to_builtin_list(result.dense)
 
-                for i, chunk in enumerate(needs_encoding):
-                    all_ids.append(chunk.chunk_id)
-                    all_embeddings.append(encoded_embeddings[i])
-                    all_texts.append(chunk.text)
-                    all_metadatas.append(chunk.metadata)
+            if result.sparse is not None:
+                self._store_sparse(
+                    [c.chunk_id for c in needs_encoding], result.sparse,
+                )
 
-                # Sparse vectors stored via callback if available (Phase 2 hook)
-                if result.sparse is not None:
-                    self._store_sparse(
-                        [c.chunk_id for c in needs_encoding], result.sparse,
-                    )
+        # Build merged lists: encoded chunks + pre-embedded chunks
+        all_ids: list[str] = []
+        all_embeddings: list[list[float]] = []
+        all_texts: list[str] = []
+        all_metadatas: list[dict] = []
 
-            # Add pre-embedded chunks directly (no re-encoding)
-            for chunk in pre_embedded:
-                all_ids.append(chunk.chunk_id)
-                all_embeddings.append(chunk.embedding)
-                all_texts.append(chunk.text)
-                all_metadatas.append(chunk.metadata)
+        for i, chunk in enumerate(needs_encoding):
+            all_ids.append(chunk.chunk_id)
+            all_embeddings.append(encoded_embeddings[i])
+            all_texts.append(chunk.text)
+            all_metadatas.append(chunk.metadata)
 
+        for chunk in pre_embedded:
+            all_ids.append(chunk.chunk_id)
+            all_embeddings.append(chunk.embedding)
+            all_texts.append(chunk.text)
+            all_metadatas.append(chunk.metadata)
+
+        # ── Store to ChromaDB in batches (HNSW-friendly writes) ────────
+        added = 0
+        for batch_start in range(0, len(all_ids), batch_size):
+            batch_end = batch_start + batch_size
             self.collection.add(
-                ids=all_ids,
-                embeddings=all_embeddings,
-                documents=all_texts,
-                metadatas=all_metadatas,
+                ids=all_ids[batch_start:batch_end],
+                embeddings=all_embeddings[batch_start:batch_end],
+                documents=all_texts[batch_start:batch_end],
+                metadatas=all_metadatas[batch_start:batch_end],
             )
-
-            existing.update(all_ids)
-            added += len(batch)
+            batch_count = min(batch_size, len(all_ids) - batch_start)
+            existing.update(all_ids[batch_start:batch_end])
+            added += batch_count
             if show_progress:
                 elapsed = time.monotonic() - t_start
                 rate = added / elapsed if elapsed > 0 else 0
@@ -218,36 +226,31 @@ class EmailEmbedder:
         if not chunks:
             return 0
 
-        added = 0
-        for batch in _iter_batches(chunks, batch_size):
-            texts = [chunk.text for chunk in batch]
-            ids = [chunk.chunk_id for chunk in batch]
-            metadatas = [chunk.metadata for chunk in batch]
+        # Encode all at once (single GPU pass)
+        texts = [chunk.text for chunk in chunks]
+        ids = [chunk.chunk_id for chunk in chunks]
+        metadatas = [chunk.metadata for chunk in chunks]
 
-            result: MultiVectorResult = self.embedder.encode_all(texts)
-            embeddings = to_builtin_list(result.dense)
+        result: MultiVectorResult = self.embedder.encode_all(texts)
+        embeddings = to_builtin_list(result.dense)
 
+        if result.sparse is not None:
+            self._store_sparse(ids, result.sparse)
+
+        # Upsert to ChromaDB in batches
+        for batch_start in range(0, len(ids), batch_size):
+            batch_end = batch_start + batch_size
             self.collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=metadatas,
+                ids=ids[batch_start:batch_end],
+                embeddings=embeddings[batch_start:batch_end],
+                documents=texts[batch_start:batch_end],
+                metadatas=metadatas[batch_start:batch_end],
             )
 
-            if result.sparse is not None:
-                self._store_sparse(ids, result.sparse)
-
-            existing = self.get_existing_ids(refresh=False)
-            existing.update(ids)
-            added += len(batch)
-
-        return added
+        existing = self.get_existing_ids(refresh=False)
+        existing.update(ids)
+        return len(chunks)
 
     def count(self) -> int:
         """Total number of chunks in the database."""
         return self.collection.count()
-
-
-def _iter_batches(items: list[EmailChunk], batch_size: int) -> Iterable[list[EmailChunk]]:
-    for idx in range(0, len(items), batch_size):
-        yield items[idx : idx + batch_size]

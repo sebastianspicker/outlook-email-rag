@@ -496,3 +496,15 @@ def test_mps_fp32_by_default():
     emb.device = "mps"
     emb._load_model()
     assert calls[0]["use_fp16"] is False
+
+
+# ── warmup ────────────────────────────────────────────────────────
+
+
+def test_warmup_loads_model_and_encodes():
+    """warmup() should force model load and run a test encode."""
+    emb = MultiVectorEmbedder(model_name="BAAI/bge-m3", device="cpu")
+    assert emb._model is None
+    emb.warmup()
+    assert emb._model is not None
+    assert emb._backend is not None

@@ -17,7 +17,7 @@ import numpy as np
 
 from .config import resolve_device, resolve_embedding_batch_size
 
-_MPS_CLEAR_INTERVAL = int(os.environ.get("MPS_CACHE_CLEAR_INTERVAL", "10"))
+_MPS_CLEAR_INTERVAL = int(os.environ.get("MPS_CACHE_CLEAR_INTERVAL", "1"))
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +239,18 @@ class MultiVectorEmbedder:
         # SentenceTransformer: dense only
         vecs = self._model.encode(texts, batch_size=self.batch_size, show_progress_bar=False)
         return MultiVectorResult(dense=_to_list_of_lists(vecs))
+
+    def warmup(self) -> None:
+        """Force model load and run a tiny encode to prime GPU memory."""
+        self._ensure_loaded()
+        self.encode_dense(["warmup"])
+        logger.info(
+            "Model warmed up: %s (backend=%s, device=%s, batch_size=%d)",
+            self.model_name,
+            self.backend.name,
+            self.device,
+            self.batch_size,
+        )
 
     def _mps_cache_clear(self) -> None:
         """Free MPS GPU cache periodically (every _MPS_CLEAR_INTERVAL encodes)."""

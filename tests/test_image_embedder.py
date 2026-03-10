@@ -130,3 +130,21 @@ def test_weight_search_paths():
     assert len(_WEIGHT_SEARCH_PATHS) >= 1
     for p in _WEIGHT_SEARCH_PATHS:
         assert "Visualized_m3.pth" in str(p)
+
+
+# ── ImageEmbedder singleton ──────────────────────────────────────
+
+
+def test_image_embedder_singleton():
+    """_get_image_embedder() should return the same instance on repeated calls."""
+    import src.attachment_extractor as mod
+
+    # Reset singleton for clean test
+    mod._image_embedder = None
+
+    first = mod._get_image_embedder()
+    second = mod._get_image_embedder()
+    assert first is second
+
+    # Cleanup
+    mod._image_embedder = None

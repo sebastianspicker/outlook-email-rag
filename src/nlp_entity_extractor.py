@@ -79,6 +79,11 @@ def is_spacy_available() -> bool:
     return bool(_nlp_models)
 
 
+def preload() -> None:
+    """Force-load spaCy models now (instead of on first extraction call)."""
+    _load_models()
+
+
 def _normalize_person(text: str) -> str:
     """Normalize a person name for dedup."""
     # Strip titles/prefixes

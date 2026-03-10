@@ -385,19 +385,42 @@ def ingest(
     # Image embedder (optional, requires Visualized-BGE-M3 weights)
     image_embedder_fn = None
     if embed_images and not dry_run:
-        from .attachment_extractor import extract_image_embedding, is_image_attachment
+        from .attachment_extractor import (
+            _get_image_embedder,
+            extract_image_embedding,
+            is_image_attachment,
+        )
 
         image_embedder_fn = extract_image_embedding
-        # Test availability up front to log a warning
-        from .image_embedder import ImageEmbedder
-
-        probe = ImageEmbedder()
+        # Eagerly initialise the singleton and check availability
+        probe = _get_image_embedder()
         if not probe.is_available:
             logger.warning(
                 "Image embedding requested but Visualized-BGE weights not found. "
                 "Image attachments will be skipped."
             )
             image_embedder_fn = None
+
+    # ── Model preload ──────────────────────────────────────────────
+    # Force all model downloads and GPU loading before the ingestion
+    # loop so that the pipeline has zero lazy-init overhead.
+    t_preload = time.monotonic()
+
+    if embedder:
+        logger.info("Warming up embedding model …")
+        embedder.warmup()
+
+    if entity_extractor_fn:
+        try:
+            from .nlp_entity_extractor import preload as _preload_nlp
+
+            _preload_nlp()
+        except ImportError:
+            pass
+
+    dt_preload = time.monotonic() - t_preload
+    if dt_preload > 0.1:
+        logger.info("Model preload complete (%.1fs)", dt_preload)
 
     # Record ingestion start with OLM file hash for chain of custody
     ingestion_run_id = None

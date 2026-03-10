@@ -115,6 +115,9 @@ class _MockEmbedder:
     def set_sparse_db(self, db):
         pass
 
+    def warmup(self):
+        pass
+
 
 def test_ingest_populates_sqlite(monkeypatch, tmp_path):
     import src.ingest as ingest_mod

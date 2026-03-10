@@ -23,6 +23,20 @@ class _DummyCollection:
                 }
             )
 
+    def upsert(self, ids, embeddings, documents, metadatas):
+        existing_ids = {item["id"] for item in self._items}
+        for idx, chunk_id in enumerate(ids):
+            item = {
+                "id": chunk_id,
+                "embedding": embeddings[idx],
+                "document": documents[idx],
+                "metadata": metadatas[idx],
+            }
+            if chunk_id in existing_ids:
+                self._items = [it if it["id"] != chunk_id else item for it in self._items]
+            else:
+                self._items.append(item)
+
     def count(self):
         return len(self._items)
 
