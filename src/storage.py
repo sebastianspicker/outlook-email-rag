@@ -13,6 +13,8 @@ DEFAULT_PAGE_SIZE = 1000
 
 # HNSW tuning for bulk ingestion.  batch_size delays graph construction until
 # N elements are buffered, avoiding O(n) rebalancing on every .add() call.
+# 100K threshold covers typical email archives (up to ~40K emails / ~100K chunks);
+# the graph is built once at first query time instead of during ingestion.
 # num_threads parallelises the index build across CPU cores.
 HNSW_DEFAULTS: dict[str, object] = {
     "hnsw:space": "cosine",
