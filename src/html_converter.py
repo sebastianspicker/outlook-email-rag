@@ -58,8 +58,9 @@ def html_to_text(html: str) -> str:
 
     # Headings → markdown-style
     for _level, (pattern, prefix) in _RE_HEADINGS.items():
+        _p = prefix  # bind for lambda closure
         text = pattern.sub(
-            lambda m, p=prefix: f"\n{p}{m.group(1).strip()}\n",
+            lambda m, p=_p: f"\n{p}{m.group(1).strip()}\n",  # type: ignore[misc]
             text,
         )
 

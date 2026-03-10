@@ -106,7 +106,7 @@ class MultiVectorEmbedder:
         Returns True on success, False if FlagEmbedding is not installed.
         """
         try:
-            from FlagEmbedding import BGEM3FlagModel  # type: ignore[import-untyped]
+            from FlagEmbedding import BGEM3FlagModel
         except ImportError:
             return False
 

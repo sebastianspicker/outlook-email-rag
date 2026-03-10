@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import Any
 
 from .chunker import EmailChunk
 from .config import resolve_runtime_settings
@@ -34,8 +35,8 @@ class EmailEmbedder:
 
         self._embedder: MultiVectorEmbedder | None = None
         self._existing_ids_cache: set[str] | None = None
-        self._sparse_db: object | None = None  # injected via set_sparse_db()
-        self._sparse_db_fallback: object | None = None  # lazy singleton
+        self._sparse_db: Any | None = None  # injected via set_sparse_db()
+        self._sparse_db_fallback: Any | None = None  # lazy singleton
 
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
@@ -157,6 +158,7 @@ class EmailEmbedder:
 
         for chunk in pre_embedded:
             all_ids.append(chunk.chunk_id)
+            assert chunk.embedding is not None  # filtered above
             all_embeddings.append(chunk.embedding)
             all_texts.append(chunk.text)
             all_metadatas.append(chunk.metadata)

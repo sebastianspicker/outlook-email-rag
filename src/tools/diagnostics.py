@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from ..mcp_models import ReembedInput, ReingestBodiesInput, ReingestMetadataInput
-from .utils import json_error, json_response
+from .utils import ToolDepsProto, get_deps, json_error, json_response
 
-_deps = None
+_deps: ToolDepsProto | None = None
+
+
+def _d() -> ToolDepsProto:
+    """Return the module-level deps, asserting it was set by ``register()``."""
+    return get_deps(_deps)
 
 
 async def email_diagnostics() -> str:
@@ -14,12 +19,14 @@ async def email_diagnostics() -> str:
     Combines model/device/backend details with sparse vector and ColBERT
     status in a single call.
     """
+    deps = _d()
+
     def _run():
         from ..config import get_settings
 
-        retriever = _deps.get_retriever()
+        retriever = deps.get_retriever()
         settings = get_settings()
-        db = _deps.get_email_db()
+        db = deps.get_email_db()
         info: dict = {
             "embedding_model": settings.embedding_model,
             "device": str(getattr(retriever.embedder, "device", "unknown")),
@@ -46,7 +53,7 @@ async def email_diagnostics() -> str:
         except Exception:  # noqa: BLE001
             pass
         return json_response(info)
-    return await _deps.offload(_run)
+    return await deps.offload(_run)
 
 
 async def email_reingest_bodies(params: ReingestBodiesInput) -> str:
@@ -77,7 +84,7 @@ async def email_reingest_bodies(params: ReingestBodiesInput) -> str:
             return json_error(f"OLM file not found: {params.olm_path}")
         except Exception as exc:  # noqa: BLE001
             return json_error(str(exc))
-    return await _deps.offload(_run)
+    return await _d().offload(_run)
 
 
 async def email_reembed(params: ReembedInput) -> str:
@@ -101,7 +108,7 @@ async def email_reembed(params: ReembedInput) -> str:
             return json_response(reembed(batch_size=params.batch_size))
         except Exception as exc:  # noqa: BLE001
             return json_error(str(exc))
-    return await _deps.offload(_run)
+    return await _d().offload(_run)
 
 
 async def email_reingest_metadata(params: ReingestMetadataInput) -> str:
@@ -127,7 +134,7 @@ async def email_reingest_metadata(params: ReingestMetadataInput) -> str:
             return json_error(f"OLM file not found: {params.olm_path}")
         except Exception as exc:  # noqa: BLE001
             return json_error(str(exc))
-    return await _deps.offload(_run)
+    return await _d().offload(_run)
 
 
 async def email_reingest_analytics() -> str:
@@ -147,7 +154,7 @@ async def email_reingest_analytics() -> str:
             return json_response(reingest_analytics())
         except Exception as exc:  # noqa: BLE001
             return json_error(str(exc))
-    return await _deps.offload(_run)
+    return await _d().offload(_run)
 
 
 def register(mcp_instance, deps) -> None:

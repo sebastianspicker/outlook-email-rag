@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+from typing import TYPE_CHECKING
+
 
 def _escape_like(text: str) -> str:
     """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
@@ -31,6 +34,9 @@ def _attachment_filter_conditions(
 
 class AttachmentMixin:
     """Attachment queries: per-email, stats, browse, and search."""
+
+    if TYPE_CHECKING:
+        conn: sqlite3.Connection
 
     def attachments_for_email(self, uid: str) -> list[dict]:
         """Get all attachments for a specific email."""

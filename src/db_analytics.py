@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass  # conn declared below for mypy
 
 
 class AnalyticsMixin:
     """Cluster, topic, keyword, contact, and relationship query methods."""
+
+    if TYPE_CHECKING:
+        conn: sqlite3.Connection
 
     # ------------------------------------------------------------------
     # Cluster operations

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
+from typing import TYPE_CHECKING
+
 
 def _escape_like(text: str) -> str:
     """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
@@ -10,6 +13,9 @@ def _escape_like(text: str) -> str:
 
 class EntityMixin:
     """NLP entity insert, search, timeline, and co-occurrence queries."""
+
+    if TYPE_CHECKING:
+        conn: sqlite3.Connection
 
     def insert_entities_batch(
         self, email_uid: str, entities: list[tuple[str, str, str]], *, commit: bool = True

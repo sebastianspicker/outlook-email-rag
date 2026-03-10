@@ -3,6 +3,43 @@
 from __future__ import annotations
 
 import json
+from typing import Any, Protocol
+
+
+class ToolDepsProto(Protocol):
+    """Protocol describing the ToolDeps interface injected by mcp_server.
+
+    Avoids circular imports while giving mypy full attr-defined checking.
+    """
+
+    @staticmethod
+    def get_retriever() -> Any: ...
+
+    @staticmethod
+    def get_email_db() -> Any: ...
+
+    @staticmethod
+    async def offload(fn: Any, *args: Any, **kwargs: Any) -> Any: ...
+
+    @staticmethod
+    def tool_annotations(title: str) -> Any: ...
+
+    @staticmethod
+    def write_tool_annotations(title: str) -> Any: ...
+
+    @staticmethod
+    def idempotent_write_annotations(title: str) -> Any: ...
+
+    DB_UNAVAILABLE: str
+
+    @staticmethod
+    def sanitize(text: str) -> str: ...
+
+
+def get_deps(deps: ToolDepsProto | None) -> ToolDepsProto:
+    """Return *deps* after asserting it has been initialized by ``register()``."""
+    assert deps is not None, "Tool module not registered — call register() first"
+    return deps
 
 
 async def run_with_db(deps, fn):

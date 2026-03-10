@@ -86,7 +86,7 @@ class ImageEmbedder:
                 tmp_path = f.name
 
             try:
-                embedding = self._model.encode(image=tmp_path)  # type: ignore[union-attr]
+                embedding = self._model.encode(image=tmp_path)
                 # Normalize to list of floats
                 if hasattr(embedding, "tolist"):
                     return embedding.tolist()
@@ -175,7 +175,7 @@ class ImageEmbedder:
     def _try_load(self, model_name: str) -> None:
         """Attempt to load the Visualized-BGE model."""
         try:
-            from FlagEmbedding.visual.modeling import Visualized_BGE  # type: ignore[import-untyped]
+            from FlagEmbedding.visual.modeling import Visualized_BGE
 
             self._model = Visualized_BGE(
                 model_name_bge=model_name,

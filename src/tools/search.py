@@ -9,9 +9,15 @@ from ..mcp_models import (
     EmailSearchThreadInput,
     ListSendersInput,
 )
-from .utils import json_error, json_response, run_with_retriever
+from .utils import ToolDepsProto, get_deps, json_error, json_response, run_with_retriever
 
-_deps = None
+_deps: ToolDepsProto | None = None
+
+
+def _d() -> ToolDepsProto:
+    """Return the module-level deps, asserting it was set by ``register()``."""
+    return get_deps(_deps)
+
 
 _FILTER_FIELDS = [
     "sender", "subject", "folder", "cc", "to", "bcc",
@@ -44,10 +50,12 @@ async def email_search(params: EmailSearchInput) -> str:
     For filtered searches (by sender, date, folder, etc.), use email_search_structured.
     For auto-intent detection, use email_smart_search.
     """
+    deps = _d()
+
     def _run():
-        r = _deps.get_retriever()
-        return _deps.sanitize(r.format_results_for_claude(r.search(params.query, top_k=params.top_k)))
-    return await _deps.offload(_run)
+        r = deps.get_retriever()
+        return deps.sanitize(r.format_results_for_claude(r.search(params.query, top_k=params.top_k)))
+    return await deps.offload(_run)
 
 
 async def email_list_senders(params: ListSendersInput) -> str:
@@ -56,8 +64,10 @@ async def email_list_senders(params: ListSendersInput) -> str:
     Useful for discovering who is in the archive before searching for
     specific conversations. Returns sender name, email, and message count.
     """
+    deps = _d()
+
     def _run():
-        r = _deps.get_retriever()
+        r = deps.get_retriever()
         senders = r.list_senders(limit=params.limit)
         if not senders:
             return "No senders found in the archive."
@@ -65,8 +75,8 @@ async def email_list_senders(params: ListSendersInput) -> str:
         for entry in senders:
             label = entry.get("name") or entry.get("email") or "unknown"
             lines.append(f"  {entry['count']:>5} emails — {label}")
-        return _deps.sanitize("\n".join(lines))
-    return await _deps.offload(_run)
+        return deps.sanitize("\n".join(lines))
+    return await deps.offload(_run)
 
 
 async def email_stats() -> str:
@@ -76,7 +86,7 @@ async def email_stats() -> str:
     and folder distribution. Useful for understanding the scope of the
     archive before searching.
     """
-    return await run_with_retriever(_deps, lambda r: json_response(r.stats()))
+    return await run_with_retriever(_d(), lambda r: json_response(r.stats()))
 
 
 async def email_search_structured(params: EmailSearchStructuredInput) -> str:
@@ -87,10 +97,12 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
     hybrid BM25 search, and query expansion. For simple unfiltered queries,
     email_search is faster.
     """
+    deps = _d()
+
     def _run():
         from ..config import get_settings
 
-        r = _deps.get_retriever()
+        r = deps.get_retriever()
         search_kwargs = _build_search_kwargs(params)
         results = r.search_filtered(**search_kwargs)
         payload = r.serialize_results(params.query, results)
@@ -109,7 +121,7 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
         }
         payload["model"] = get_settings().embedding_model
         return json_response(payload)
-    return await _deps.offload(_run)
+    return await deps.offload(_run)
 
 
 async def email_list_folders() -> str:
@@ -118,16 +130,18 @@ async def email_list_folders() -> str:
     Returns a sorted list of folder names and the number of emails in each.
     Useful for understanding archive structure before scoping a search.
     """
+    deps = _d()
+
     def _run():
-        r = _deps.get_retriever()
+        r = deps.get_retriever()
         folders = r.list_folders()
         if not folders:
             return "No folders found in the archive."
         lines = [f"Folders in the email archive ({len(folders)} total):\n"]
         for entry in folders:
             lines.append(f"  {entry['count']:>5} emails - {entry['folder']}")
-        return _deps.sanitize("\n".join(lines))
-    return await _deps.offload(_run)
+        return deps.sanitize("\n".join(lines))
+    return await deps.offload(_run)
 
 
 async def email_ingest(params: EmailIngestInput) -> str:
@@ -150,7 +164,7 @@ async def email_ingest(params: EmailIngestInput) -> str:
         except Exception as exc:  # noqa: BLE001
             return json_error(str(exc))
         return json_response(stats)
-    return await _deps.offload(_run)
+    return await _d().offload(_run)
 
 
 async def email_search_thread(params: EmailSearchThreadInput) -> str:
@@ -159,13 +173,15 @@ async def email_search_thread(params: EmailSearchThreadInput) -> str:
     Given a ``conversation_id`` (from a previous search result), returns all
     emails in that thread sorted by date.
     """
+    deps = _d()
+
     def _run():
-        r = _deps.get_retriever()
+        r = deps.get_retriever()
         results = r.search_by_thread(conversation_id=params.conversation_id, top_k=params.top_k)
         if not results:
             return "No emails found for this conversation thread."
-        return _deps.sanitize(r.format_results_for_claude(results))
-    return await _deps.offload(_run)
+        return deps.sanitize(r.format_results_for_claude(results))
+    return await deps.offload(_run)
 
 
 def register(mcp_instance, deps) -> None:

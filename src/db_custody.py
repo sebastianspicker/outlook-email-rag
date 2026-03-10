@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
+from typing import TYPE_CHECKING
 
 
 class CustodyMixin:
     """Chain-of-custody audit trail and ingestion run tracking."""
+
+    if TYPE_CHECKING:
+        conn: sqlite3.Connection
+
+        def get_evidence(self, evidence_id: int) -> dict | None: ...  # from EvidenceMixin
 
     @staticmethod
     def compute_content_hash(content: str) -> str:
@@ -155,7 +162,8 @@ class CustodyMixin:
             ),
         )
         self.conn.commit()
-        run_id = cur.lastrowid  # type: ignore[return-value]
+        run_id = cur.lastrowid
+        assert run_id is not None  # INSERT always sets lastrowid
 
         self.log_custody_event(
             "ingest_start",

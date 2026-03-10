@@ -109,7 +109,7 @@ def detect_language(text: str) -> str:
 
     token_set = set(tokens)
     best_lang = "unknown"
-    best_score = 0
+    best_score: float = 0
 
     for lang, stopwords in _STOPWORDS.items():
         matches = len(token_set & stopwords)

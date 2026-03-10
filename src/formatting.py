@@ -237,7 +237,7 @@ def write_html_or_pdf(html: str, output_path: str, fmt: str) -> dict[str, Any]:
 
     if fmt.lower() == "pdf":
         try:
-            from weasyprint import HTML as WeasyprintHTML  # type: ignore[import-untyped]
+            from weasyprint import HTML as WeasyprintHTML
 
             WeasyprintHTML(string=html).write_pdf(output_path)
             return {"output_path": output_path, "format": "pdf"}

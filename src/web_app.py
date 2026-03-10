@@ -461,14 +461,11 @@ def render_evidence_page() -> None:
             from src.evidence_exporter import EvidenceExporter
 
         exporter = EvidenceExporter(db)
-        export_kwargs = {
-            "min_relevance": export_min_rel if export_min_rel > 1 else None,
-            "category": cat_filter,
-        }
+        export_min_rel_val: int | None = export_min_rel if export_min_rel > 1 else None
         if export_format == "csv":
-            export_result = exporter.export_csv(**export_kwargs)
+            export_result = exporter.export_csv(min_relevance=export_min_rel_val, category=cat_filter)
         else:
-            export_result = exporter.export_html(**export_kwargs)
+            export_result = exporter.export_html(min_relevance=export_min_rel_val, category=cat_filter)
 
         if export_format == "html" and "html" in export_result:
             st.download_button(
@@ -693,7 +690,7 @@ def main() -> None:
     render_results_summary(results, active_filter_labels, sort_label)
 
     total_pages = max(1, (len(results) + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = max(0, min(st.session_state.get("web_page", 0), total_pages - 1))
+    page: int = max(0, min(int(st.session_state.get("web_page", 0)), total_pages - 1))
     page_results = results[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
 
     # Thread view

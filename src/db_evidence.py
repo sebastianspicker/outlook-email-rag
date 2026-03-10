@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
+from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,18 @@ def _escape_like(text: str) -> str:
 
 class EvidenceMixin:
     """Evidence item CRUD, verification, search, and statistics."""
+
+    if TYPE_CHECKING:
+        conn: sqlite3.Connection
+
+        @staticmethod
+        def compute_content_hash(content: str) -> str: ...  # from CustodyMixin
+
+        def log_custody_event(
+            self, action: str, target_type: str | None = ...,
+            target_id: str | None = ..., details: dict | None = ...,
+            content_hash: str | None = ..., actor: str = ...,
+        ) -> int: ...  # from CustodyMixin
 
     EVIDENCE_CATEGORIES: list[str] = [
         "bossing", "harassment", "discrimination", "retaliation",

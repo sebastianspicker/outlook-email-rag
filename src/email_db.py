@@ -75,7 +75,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         self._conn: sqlite3.Connection | None = None
 
     @property
-    def conn(self) -> sqlite3.Connection:
+    def conn(self) -> sqlite3.Connection:  # type: ignore[override]  # mixin stubs declare as attribute
         if self._conn is None:
             if self._db_path != ":memory:":
                 Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)

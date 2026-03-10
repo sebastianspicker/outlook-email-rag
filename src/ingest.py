@@ -350,7 +350,7 @@ def ingest(
         embedder.set_sparse_db(email_db)
 
     # Entity extractor — prefer NLP (spaCy) if available, fall back to regex
-    entity_extractor_fn = None
+    entity_extractor_fn: Any = None
     if extract_entities and not dry_run:
         try:
             from .nlp_entity_extractor import extract_nlp_entities, is_spacy_available

@@ -116,7 +116,7 @@ class FineTuner:
         triplet_count: int,
     ) -> dict[str, Any]:
         """Train using FlagEmbedding's native training API."""
-        import FlagEmbedding  # type: ignore[import-untyped]  # noqa: F401
+        import FlagEmbedding  # noqa: F401
 
         # FlagEmbedding training expects specific directory structure
         Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -215,7 +215,7 @@ class FineTuner:
                 "status": "error: no valid triplets",
             }
 
-        loader = DataLoader(examples, shuffle=True, batch_size=batch_size)
+        loader: Any = DataLoader(examples, shuffle=True, batch_size=batch_size)
         loss = losses.TripletLoss(model=model)
 
         model.fit(

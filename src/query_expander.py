@@ -74,7 +74,7 @@ class QueryExpander:
 
             # Select top terms not already in query
             query_lower = query.lower()
-            added = []
+            added: list[str] = []
             for idx in top_indices:
                 if len(added) >= n_terms:
                     break
@@ -126,7 +126,7 @@ class QueryExpander:
             top_indices = similarities.argsort()[::-1]
 
             query_lower = query.lower()
-            results = []
+            results: list[tuple[str, float]] = []
             for idx in top_indices:
                 if len(results) >= n_terms:
                     break
