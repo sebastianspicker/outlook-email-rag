@@ -296,7 +296,7 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
     # Body fields: plain text uses itertext(); HTML preserves child element
     # structure (e.g. <p>, <br/>, <table>) via serialization when present.
     body_text_el = _find(root, "OPFMessageCopyBody", ns)
-    body_text = "".join(body_text_el.itertext()) if body_text_el is not None else ""
+    body_text = "".join(body_text_el.itertext()) if body_text_el is not None else ""  # type: ignore[arg-type]
     body_html_el = _find(root, "OPFMessageCopyHTMLBody", ns)
     body_html = _extract_html_body(body_html_el) if body_html_el is not None else ""
 
@@ -347,7 +347,7 @@ def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
 
     # ── Fallback: parse OPFMessageCopySource headers ───────
     raw_source_el = _find(root, "OPFMessageCopySource", ns)
-    raw_source = "".join(raw_source_el.itertext()) if raw_source_el is not None else ""
+    raw_source = "".join(raw_source_el.itertext()) if raw_source_el is not None else ""  # type: ignore[arg-type]
     if raw_source:
         if not message_id:
             message_id = _extract_header(raw_source, "Message-ID").strip("<>")
@@ -464,10 +464,10 @@ def _parse_address_element(element: etree._Element) -> tuple[str, str]:
     # Strategy 1: check XML attributes (newer OLM format)
     for attr_name, attr_value in element.attrib.items():
         attr_lower = attr_name.lower()
-        if "address" in attr_lower and "@" in attr_value:
-            email_addr = attr_value.strip()
-        elif "name" in attr_lower and attr_value.strip():
-            name = attr_value.strip()
+        if "address" in attr_lower and "@" in str(attr_value):
+            email_addr = str(attr_value).strip()
+        elif "name" in attr_lower and str(attr_value).strip():
+            name = str(attr_value).strip()
 
     # Strategy 2: check child elements (older OLM format / fallback)
     if not email_addr:
@@ -563,8 +563,8 @@ def _extract_attachment_field(
     # Strategy 2: XML attributes (fuzzy matching)
     hint_lower = attr_hint.lower()
     for attr_name, attr_value in att.attrib.items():
-        if hint_lower in attr_name.lower() and attr_value.strip():
-            return attr_value.strip()
+        if hint_lower in attr_name.lower() and str(attr_value).strip():
+            return str(attr_value).strip()
 
     return ""
 
@@ -751,7 +751,7 @@ def _extract_html_body(el: etree._Element) -> str:
     """
     if len(el) == 0:
         # No child elements — pure text content
-        return "".join(el.itertext())
+        return "".join(el.itertext())  # type: ignore[arg-type]
     # Has child elements — serialize inner HTML to preserve structure
     parts: list[str] = []
     if el.text:

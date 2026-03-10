@@ -215,7 +215,7 @@ class FineTuner:
                 "status": "error: no valid triplets",
             }
 
-        loader: Any = DataLoader(examples, shuffle=True, batch_size=batch_size)
+        loader = DataLoader(examples, shuffle=True, batch_size=batch_size)  # type: ignore[arg-type]
         loss = losses.TripletLoss(model=model)
 
         model.fit(
