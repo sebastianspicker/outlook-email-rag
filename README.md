@@ -209,8 +209,13 @@ This reads every email, splits them into searchable chunks, and stores them in l
 
 ```
 [INFO] Parsing: data/my-export.olm
-[INFO] Progress: 100 emails processed
-[INFO] Progress: 200 emails processed
+[INFO] Found 1 842 emails
+[INFO] Warming up embedding model …
+[INFO] Loaded SentenceTransformer from cache: BAAI/bge-m3 (device=mps)
+[INFO] Model warmed up: BAAI/bge-m3 (backend=sentence_transformer, device=mps, batch_size=32)
+[INFO] Model preload complete (5.5s)
+[INFO] Batch 1 done (500 chunks, 98.2s, 5.1 chunks/s)
+[INFO] Batch 2 done (500 chunks, 101.4s, 4.9 chunks/s)
 ...
 === Ingestion Summary ===
 Emails parsed:   1 842
@@ -218,7 +223,7 @@ Chunks created:  4 210
 Chunks added:    4 210
 Chunks skipped:  0
 Total in DB:     4 210
-Elapsed:         47.3s
+Elapsed:         14m 22s
 ```
 
 > **Large mailboxes:** For a quick test first, you can limit to the first 200 emails:
@@ -649,7 +654,8 @@ HYBRID_ENABLED=false               # hybrid semantic + BM25 keyword search
 # BGE-M3 multi-vector features (all optional, default: disabled)
 SPARSE_ENABLED=false               # learned sparse vectors (replaces BM25)
 COLBERT_RERANK_ENABLED=false       # ColBERT token-level reranking
-EMBEDDING_BATCH_SIZE=0             # 0 = auto-detect (MPS: 8, CUDA: 32, CPU: 16)
+EMBEDDING_BATCH_SIZE=0             # 0 = auto-detect (MPS: 32, CUDA: 64, CPU: 16)
+MPS_CACHE_CLEAR_INTERVAL=1         # clear MPS GPU cache every N encode calls
 ```
 
 Copy `.env.example` as a starting point: `cp .env.example .env`
@@ -690,7 +696,23 @@ python -m src.ingest --help
 
 ### Ingest is slow
 
-This is normal on first run — the embedding model needs to process every email. A mailbox with 5 000 emails typically takes 3-10 minutes on a modern Mac.
+This is expected — each chunk requires a full BGE-M3 forward pass (560M parameters). On Apple Silicon with MPS, expect **4–6 chunks/s** sustained. A mailbox with 5 000 emails (~12K chunks) takes roughly 35–45 minutes.
+
+**First run** is the slowest because HuggingFace downloads the model weights (~2.3 GB). Subsequent runs load from cache in ~5 seconds.
+
+To diagnose, run with debug logging:
+
+```bash
+LOG_LEVEL=DEBUG python -m src.ingest data/my-export.olm --max-emails 50
+```
+
+If throughput degrades over time (first batches fast, later batches slow), this is usually MPS memory pressure. The default `MPS_CACHE_CLEAR_INTERVAL=1` should handle it, but you can verify:
+
+```bash
+MPS_CACHE_CLEAR_INTERVAL=1 python -m src.ingest data/my-export.olm
+```
+
+See [Performance & Hardware](#performance--hardware) for detailed benchmarks and tuning options.
 
 ### "command not found: claude"
 
@@ -941,6 +963,70 @@ flowchart TB
 **Deduplication:** Each chunk has a stable ID derived from the email's `message_id` header (or a hash of subject + date + sender as fallback). Re-running ingest skips chunks that are already stored.
 
 **Chain of custody:** Every ingestion, evidence addition, and modification is logged with SHA-256 content hashes, timestamps, and actor identity in the `custody_chain` SQLite table.
+
+---
+
+## Performance & Hardware
+
+### Embedding model
+
+The default model is [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) — a 560M-parameter multilingual embedding model producing 1024-dimensional dense vectors. It runs entirely on-device using Apple Metal (MPS), NVIDIA CUDA, or CPU. No API calls, no data leaves your machine.
+
+| Capability | Backend | Output |
+|------------|---------|--------|
+| Dense vectors (always on) | SentenceTransformers or FlagEmbedding | 1024-d float32 |
+| Learned sparse vectors | FlagEmbedding only | token-weight dict |
+| ColBERT token vectors | FlagEmbedding only | per-token 1024-d |
+
+### Ingestion throughput
+
+The ingestion bottleneck is the embedding forward pass — each chunk requires a full transformer inference. Throughput depends on your hardware:
+
+| Hardware | Device | Batch size | Sustained rate | 5 000 emails (~12K chunks) |
+|----------|--------|------------|----------------|---------------------------|
+| Apple M1 Pro / 16 GB | `mps` | 32 | ~4–5 chunks/s | ~40 min |
+| Apple M2 Max / 32 GB | `mps` | 32 | ~5–6 chunks/s | ~35 min |
+| NVIDIA RTX 3090 / 4090 | `cuda` | 64 | ~15–30 chunks/s | ~7–14 min |
+| Intel i7 (no GPU) | `cpu` | 16 | ~1–2 chunks/s | ~2–3 hours |
+
+> **Rule of thumb:** Outlook exports average ~2–3 chunks per email (body + quoted content + attachments). Multiply your email count by 2.5 for a rough chunk estimate.
+
+### What the pipeline does
+
+```
+Parse OLM (fast)
+  ↓
+Model preload — ~5 s (download on first run, cached after)
+  ↓
+Producer thread: parse → chunk → enqueue
+Consumer thread: encode → store ChromaDB → store SQLite
+  ↓
+Enrichment: entities, topics, clusters, keywords
+```
+
+1. **Model preloading** — BGE-M3 weights are loaded and a warmup encode runs before the ingestion loop starts, so the first batch isn't penalized by model initialization. On subsequent runs the model loads from HuggingFace's local cache (`~/.cache/huggingface/`), skipping ~30 HTTP HEAD requests to the Hub that `SentenceTransformer()` would otherwise make to check for model updates.
+
+2. **Encode-then-store** — All chunks in a batch are encoded in a single `encode_all()` call, then written to ChromaDB and SQLite in separate storage-only batches. The naive approach — encode a small batch, write it, encode the next — creates GPU idle bubbles: ChromaDB's HNSW index construction is CPU-bound and holds a write lock, so the GPU sits waiting for each HNSW insert to finish before the next encode can start. By encoding everything first and then flushing to storage, the GPU runs at full utilization during the compute phase and the CPU handles the I/O phase without contention.
+
+3. **MPS memory management** — Apple's Metal Performance Shaders uses macOS unified memory (shared between CPU and GPU). Unlike CUDA, MPS never releases allocated GPU memory back to the system — it only grows. On a sustained workload like embedding 10K+ chunks, this means GPU memory pressure eventually competes with system RAM, causing swap thrashing and a ~5× throughput drop after the first few hundred chunks. The fix is calling `torch.mps.empty_cache()` between sub-batches. This call is near-free (~0.1 ms vs. ~200 ms for the forward pass itself), so clearing after every sub-batch of 32 texts has negligible overhead while keeping memory stable. The interval is configurable via `MPS_CACHE_CLEAR_INTERVAL` for experimentation, but 1 (every sub-batch) is the right default for most Apple Silicon machines.
+
+4. **MPS sub-batch encoding** — A single `model.encode(500_texts, batch_size=32)` call runs 16 internal forward passes, but the MPS cache is only cleared *after* the call returns — by which point memory has already accumulated. The pipeline instead calls `model.encode()` in explicit loops of `batch_size` texts, clearing the MPS cache between each iteration. This gives the same mathematical result but with bounded GPU memory usage. On CUDA this isn't necessary because CUDA's memory allocator handles fragmentation more gracefully.
+
+5. **Threading** — A producer thread parses and chunks emails while a consumer thread encodes and stores. Queue depth of 4 batches keeps both threads busy. The producer is I/O-bound (XML parsing, ZIP extraction) while the consumer is GPU-bound, so they overlap well.
+
+### Tuning
+
+These environment variables can be set in your `.env` file:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEVICE` | `auto` | Force `mps`, `cuda`, or `cpu` (auto-detected by default) |
+| `EMBEDDING_BATCH_SIZE` | `0` (auto) | Forward-pass batch size; auto = 32 on MPS, 64 on CUDA, 16 on CPU |
+| `MPS_CACHE_CLEAR_INTERVAL` | `1` | Clear MPS GPU cache every N encode calls (increase to 2–3 if memory isn't an issue) |
+| `SPARSE_ENABLED` | `false` | Enable learned sparse vectors (requires FlagEmbedding; ~10% slower) |
+| `COLBERT_RERANK_ENABLED` | `false` | Enable ColBERT reranking at query time |
+
+> **First run is slowest.** HuggingFace downloads the BGE-M3 weights (~2.3 GB) on first use. Subsequent runs load from disk cache in ~5 seconds.
 
 ---
 
