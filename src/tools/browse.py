@@ -69,8 +69,10 @@ def register(mcp, deps) -> None:
             )
 
             if params.include_body:
+                uids = [e["uid"] for e in page["emails"]]
+                full_map = db.get_emails_full_batch(uids)
                 for email in page["emails"]:
-                    full = db.get_email_full(email["uid"])
+                    full = full_map.get(email["uid"])
                     if full:
                         email["body_text"] = full.get("body_text", "")
 

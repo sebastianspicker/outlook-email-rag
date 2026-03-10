@@ -345,7 +345,7 @@
         </td>
         <td class="col-quote">{{ item.key_quote }}</td>
         <td class="col-rel">
-          <span class="relevance-stars">{{ '&#9733;' * item.relevance }}{{ '&#9734;' * (5 - item.relevance) }}</span>
+          <span class="relevance-stars">{{ '\u2605' * item.relevance }}{{ '\u2606' * (5 - item.relevance) }}</span>
         </td>
         <td class="col-ver">
           {% if item.verified %}

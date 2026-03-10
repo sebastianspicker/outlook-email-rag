@@ -138,7 +138,7 @@ def test_add_evidence_quote_not_verified_when_missing():
 
     result = db.add_evidence(
         email_uid=email.uid,
-        category="other",
+        category="general",
         key_quote="This quote does not exist in the email",
         summary="Test.",
         relevance=1,
@@ -170,7 +170,7 @@ def test_add_evidence_with_notes():
 
     result = db.add_evidence(
         email_uid=email.uid,
-        category="insult",
+        category="gaslighting",
         key_quote="don't need people like you",
         summary="Derogatory language.",
         relevance=4,
@@ -193,7 +193,7 @@ def _seed_evidence(db: EmailDatabase) -> list[dict]:
     db.insert_email(e3)
 
     items = [
-        db.add_evidence(e1.uid, "insult", "You are incompetent", "Insult.", 4),
+        db.add_evidence(e1.uid, "gaslighting", "You are incompetent", "Gaslighting.", 4),
         db.add_evidence(e2.uid, "bossing", "This is your fault", "Blame-shifting.", 3),
         db.add_evidence(e3.uid, "harassment", "You should leave", "Hostile push-out.", 5),
         db.add_evidence(e1.uid, "discrimination", "You are incompetent", "Targeting disability.", 5),
@@ -215,9 +215,9 @@ def test_list_evidence_filter_category():
     db = EmailDatabase(":memory:")
     _seed_evidence(db)
 
-    result = db.list_evidence(category="insult")
+    result = db.list_evidence(category="gaslighting")
     assert result["total"] == 1
-    assert result["items"][0]["category"] == "insult"
+    assert result["items"][0]["category"] == "gaslighting"
     db.close()
 
 
@@ -294,7 +294,7 @@ def test_update_evidence_fields():
     db = EmailDatabase(":memory:")
     email = _make_email()
     db.insert_email(email)
-    added = db.add_evidence(email.uid, "other", "not welcome", "Initial.", 2)
+    added = db.add_evidence(email.uid, "general", "not welcome", "Initial.", 2)
 
     updated = db.update_evidence(added["id"], category="bossing", relevance=4, notes="Updated note")
     assert updated is True
@@ -316,7 +316,7 @@ def test_update_evidence_reverifies_quote():
     db = EmailDatabase(":memory:")
     email = _make_email(body_text="Original text here. New quote in body.")
     db.insert_email(email)
-    added = db.add_evidence(email.uid, "other", "Original text here", "Test.", 2)
+    added = db.add_evidence(email.uid, "general", "Original text here", "Test.", 2)
     assert db.get_evidence(added["id"])["verified"] == 1
 
     # Update to a quote that doesn't exist
@@ -335,7 +335,7 @@ def test_update_evidence_no_valid_fields():
     db = EmailDatabase(":memory:")
     email = _make_email()
     db.insert_email(email)
-    added = db.add_evidence(email.uid, "other", "not welcome", "Test.", 2)
+    added = db.add_evidence(email.uid, "general", "not welcome", "Test.", 2)
 
     # Passing no recognized fields returns False
     assert db.update_evidence(added["id"], bogus_field="value") is False
@@ -349,7 +349,7 @@ def test_remove_evidence_valid():
     db = EmailDatabase(":memory:")
     email = _make_email()
     db.insert_email(email)
-    added = db.add_evidence(email.uid, "insult", "not welcome", "Test.", 3)
+    added = db.add_evidence(email.uid, "gaslighting", "not welcome", "Test.", 3)
 
     assert db.remove_evidence(added["id"]) is True
     assert db.get_evidence(added["id"]) is None
@@ -374,7 +374,7 @@ def test_verify_evidence_quotes():
 
     # One verified, one not
     db.add_evidence(e1.uid, "harassment", "Real quote here", "Test.", 3)
-    db.add_evidence(e2.uid, "insult", "Fabricated quote", "Test.", 2)
+    db.add_evidence(e2.uid, "gaslighting", "Fabricated quote", "Test.", 2)
 
     result = db.verify_evidence_quotes()
     assert result["verified"] == 1
@@ -406,7 +406,7 @@ def test_evidence_stats():
     assert stats["verified"] + stats["unverified"] == 4
 
     categories = {c["category"] for c in stats["by_category"]}
-    assert "insult" in categories
+    assert "gaslighting" in categories
     assert "bossing" in categories
     assert "harassment" in categories
     assert "discrimination" in categories
@@ -453,7 +453,7 @@ def test_search_evidence_by_notes():
     db = EmailDatabase(":memory:")
     email = _make_email(body_text="Bad behavior here.")
     db.insert_email(email)
-    db.add_evidence(email.uid, "other", "Bad behavior", "Test.", 2, notes="Pattern since 2020.")
+    db.add_evidence(email.uid, "general", "Bad behavior", "Test.", 2, notes="Pattern since 2020.")
 
     result = db.search_evidence("Pattern since")
     assert result["total"] == 1
@@ -464,9 +464,9 @@ def test_search_evidence_with_category_filter():
     db = EmailDatabase(":memory:")
     _seed_evidence(db)
 
-    result = db.search_evidence("incompetent", category="insult")
+    result = db.search_evidence("incompetent", category="gaslighting")
     assert result["total"] == 1
-    assert result["items"][0]["category"] == "insult"
+    assert result["items"][0]["category"] == "gaslighting"
     db.close()
 
 
@@ -543,8 +543,8 @@ def test_evidence_categories_all_canonical():
     names = [c["category"] for c in cats]
     assert "discrimination" in names
     assert "harassment" in names
-    assert "sexual_harassment" in names
-    assert "other" in names
+    assert "gaslighting" in names
+    assert "general" in names
     db.close()
 
 
@@ -554,11 +554,11 @@ def test_evidence_categories_with_counts():
 
     cats = db.evidence_categories()
     cat_map = {c["category"]: c["count"] for c in cats}
-    assert cat_map["insult"] == 1
+    assert cat_map["gaslighting"] == 1
     assert cat_map["bossing"] == 1
     assert cat_map["harassment"] == 1
     assert cat_map["discrimination"] == 1
-    assert cat_map["sexual_harassment"] == 0  # Not in seed data
+    assert cat_map["micromanagement"] == 0  # Not in seed data
     db.close()
 
 

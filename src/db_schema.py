@@ -7,7 +7,7 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -251,6 +251,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
         _migrate_to_v7(cur)
     if current < 8:
         _migrate_to_v8(cur)
+    if current < 9:
+        _migrate_to_v9(cur)
     if current < _SCHEMA_VERSION:
         cur.execute(
             "INSERT OR REPLACE INTO schema_version(version) VALUES(?)",
@@ -359,3 +361,14 @@ def _migrate_to_v8(cur: sqlite3.Cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_emails_sentiment ON emails(sentiment_label)"
     )
     logger.info("Schema migration v8: added detected_language, sentiment_label, sentiment_score columns")
+
+
+def _migrate_to_v9(cur: sqlite3.Cursor) -> None:
+    """Add ingestion_run_id to emails for provenance tracking (schema v9)."""
+    existing = {
+        row[1]
+        for row in cur.execute("PRAGMA table_info(emails)").fetchall()
+    }
+    if "ingestion_run_id" not in existing:
+        cur.execute("ALTER TABLE emails ADD COLUMN ingestion_run_id INTEGER")
+        logger.info("Schema migration v9: added emails.ingestion_run_id")

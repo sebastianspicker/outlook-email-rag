@@ -158,12 +158,15 @@ def test_generate_includes_custodian(gen):
 
 
 def test_generate_has_dossier_hash(gen):
-    """Dossier should have a SHA-256 integrity hash."""
+    """Dossier hash should be verifiable: sha256(html) == dossier_hash."""
+    import hashlib
+
     result = gen.generate()
 
     assert "dossier_hash" in result
     assert len(result["dossier_hash"]) == 64
-    assert result["dossier_hash"] in result["html"]
+    # Hash must match the actual HTML content (not embedded inside it)
+    assert result["dossier_hash"] == hashlib.sha256(result["html"].encode("utf-8")).hexdigest()
 
 
 def test_generate_filters_by_relevance(gen):

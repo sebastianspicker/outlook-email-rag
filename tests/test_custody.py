@@ -224,6 +224,37 @@ def test_add_evidence_creates_custody_event(db_with_email):
     assert event["details"]["relevance"] == 4
 
 
+def test_add_evidence_warns_on_nonstandard_category(db_with_email, caplog):
+    """add_evidence should log a warning for non-standard categories."""
+    import logging
+    with caplog.at_level(logging.WARNING, logger="src.db_evidence"):
+        db_with_email.add_evidence(
+            "test-uid-1", "made_up_category", "important evidence", "test", 3,
+        )
+    assert "Non-standard evidence category" in caplog.text
+    assert "made_up_category" in caplog.text
+
+
+def test_add_evidence_no_warning_for_standard_category(db_with_email, caplog):
+    """add_evidence should not warn for standard categories."""
+    import logging
+    with caplog.at_level(logging.WARNING, logger="src.db_evidence"):
+        db_with_email.add_evidence(
+            "test-uid-1", "harassment", "evidence text", "test", 3,
+        )
+    assert "Non-standard evidence category" not in caplog.text
+
+
+def test_evidence_categories_match_claude_md():
+    """EVIDENCE_CATEGORIES should match the canonical list from CLAUDE.md."""
+    expected = {
+        "bossing", "harassment", "discrimination", "retaliation",
+        "hostile_environment", "micromanagement", "exclusion",
+        "gaslighting", "workload", "general",
+    }
+    assert set(EmailDatabase.EVIDENCE_CATEGORIES) == expected
+
+
 def test_add_evidence_computes_content_hash(db_with_email):
     """add_evidence should compute and store a content_hash."""
     result = db_with_email.add_evidence(
@@ -342,6 +373,52 @@ def test_email_provenance_includes_ingestion_run(db_with_email):
     assert prov["ingestion_run"]["olm_sha256"] == "abcdef"
 
 
+def test_email_provenance_uses_ingestion_run_id(db):
+    """email_provenance should return the correct run via ingestion_run_id."""
+    from dataclasses import dataclass
+    from dataclasses import field as dataclass_field
+
+    @dataclass
+    class FakeEmail:
+        uid: str = "prov-uid-1"
+        message_id: str = "<prov@test.com>"
+        subject: str = "Provenance Test"
+        sender_name: str = "Alice"
+        sender_email: str = "alice@test.com"
+        date: str = "2024-01-15"
+        folder: str = "Inbox"
+        email_type: str = "original"
+        has_attachments: bool = False
+        attachment_names: list = dataclass_field(default_factory=list)
+        priority: int = 0
+        is_read: bool = True
+        conversation_id: str = ""
+        in_reply_to: str = ""
+        base_subject: str = "Provenance Test"
+        clean_body: str = "Test body"
+        body_html: str = ""
+        to: list = dataclass_field(default_factory=list)
+        cc: list = dataclass_field(default_factory=list)
+        bcc: list = dataclass_field(default_factory=list)
+        attachments: list = dataclass_field(default_factory=list)
+
+    # Create two ingestion runs
+    run1 = db.record_ingestion_start("first.olm", olm_sha256="aaa")
+    db.record_ingestion_complete(run1, {"emails_parsed": 1, "emails_inserted": 1})
+
+    run2 = db.record_ingestion_start("second.olm", olm_sha256="bbb")
+    db.record_ingestion_complete(run2, {"emails_parsed": 1, "emails_inserted": 1})
+
+    # Insert email with run1's ID
+    db.insert_emails_batch([FakeEmail()], ingestion_run_id=run1)
+
+    prov = db.email_provenance("prov-uid-1")
+    assert prov["ingestion_run"] is not None
+    # Should point to run1, not the latest (run2)
+    assert prov["ingestion_run"]["id"] == run1
+    assert prov["ingestion_run"]["olm_sha256"] == "aaa"
+
+
 def test_email_provenance_not_found(db):
     """email_provenance should return error for missing email."""
     prov = db.email_provenance("nonexistent-uid")
@@ -402,10 +479,10 @@ def test_insert_emails_batch_computes_content_sha256(db):
         to: list = dataclass_field(default_factory=list)
         cc: list = dataclass_field(default_factory=list)
         bcc: list = dataclass_field(default_factory=list)
-        attachment_metadata: list = dataclass_field(default_factory=list)
+        attachments: list = dataclass_field(default_factory=list)
 
     inserted = db.insert_emails_batch([FakeEmail()])
-    assert inserted == 1
+    assert len(inserted) == 1
 
     row = db.conn.execute(
         "SELECT content_sha256 FROM emails WHERE uid='fake-uid'"

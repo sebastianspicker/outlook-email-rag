@@ -169,6 +169,9 @@ def extract_nlp_entities(
     Returns:
         Deduplicated list of ExtractedEntity objects.
     """
+    if not text:
+        return []
+
     # Auto-detect language if not provided, with per-sender cache
     if lang is None and is_spacy_available():
         cache_key = sender_email.lower().strip() if sender_email else None

@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _escape_like(text: str) -> str:
+    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
 
 class EvidenceMixin:
     """Evidence item CRUD, verification, search, and statistics."""
 
     EVIDENCE_CATEGORIES: list[str] = [
-        "discrimination", "harassment", "sexual_harassment",
-        "insult", "bossing", "retaliation", "exclusion",
-        "microaggression", "hostile_environment", "other",
+        "bossing", "harassment", "discrimination", "retaliation",
+        "hostile_environment", "micromanagement", "exclusion",
+        "gaslighting", "workload", "general",
     ]
 
     def add_evidence(
@@ -40,6 +49,12 @@ class EvidenceMixin:
         Raises:
             ValueError: If email_uid does not exist in the database.
         """
+        if category not in self.EVIDENCE_CATEGORIES:
+            logger.warning(
+                "Non-standard evidence category: %s (expected one of %s)",
+                category, self.EVIDENCE_CATEGORIES,
+            )
+
         # Validate email exists and fetch metadata
         email_row = self.conn.execute(
             "SELECT sender_name, sender_email, date, subject, body_text FROM emails WHERE uid = ?",
@@ -295,30 +310,51 @@ class EvidenceMixin:
             "failures": failures,
         }
 
-    def evidence_stats(self) -> dict:
-        """Return evidence collection statistics.
+    def evidence_stats(
+        self,
+        category: str | None = None,
+        min_relevance: int | None = None,
+    ) -> dict:
+        """Return evidence collection statistics, optionally filtered.
+
+        Args:
+            category: Only count items in this category.
+            min_relevance: Only count items with relevance >= this value.
 
         Returns:
             {"total": int, "verified": int, "unverified": int,
              "by_category": [{"category": str, "count": int}, ...],
              "by_relevance": [{"relevance": int, "count": int}, ...]}
         """
+        where_clauses: list[str] = []
+        params: list[object] = []
+        if category:
+            where_clauses.append("category = ?")
+            params.append(category)
+        if min_relevance is not None:
+            where_clauses.append("relevance >= ?")
+            params.append(min_relevance)
+        where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
         total_row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM evidence_items"
+            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql}", params,
         ).fetchone()
         total = total_row["c"]
 
         verified_row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM evidence_items WHERE verified = 1"
+            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql} {'AND' if where_clauses else 'WHERE'} verified = 1",
+            params,
         ).fetchone()
         verified = verified_row["c"]
 
         cat_rows = self.conn.execute(
-            "SELECT category, COUNT(*) AS count FROM evidence_items GROUP BY category ORDER BY count DESC"
+            f"SELECT category, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY category ORDER BY count DESC",
+            params,
         ).fetchall()
 
         rel_rows = self.conn.execute(
-            "SELECT relevance, COUNT(*) AS count FROM evidence_items GROUP BY relevance ORDER BY relevance DESC"
+            f"SELECT relevance, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY relevance ORDER BY relevance DESC",
+            params,
         ).fetchall()
 
         return {
@@ -343,8 +379,8 @@ class EvidenceMixin:
         Returns:
             {"items": [...], "total": int, "query": str}
         """
-        conditions = ["(key_quote LIKE ? OR summary LIKE ? OR notes LIKE ?)"]
-        pattern = f"%{query}%"
+        conditions = ["(key_quote LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')"]
+        pattern = f"%{_escape_like(query)}%"
         params: list = [pattern, pattern, pattern]
 
         if category:

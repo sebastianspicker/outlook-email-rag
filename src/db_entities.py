@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 
+def _escape_like(text: str) -> str:
+    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class EntityMixin:
     """NLP entity insert, search, timeline, and co-occurrence queries."""
 
@@ -18,17 +23,15 @@ class EntityMixin:
         """
         cur = self.conn.cursor()
         for text, etype, norm in entities:
-            cur.execute(
+            row = cur.execute(
                 """INSERT INTO entities(entity_text, entity_type, normalized_form)
                    VALUES(?, ?, ?)
                    ON CONFLICT(normalized_form, entity_type) DO UPDATE SET
-                     entity_text = excluded.entity_text""",
+                     entity_text = excluded.entity_text
+                   RETURNING id""",
                 (text, etype, norm),
-            )
-            entity_id = cur.execute(
-                "SELECT id FROM entities WHERE normalized_form=? AND entity_type=?",
-                (norm, etype),
-            ).fetchone()["id"]
+            ).fetchone()
+            entity_id = row[0]
             cur.execute(
                 """INSERT INTO entity_mentions(entity_id, email_uid, mention_count)
                    VALUES(?, ?, 1)
@@ -43,6 +46,7 @@ class EntityMixin:
         self, entity_text: str, entity_type: str | None = None, limit: int = 20
     ) -> list[dict]:
         """Find emails mentioning an entity (LIKE match)."""
+        escaped = f"%{_escape_like(entity_text.lower())}%"
         if entity_type:
             rows = self.conn.execute(
                 """SELECT e.uid, e.subject, e.sender_email, e.date, e.folder,
@@ -50,9 +54,9 @@ class EntityMixin:
                    FROM entity_mentions em
                    JOIN entities ent ON em.entity_id = ent.id
                    JOIN emails e ON em.email_uid = e.uid
-                   WHERE ent.normalized_form LIKE ? AND ent.entity_type = ?
+                   WHERE ent.normalized_form LIKE ? ESCAPE '\\' AND ent.entity_type = ?
                    ORDER BY e.date DESC LIMIT ?""",
-                (f"%{entity_text.lower()}%", entity_type, limit),
+                (escaped, entity_type, limit),
             ).fetchall()
         else:
             rows = self.conn.execute(
@@ -61,9 +65,9 @@ class EntityMixin:
                    FROM entity_mentions em
                    JOIN entities ent ON em.entity_id = ent.id
                    JOIN emails e ON em.email_uid = e.uid
-                   WHERE ent.normalized_form LIKE ?
+                   WHERE ent.normalized_form LIKE ? ESCAPE '\\'
                    ORDER BY e.date DESC LIMIT ?""",
-                (f"%{entity_text.lower()}%", limit),
+                (escaped, limit),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -103,9 +107,9 @@ class EntityMixin:
                JOIN entities ent ON em.entity_id = ent.id
                JOIN emails e ON em.email_uid = e.uid
                WHERE ent.entity_type = 'person'
-                 AND ent.normalized_form LIKE ?
+                 AND ent.normalized_form LIKE ? ESCAPE '\\'
                ORDER BY e.date DESC LIMIT ?""",
-            (f"%{name_query.lower()}%", limit),
+            (f"%{_escape_like(name_query.lower())}%", limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -134,10 +138,10 @@ class EntityMixin:
                 FROM entity_mentions em
                 JOIN entities ent ON em.entity_id = ent.id
                 JOIN emails e ON em.email_uid = e.uid
-                WHERE ent.normalized_form LIKE ?
+                WHERE ent.normalized_form LIKE ? ESCAPE '\\'
                 GROUP BY period
                 ORDER BY period""",
-            (f"%{entity_text.lower()}%",),
+            (f"%{_escape_like(entity_text.lower())}%",),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -145,14 +149,14 @@ class EntityMixin:
         """Entities that co-occur with the given entity in the same emails."""
         rows = self.conn.execute(
             """SELECT ent2.entity_text, ent2.entity_type, ent2.normalized_form,
-                      COUNT(*) AS co_occurrence_count
+                      COUNT(DISTINCT em1.email_uid) AS co_occurrence_count
                FROM entity_mentions em1
                JOIN entities ent1 ON em1.entity_id = ent1.id
                JOIN entity_mentions em2 ON em1.email_uid = em2.email_uid
                JOIN entities ent2 ON em2.entity_id = ent2.id
-               WHERE ent1.normalized_form LIKE ? AND ent2.id != ent1.id
+               WHERE ent1.normalized_form LIKE ? ESCAPE '\\' AND ent2.id != ent1.id
                GROUP BY ent2.id
                ORDER BY co_occurrence_count DESC LIMIT ?""",
-            (f"%{entity_text.lower()}%", limit),
+            (f"%{_escape_like(entity_text.lower())}%", limit),
         ).fetchall()
         return [dict(r) for r in rows]

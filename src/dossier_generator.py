@@ -132,13 +132,13 @@ class DossierGenerator:
             "custody_events": custody_events,
         }
 
-        # Render with hash placeholder, then compute and embed the real hash
-        hash_placeholder = "%%DOSSIER_SHA256_HASH%%"
-        template_vars["dossier_hash"] = hash_placeholder
+        # Render HTML without embedded hash, then compute sha256 of the final
+        # document.  The hash is returned in the API response only — embedding
+        # a document's own hash inside itself creates an unverifiable
+        # self-referential value.  With this approach, sha256(html) == dossier_hash.
+        template_vars["dossier_hash"] = ""
         html = self._render_template(template_vars)
-
         dossier_hash = hashlib.sha256(html.encode("utf-8")).hexdigest()
-        html = html.replace(hash_placeholder, dossier_hash)
 
         return {
             "html": html,

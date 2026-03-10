@@ -195,7 +195,7 @@ class TestEmailDatabase:
             _make_email(message_id="<m3@ex.com>"),
         ]
         inserted = db.insert_emails_batch(emails)
-        assert inserted == 3
+        assert len(inserted) == 3
         assert db.email_count() == 3
         db.close()
 
@@ -207,7 +207,7 @@ class TestEmailDatabase:
             _make_email(message_id="<m2@ex.com>"),
         ]
         inserted = db.insert_emails_batch(emails)
-        assert inserted == 1
+        assert len(inserted) == 1
         assert db.email_count() == 2
         db.close()
 
@@ -229,7 +229,7 @@ class TestEmailDatabase:
             _make_email(message_id="<m3@ex.com>", date="2024-03-01T00:00:00"),
         ]
         inserted = db.insert_emails_batch(emails)
-        assert inserted == 3
+        assert len(inserted) == 3
 
         sender = db.conn.execute(
             "SELECT * FROM contacts WHERE email_address = 'alice@example.com'"
@@ -252,7 +252,7 @@ class TestEmailDatabase:
             _make_email(message_id="<m2@ex.com>", date="2024-06-01T00:00:00"),
         ]
         inserted = db.insert_emails_batch(emails)
-        assert inserted == 2
+        assert len(inserted) == 2
 
         edge = db.conn.execute(
             "SELECT * FROM communication_edges WHERE sender_email='alice@example.com'"
@@ -372,6 +372,31 @@ class TestTemporalQueries:
         assert len(pairs) == 1
         assert pairs[0]["reply_sender"] == "bob@example.com"
         assert pairs[0]["original_sender"] == "alice@example.com"
+        db.close()
+
+
+    def test_response_pairs_with_limit(self):
+        """response_pairs should accept int limit without type error."""
+        db = EmailDatabase(":memory:")
+        db.insert_email(
+            _make_email(
+                message_id="<orig@ex.com>",
+                date="2024-01-01T10:00:00",
+            )
+        )
+        db.insert_email(
+            _make_email(
+                message_id="<reply@ex.com>",
+                subject="RE: Hello",
+                sender_email="bob@example.com",
+                sender_name="Bob",
+                to=["Alice <alice@example.com>"],
+                in_reply_to="<orig@ex.com>",
+                date="2024-01-01T11:00:00",
+            )
+        )
+        pairs = db.response_pairs(limit=5)
+        assert len(pairs) == 1
         db.close()
 
 
@@ -543,7 +568,7 @@ class TestSchemaV7:
                           "size": 100, "content_id": "", "is_inline": False}],
         )
         inserted = db.insert_emails_batch([e1])
-        assert inserted == 1
+        assert len(inserted) == 1
         cats = db.category_counts()
         assert len(cats) == 1
         atts = db.attachments_for_email(e1.uid)
@@ -586,6 +611,41 @@ class TestSchemaV7:
         assert result["attachment_names"] == ["report.pdf"]
         assert len(result["attachments"]) == 1
         assert result["attachments"][0]["name"] == "report.pdf"
+        db.close()
+
+
+class TestSchemaV9:
+    def test_migration_adds_ingestion_run_id_column(self):
+        db = EmailDatabase(":memory:")
+        cols = {
+            row[1]
+            for row in db.conn.execute("PRAGMA table_info(emails)").fetchall()
+        }
+        assert "ingestion_run_id" in cols
+        db.close()
+
+    def test_batch_insert_stores_ingestion_run_id(self):
+        db = EmailDatabase(":memory:")
+        run_id = db.record_ingestion_start("test.olm")
+        db.record_ingestion_complete(run_id, {"emails_parsed": 1, "emails_inserted": 1})
+        emails = [_make_email(message_id="<run1@ex.com>")]
+        db.insert_emails_batch(emails, ingestion_run_id=run_id)
+        row = db.conn.execute(
+            "SELECT ingestion_run_id FROM emails WHERE uid = ?",
+            (emails[0].uid,),
+        ).fetchone()
+        assert row["ingestion_run_id"] == run_id
+        db.close()
+
+    def test_batch_insert_without_run_id(self):
+        db = EmailDatabase(":memory:")
+        emails = [_make_email(message_id="<norun@ex.com>")]
+        db.insert_emails_batch(emails)
+        row = db.conn.execute(
+            "SELECT ingestion_run_id FROM emails WHERE uid = ?",
+            (emails[0].uid,),
+        ).fetchone()
+        assert row["ingestion_run_id"] is None
         db.close()
 
 
@@ -667,6 +727,19 @@ class TestAttachmentQueries:
         assert stats["emails_with_attachments"] == 2
         assert len(stats["by_extension"]) > 0
         assert len(stats["top_filenames"]) > 0
+        db.close()
+
+    def test_attachment_stats_extension_includes_dot(self):
+        """Extension extraction SQL should include the leading dot."""
+        db = self._make_db_with_attachments()
+        stats = db.attachment_stats()
+        extensions = {e["extension"] for e in stats["by_extension"]}
+        # All non-empty extensions should start with '.'
+        for ext in extensions:
+            if ext:
+                assert ext.startswith("."), f"Extension '{ext}' missing leading dot"
+        assert ".pdf" in extensions
+        assert ".xlsx" in extensions
         db.close()
 
     def test_list_attachments_no_filter(self):
@@ -813,4 +886,235 @@ class TestGetThreadEmailsBatchRecipients:
         assert thread[0]["cc"] == ["Carol <carol@example.com>"]
         assert thread[1]["bcc"] == ["Dave <dave@example.com>"]
         assert len(thread[2]["to"]) == 2
+        db.close()
+
+
+class TestEmailsByBaseSubject:
+    def test_returns_body_text(self):
+        db = EmailDatabase(":memory:")
+        e1 = _make_email(message_id="<s1@ex.com>", subject="Re: Hello", body_text="Body one")
+        e2 = _make_email(message_id="<s2@ex.com>", subject="Re: Hello", body_text="Body two")
+        db.insert_email(e1)
+        db.insert_email(e2)
+        results = db.emails_by_base_subject(min_group_size=2)
+        assert len(results) >= 1
+        subject, emails = results[0]
+        bodies = [body for _, body in emails]
+        assert "Body one" in bodies
+        assert "Body two" in bodies
+        db.close()
+
+
+class TestInsertEmailContentHash:
+    def test_single_insert_computes_content_sha256(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(body_text="Hash me!")
+        db.insert_email(email)
+        row = db.conn.execute(
+            "SELECT content_sha256 FROM emails WHERE uid = ?", (email.uid,)
+        ).fetchone()
+        assert row["content_sha256"] is not None
+        assert len(row["content_sha256"]) == 64  # SHA-256 hex digest
+
+    def test_single_insert_empty_body_null_hash(self):
+        db = EmailDatabase(":memory:")
+        email = _make_email(body_text="")
+        db.insert_email(email)
+        row = db.conn.execute(
+            "SELECT content_sha256 FROM emails WHERE uid = ?", (email.uid,)
+        ).fetchone()
+        assert row["content_sha256"] is None
+        db.close()
+
+
+class TestUpdateV7IsInline:
+    def test_is_inline_uses_field_not_content_id(self):
+        """is_inline should come from the attachment's is_inline field,
+        not from bool(content_id)."""
+        db = EmailDatabase(":memory:")
+        email = _make_email(
+            has_attachments=True,
+            attachments=[
+                {"name": "logo.png", "mime_type": "image/png", "size": 100,
+                 "content_id": "cid:logo@example.com", "is_inline": False},
+            ],
+        )
+        db.insert_email(email)
+        # Now simulate update_v7_metadata with the same attachment
+        db.update_v7_metadata(email)
+        row = db.conn.execute(
+            "SELECT is_inline FROM attachments WHERE email_uid = ?", (email.uid,)
+        ).fetchone()
+        # Despite having content_id, is_inline should be 0 because is_inline=False
+        assert row["is_inline"] == 0
+        db.close()
+
+
+class TestInsertEmailNoneBody:
+    def test_insert_email_with_none_body(self):
+        """insert_email should handle None clean_body without crashing."""
+        db = EmailDatabase(":memory:")
+        email = _make_email(body_text=None)
+        result = db.insert_email(email)
+        assert result is True
+        row = db.conn.execute(
+            "SELECT body_length FROM emails WHERE uid = ?", (email.uid,)
+        ).fetchone()
+        assert row["body_length"] == 0
+        db.close()
+
+
+class TestAttachmentStatsMultiDotExtension:
+    def test_multi_dot_filename_extracts_last_extension(self):
+        """Filenames like 'report.v2.pdf' should extract '.pdf', not '.v2.pdf'."""
+        db = EmailDatabase(":memory:")
+        email = _make_email(
+            has_attachments=True,
+            attachments=[
+                {"name": "my.report.v2.pdf", "mime_type": "application/pdf",
+                 "size": 1000, "content_id": "", "is_inline": False},
+                {"name": "backup.tar.gz", "mime_type": "application/gzip",
+                 "size": 2000, "content_id": "", "is_inline": False},
+            ],
+        )
+        db.insert_email(email)
+        stats = db.attachment_stats()
+        extensions = {e["extension"] for e in stats["by_extension"]}
+        assert ".pdf" in extensions
+        assert ".gz" in extensions
+        # Should NOT contain the wrong multi-dot extractions
+        assert ".v2.pdf" not in extensions
+        assert ".tar.gz" not in extensions
+        db.close()
+
+
+class TestLikeEscaping:
+    """LIKE wildcards in user input must be escaped to prevent false matches."""
+
+    def test_entity_search_escapes_underscore(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        email = _make_email()
+        uid = email.uid  # MD5 hash of message_id
+        db.insert_email(email)
+        db.insert_entities_batch(
+            uid,
+            [("foo_bar", "org", "foo_bar"), ("fooXbar", "org", "fooxbar")],
+        )
+        # Searching for "foo_bar" should match only "foo_bar", not "fooXbar"
+        results = db.search_by_entity("foo_bar", entity_type="org")
+        matched_entities = {r["entity_text"] for r in results}
+        assert "foo_bar" in matched_entities
+        assert "fooXbar" not in matched_entities
+        db.close()
+
+    def test_entity_search_escapes_percent(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        email = _make_email()
+        uid = email.uid
+        db.insert_email(email)
+        db.insert_entities_batch(
+            uid,
+            [("100%", "org", "100%"), ("100 widgets", "org", "100 widgets")],
+        )
+        results = db.search_by_entity("100%", entity_type="org")
+        matched_entities = {r["entity_text"] for r in results}
+        assert "100%" in matched_entities
+        assert "100 widgets" not in matched_entities
+        db.close()
+
+    def test_thread_by_references_escapes_underscore(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        e1 = _make_email(
+            message_id="<msg_1@test.com>",
+            references=["<ref_abc@test.com>"],
+        )
+        e2 = _make_email(
+            message_id="<msg_2@test.com>",
+            references=["<refXabc@test.com>"],
+        )
+        db.insert_email(e1)
+        db.insert_email(e2)
+        results = db.thread_by_references("<ref_abc@test.com>")
+        uids = {r["uid"] for r in results}
+        assert e1.uid in uids
+        assert e2.uid not in uids
+        db.close()
+
+    def test_delete_sparse_by_uid_escapes_underscore(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        # Insert sparse vectors for two UIDs with similar patterns
+        db.conn.execute(
+            "INSERT INTO sparse_vectors(chunk_id, token_ids, weights, num_tokens) VALUES(?, ?, ?, ?)",
+            ("uid_a__0", b"", b"", 0),
+        )
+        db.conn.execute(
+            "INSERT INTO sparse_vectors(chunk_id, token_ids, weights, num_tokens) VALUES(?, ?, ?, ?)",
+            ("uidXa__0", b"", b"", 0),
+        )
+        db.conn.commit()
+        deleted = db.delete_sparse_by_uid("uid_a")
+        assert deleted == 1
+        # The other row should still exist
+        remaining = db.conn.execute(
+            "SELECT chunk_id FROM sparse_vectors"
+        ).fetchall()
+        assert len(remaining) == 1
+        assert remaining[0]["chunk_id"] == "uidXa__0"
+        db.close()
+
+
+class TestGetThreadEmailsParsesJsonFields:
+    """get_thread_emails should return parsed categories, references, and attachments."""
+
+    def test_thread_emails_have_parsed_fields(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        email = _make_email(
+            conversation_id="conv1",
+            categories=["urgent", "review"],
+            references=["<ref1@test.com>"],
+            attachments=[
+                {"name": "doc.pdf", "mime_type": "application/pdf",
+                 "size": 100, "content_id": "", "is_inline": False},
+            ],
+        )
+        db.insert_email(email)
+        thread = db.get_thread_emails("conv1")
+        assert len(thread) == 1
+        e = thread[0]
+        # categories should be a parsed list, not a raw JSON string
+        assert isinstance(e["categories"], list)
+        assert "urgent" in e["categories"]
+        # references should be a parsed list
+        assert isinstance(e["references"], list)
+        assert "<ref1@test.com>" in e["references"]
+        # attachments should be fetched from the attachments table
+        assert isinstance(e["attachments"], list)
+        assert len(e["attachments"]) == 1
+        assert e["attachments"][0]["name"] == "doc.pdf"
+        # references_json raw key should NOT leak into the dict
+        assert "references_json" not in e
+        db.close()
+
+
+class TestGetEmailFullNoJsonLeak:
+    """get_email_full and get_emails_full_batch should not leak references_json."""
+
+    def test_get_email_full_no_references_json_key(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        email = _make_email(references=["<ref1@test.com>"])
+        db.insert_email(email)
+        result = db.get_email_full(email.uid)
+        assert "references" in result
+        assert isinstance(result["references"], list)
+        assert "references_json" not in result
+        db.close()
+
+    def test_get_emails_full_batch_no_references_json_key(self, tmp_path):
+        db = EmailDatabase(tmp_path / "test.db")
+        email = _make_email(references=["<ref1@test.com>"])
+        db.insert_email(email)
+        result = db.get_emails_full_batch([email.uid])
+        e = result[email.uid]
+        assert "references" in e
+        assert "references_json" not in e
         db.close()

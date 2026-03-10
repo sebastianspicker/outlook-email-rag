@@ -123,3 +123,46 @@ class TestCommunicationNetwork:
         b1 = net._get_betweenness(nx)
         b2 = net._get_betweenness(nx)
         assert b1 is b2
+
+    def test_communities_are_dicts_with_members_key(self):
+        """Communities should be list[dict] with 'members' key for web UI compat."""
+        db = _populated_db()
+        net = CommunicationNetwork(db)
+        result = net.network_analysis(top_n=5)
+        for community in result.get("communities", []):
+            assert isinstance(community, dict)
+            assert "members" in community
+            assert isinstance(community["members"], list)
+
+
+class TestCoordinatedTimingMixedTimezones:
+    """coordinated_timing must not crash on mixed timezone-aware and naive dates."""
+
+    def test_mixed_timezone_dates_no_crash(self):
+        db = EmailDatabase(":memory:")
+        # Mix of naive and timezone-aware dates
+        db.insert_email(_make_email(
+            message_id="<tz1@ex.com>",
+            sender_email="alice@example.com",
+            to=["Bob <bob@example.com>"],
+            date="2024-01-15T10:30:00",  # naive
+        ))
+        db.insert_email(_make_email(
+            message_id="<tz2@ex.com>",
+            sender_email="bob@example.com",
+            to=["Alice <alice@example.com>"],
+            date="2024-01-15T11:00:00Z",  # UTC
+        ))
+        db.insert_email(_make_email(
+            message_id="<tz3@ex.com>",
+            sender_email="charlie@example.com",
+            to=["Alice <alice@example.com>"],
+            date="2024-01-15T12:00:00+02:00",  # offset
+        ))
+        net = CommunicationNetwork(db)
+        # Should not raise TypeError
+        results = net.coordinated_timing(
+            ["alice@example.com", "bob@example.com", "charlie@example.com"],
+            window_hours=24,
+        )
+        assert isinstance(results, list)

@@ -304,11 +304,11 @@ class EmailRetriever:
                     query_embedding = self._encode_query(query)
                 raw_candidates = self._query_with_embedding(query_embedding, fetch_size)
 
+            raw_count = len(raw_candidates)
+
             # Merge with BM25 results if hybrid mode is enabled
             if use_hybrid:
                 raw_candidates = self._merge_hybrid(query, raw_candidates, fetch_size)
-
-            raw_count = len(raw_candidates)
 
             if has_filters:
                 filtered = apply_metadata_filters(
@@ -342,7 +342,7 @@ class EmailRetriever:
 
             fetch_size = min(fetch_size * 2, _MAX_FETCH_SIZE)
 
-        return deduped[:top_k] if filtered else []
+        return deduped[:top_k]
 
     def _apply_rerank(self, query: str, results: list[SearchResult], top_k: int) -> list[SearchResult]:
         """Apply reranking: ColBERT (if available) or cross-encoder fallback."""
@@ -387,10 +387,27 @@ class EmailRetriever:
 
             # Build lookup from semantic results
             result_map = {r.chunk_id: r for r in semantic_results}
-            merged = []
-            for cid in fused_ids:
-                if cid in result_map:
-                    merged.append(result_map[cid])
+
+            # Fetch keyword-only results not in semantic results
+            missing_ids = [cid for cid in fused_ids if cid not in result_map]
+            if missing_ids and self.collection:
+                try:
+                    fetched = self.collection.get(
+                        ids=missing_ids, include=["documents", "metadatas"],
+                    )
+                    for i, cid in enumerate(fetched.get("ids", [])):
+                        doc = (fetched.get("documents") or [""])[i] if fetched.get("documents") else ""
+                        meta = (fetched.get("metadatas") or [{}])[i] if fetched.get("metadatas") else {}
+                        # Keyword-only results have no semantic distance;
+                        # use low default so they pass min_score filters
+                        # (score = 1.0 - distance ≈ 0.9).
+                        result_map[cid] = SearchResult(
+                            chunk_id=cid, text=doc or "", metadata=meta or {}, distance=0.1,
+                        )
+                except Exception:
+                    pass  # Fall back to semantic-only results
+
+            merged = [result_map[cid] for cid in fused_ids if cid in result_map]
             # Append any remaining semantic results not in fused list
             seen = set(fused_ids)
             for r in semantic_results:
@@ -464,15 +481,18 @@ class EmailRetriever:
         if top_k <= 0:
             raise ValueError("top_k must be a positive integer.")
 
-        # Use a dummy embedding (zeros) — we want ALL matches, not semantic ranking
-        # Encode a single text to determine the embedding dimension
-        probe = self.embedder.encode_dense(["dim_probe"])
-        dim = len(probe[0]) if probe else 1024
-        dummy_embedding = [[0.0] * dim]
-
+        # Use a dummy embedding — we want ALL matches, not semantic ranking.
+        # Get dimension from an existing stored vector instead of loading the model.
         total = self.collection.count()
         if total == 0:
             return []
+        peek = self.collection.peek(1)
+        if peek and peek.get("embeddings") and len(peek["embeddings"]) > 0:
+            dim = len(peek["embeddings"][0])
+        else:
+            dim = 1024
+        inv_sqrt = 1.0 / (dim ** 0.5)
+        dummy_embedding = [[inv_sqrt] * dim]
 
         results = self._query_with_embedding(
             dummy_embedding,

@@ -55,6 +55,27 @@ class TestExtractEntities:
         orgs = [e for e in entities if e.entity_type == "organization"]
         assert len(orgs) == 0
 
+    def test_extract_url_with_balanced_parens(self):
+        """Wikipedia-style URLs with balanced parens should be preserved."""
+        entities = extract_entities("See https://en.wikipedia.org/wiki/Test_(foo) for details")
+        urls = [e for e in entities if e.entity_type == "url"]
+        assert len(urls) == 1
+        assert urls[0].text == "https://en.wikipedia.org/wiki/Test_(foo)"
+
+    def test_extract_url_strips_unbalanced_trailing_paren(self):
+        """Trailing paren from surrounding text (unbalanced) should be stripped."""
+        entities = extract_entities("(see https://example.com/page)")
+        urls = [e for e in entities if e.entity_type == "url"]
+        assert len(urls) == 1
+        assert urls[0].text == "https://example.com/page"
+
+    def test_extract_url_nested_parens(self):
+        """URL with multiple balanced parens should be preserved."""
+        entities = extract_entities("Check https://example.com/a(b)c(d) now")
+        urls = [e for e in entities if e.entity_type == "url"]
+        assert len(urls) == 1
+        assert urls[0].text == "https://example.com/a(b)c(d)"
+
     def test_deduplication(self):
         entities = extract_entities(
             "Visit https://example.com and https://example.com again"
@@ -70,6 +91,28 @@ class TestExtractEntities:
         entities = extract_entities("Hello world")
         orgs = [e for e in entities if e.entity_type == "organization"]
         assert len(orgs) == 0
+
+    def test_phone_regex_skips_date_strings(self):
+        """Date patterns like 2024-01-15 should not be extracted as phone numbers."""
+        entities = extract_entities("Meeting on 2024-01-15 at the office")
+        phones = [e for e in entities if e.entity_type == "phone"]
+        assert len(phones) == 0
+
+    def test_phone_regex_skips_slash_date(self):
+        entities = extract_entities("Due date: 15/01/2024")
+        phones = [e for e in entities if e.entity_type == "phone"]
+        assert len(phones) == 0
+
+    def test_phone_regex_skips_dot_date(self):
+        entities = extract_entities("Deadline: 15.01.2024")
+        phones = [e for e in entities if e.entity_type == "phone"]
+        assert len(phones) == 0
+
+    def test_phone_regex_still_matches_real_phones(self):
+        """Real phone numbers should still be extracted after date exclusion."""
+        entities = extract_entities("Call +49 89 1234567 about 2024-01-15 meeting")
+        phones = [e for e in entities if e.entity_type == "phone"]
+        assert len(phones) >= 1
 
 
 class TestEntitySQLiteRoundtrip:

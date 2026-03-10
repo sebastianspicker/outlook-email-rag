@@ -126,9 +126,9 @@ def summarize_thread(
     for idx in ranked:
         if len(selected) >= max_sentences:
             break
-        # Mild diversity: don't pick too many adjacent sentences
+        # Mild diversity: skip if sandwiched between two already-selected sentences
         if idx - 1 in used_indices and idx + 1 in used_indices:
-            scores[idx] *= 0.7
+            continue
         selected.append(idx)
         used_indices.add(idx)
 

@@ -758,7 +758,7 @@ def _extract_html_body(el: etree._Element) -> str:
         parts.append(el.text)
     for child in el:
         parts.append(
-            etree.tostring(child, encoding="unicode", method="html")
+            etree.tostring(child, encoding="unicode", method="html", with_tail=False)
         )
         if child.tail:
             parts.append(child.tail)

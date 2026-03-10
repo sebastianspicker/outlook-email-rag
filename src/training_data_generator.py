@@ -82,6 +82,7 @@ class TrainingDataGenerator:
 
                     if len(triplets) >= max_triplets:
                         logger.info("Generated %d triplets (max reached)", len(triplets))
+                        self._rng.shuffle(triplets)
                         return triplets
 
         self._rng.shuffle(triplets)

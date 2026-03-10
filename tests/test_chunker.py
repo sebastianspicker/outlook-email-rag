@@ -416,6 +416,30 @@ def test_chunk_attachment_empty():
     assert chunks == []
 
 
+def test_email_chunk_embedding_field():
+    """EmailChunk can carry a pre-computed embedding (e.g. for images)."""
+    from src.chunker import EmailChunk
+
+    chunk = EmailChunk(uid="u1", chunk_id="u1__0", text="hello", metadata={})
+    assert chunk.embedding is None  # default
+
+    chunk_with = EmailChunk(
+        uid="u1", chunk_id="u1__img", text="[Image]",
+        metadata={}, embedding=[0.1, 0.2, 0.3],
+    )
+    assert chunk_with.embedding == [0.1, 0.2, 0.3]
+
+
+def test_chunk_attachment_unique_ids_same_filename():
+    """Two attachments with the same filename on the same email should produce different chunk IDs."""
+    parent_meta = {"uid": "e1", "subject": "Report", "date": "2025-01-01"}
+    chunks_a = chunk_attachment("e1", "report.pdf", "Content A.", parent_meta, att_index=0)
+    chunks_b = chunk_attachment("e1", "report.pdf", "Content B.", parent_meta, att_index=1)
+    assert len(chunks_a) == 1
+    assert len(chunks_b) == 1
+    assert chunks_a[0].chunk_id != chunks_b[0].chunk_id
+
+
 # ── Categories and calendar in chunk metadata ──────────────────
 
 
@@ -556,3 +580,35 @@ def test_strip_signature_atentamente():
     stripped, had_sig = strip_signature(body)
     assert had_sig is True
     assert "informe" in stripped
+
+
+def test_chunk_email_no_duplicate_categories():
+    """Categories, calendar tag, and attachments should not be duplicated in chunk text."""
+    from src.chunker import chunk_email
+
+    email_dict = {
+        "uid": "test-uid",
+        "subject": "Meeting Notes",
+        "sender_name": "Alice",
+        "sender_email": "alice@example.com",
+        "date": "2024-01-15",
+        "folder": "Inbox",
+        "body": "Important discussion about Q4 budget and resources.",
+        "to": ["Bob <bob@example.com>"],
+        "cc": [],
+        "bcc": [],
+        "has_attachments": True,
+        "attachment_names": ["report.pdf"],
+        "categories": ["Finance", "Important"],
+        "is_calendar_message": True,
+        "email_type": "original",
+    }
+    chunks = chunk_email(email_dict)
+    assert len(chunks) >= 1
+    text = chunks[0].text
+    # Categories line should appear exactly once
+    assert text.count("Categories:") == 1
+    # Calendar tag should appear exactly once
+    assert text.count("[Calendar/Meeting]") == 1
+    # Attachments line should appear exactly once
+    assert text.count("Attachments:") == 1

@@ -56,7 +56,7 @@ class EvidenceExporter:
         """
         items = self._get_filtered_items(min_relevance, category)
         if not items:
-            return {"html": "", "item_count": 0}
+            return {"html": "<html><body><p>No evidence items match the specified filters.</p></body></html>", "item_count": 0}
 
         # Gather full email bodies for the appendix (batch)
         all_uids = list({item["email_uid"] for item in items if item.get("email_uid")})
@@ -72,7 +72,7 @@ class EvidenceExporter:
                     "category": item.get("category", ""),
                 })
 
-        stats = self._db.evidence_stats()
+        stats = self._db.evidence_stats(category=category, min_relevance=min_relevance)
         verified_count = sum(1 for i in items if i.get("verified"))
         total_count = len(items)
 

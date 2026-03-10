@@ -118,25 +118,53 @@ class EmailEmbedder:
         added = 0
         t_start = time.monotonic()
         for batch in _iter_batches(new_chunks, batch_size):
-            texts = [chunk.text for chunk in batch]
-            ids = [chunk.chunk_id for chunk in batch]
-            metadatas = [chunk.metadata for chunk in batch]
+            # Separate pre-embedded chunks from those needing encoding
+            needs_encoding: list[EmailChunk] = []
+            pre_embedded: list[EmailChunk] = []
+            for chunk in batch:
+                if chunk.embedding is not None:
+                    pre_embedded.append(chunk)
+                else:
+                    needs_encoding.append(chunk)
 
-            result: MultiVectorResult = self.embedder.encode_all(texts)
-            embeddings = to_builtin_list(result.dense)
+            all_ids: list[str] = []
+            all_embeddings: list[list[float]] = []
+            all_texts: list[str] = []
+            all_metadatas: list[dict] = []
+
+            # Encode chunks that need it
+            if needs_encoding:
+                texts = [c.text for c in needs_encoding]
+                result: MultiVectorResult = self.embedder.encode_all(texts)
+                encoded_embeddings = to_builtin_list(result.dense)
+
+                for i, chunk in enumerate(needs_encoding):
+                    all_ids.append(chunk.chunk_id)
+                    all_embeddings.append(encoded_embeddings[i])
+                    all_texts.append(chunk.text)
+                    all_metadatas.append(chunk.metadata)
+
+                # Sparse vectors stored via callback if available (Phase 2 hook)
+                if result.sparse is not None:
+                    self._store_sparse(
+                        [c.chunk_id for c in needs_encoding], result.sparse,
+                    )
+
+            # Add pre-embedded chunks directly (no re-encoding)
+            for chunk in pre_embedded:
+                all_ids.append(chunk.chunk_id)
+                all_embeddings.append(chunk.embedding)
+                all_texts.append(chunk.text)
+                all_metadatas.append(chunk.metadata)
 
             self.collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=metadatas,
+                ids=all_ids,
+                embeddings=all_embeddings,
+                documents=all_texts,
+                metadatas=all_metadatas,
             )
 
-            # Sparse vectors stored via callback if available (Phase 2 hook)
-            if result.sparse is not None:
-                self._store_sparse(ids, result.sparse)
-
-            existing.update(ids)
+            existing.update(all_ids)
             added += len(batch)
             if show_progress:
                 elapsed = time.monotonic() - t_start

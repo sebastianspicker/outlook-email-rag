@@ -13,8 +13,8 @@ def _make_mock_db():
     ]
     db.folder_counts.return_value = {"Inbox": 200, "Sent": 100, "Archive": 50}
     db.top_entities.return_value = [
-        {"entity_type": "organization", "entity_text": "Acme Corp", "mention_count": 15},
-        {"entity_type": "url", "entity_text": "https://example.com", "mention_count": 10},
+        {"entity_type": "organization", "entity_text": "Acme Corp", "total_mentions": 15},
+        {"entity_type": "url", "entity_text": "https://example.com", "total_mentions": 10},
     ]
     return db
 

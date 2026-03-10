@@ -335,11 +335,11 @@ class AnalyticsMixin:
             JOIN emails original ON reply.in_reply_to = original.message_id
             WHERE reply.in_reply_to != '' AND original.message_id != ''
         """
-        params: list[str] = []
+        params: list = []
         if sender:
             query += " AND reply.sender_email = ?"
             params.append(sender)
         query += " ORDER BY reply.date DESC LIMIT ?"
-        params.append(str(limit))
+        params.append(limit)
         rows = self.conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]

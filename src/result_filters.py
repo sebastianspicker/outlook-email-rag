@@ -101,8 +101,10 @@ def _matches_allowed_uids(
 def _matches_category(result: SearchResult, category: str | None) -> bool:
     if not category:
         return True
-    value = str(result.metadata.get("categories", "") or "").lower()
-    return category.lower() in value
+    raw = str(result.metadata.get("categories", "") or "")
+    # Categories are comma-separated; check for exact match per category
+    cats = [c.strip().lower() for c in raw.split(",") if c.strip()]
+    return category.lower() in cats
 
 
 def _matches_is_calendar(result: SearchResult, is_calendar: bool | None) -> bool:
@@ -132,15 +134,22 @@ def _matches_attachment_type(result: SearchResult, attachment_type: str | None) 
     """Match file extension in attachment_names or attachment_filename metadata."""
     if not attachment_type:
         return True
-    ext = attachment_type.lower().lstrip(".")
+    ext = "." + attachment_type.lower().lstrip(".")
+
+    def _has_ext(filename: str) -> bool:
+        return filename.lower().endswith(ext)
+
     names = result.metadata.get("attachment_names", "")
     if isinstance(names, list):
-        names = ", ".join(names)
-    names_str = str(names).lower()
-    if f".{ext}" in names_str:
-        return True
-    fname = str(result.metadata.get("attachment_filename", "") or "").lower()
-    return f".{ext}" in fname
+        if any(_has_ext(n) for n in names):
+            return True
+    else:
+        # Comma-separated string
+        for n in str(names).split(","):
+            if _has_ext(n.strip()):
+                return True
+    fname = str(result.metadata.get("attachment_filename", "") or "")
+    return _has_ext(fname)
 
 
 def apply_metadata_filters(

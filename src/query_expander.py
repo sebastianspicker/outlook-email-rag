@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -59,11 +60,13 @@ class QueryExpander:
 
             # Lazy-compute vocabulary embeddings
             if self._vocab_embeddings is None:
-                self._vocab_embeddings = self._model.encode(
-                    self._vocabulary, show_progress_bar=False
+                self._vocab_embeddings = np.array(
+                    self._model.encode_dense(self._vocabulary)
                 )
 
-            query_embedding = self._model.encode([query], show_progress_bar=False)
+            query_embedding = np.array(
+                self._model.encode_dense([query])
+            )
 
             # Cosine similarity
             similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
@@ -77,7 +80,7 @@ class QueryExpander:
                     break
                 term = self._vocabulary[idx]
                 # Skip terms already present in the query
-                if term.lower() in query_lower:
+                if re.search(r'\b' + re.escape(term.lower()) + r'\b', query_lower):
                     continue
                 # Skip very short terms
                 if len(term) < 3:
@@ -112,11 +115,13 @@ class QueryExpander:
             import numpy as np
 
             if self._vocab_embeddings is None:
-                self._vocab_embeddings = self._model.encode(
-                    self._vocabulary, show_progress_bar=False
+                self._vocab_embeddings = np.array(
+                    self._model.encode_dense(self._vocabulary)
                 )
 
-            query_embedding = self._model.encode([query], show_progress_bar=False)
+            query_embedding = np.array(
+                self._model.encode_dense([query])
+            )
             similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
             top_indices = similarities.argsort()[::-1]
 

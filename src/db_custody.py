@@ -81,16 +81,25 @@ class CustodyMixin:
     def email_provenance(self, email_uid: str) -> dict:
         """Full provenance for an email: ingestion run, custody events."""
         email_row = self.conn.execute(
-            "SELECT uid, message_id, sender_email, date, subject, content_sha256 FROM emails WHERE uid = ?",
+            "SELECT uid, message_id, sender_email, date, subject, content_sha256, ingestion_run_id"
+            " FROM emails WHERE uid = ?",
             (email_uid,),
         ).fetchone()
         if not email_row:
             return {"error": f"Email not found: {email_uid}"}
 
-        # Find ingestion run that contains this email (via olm_path match)
-        run_row = self.conn.execute(
-            "SELECT * FROM ingestion_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        # Find the ingestion run that actually inserted this email
+        run_row = None
+        run_id = email_row["ingestion_run_id"]
+        if run_id is not None:
+            run_row = self.conn.execute(
+                "SELECT * FROM ingestion_runs WHERE id = ?", (run_id,),
+            ).fetchone()
+        # Fall back to latest completed run for pre-v9 emails
+        if run_row is None:
+            run_row = self.conn.execute(
+                "SELECT * FROM ingestion_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
 
         custody_events = self.get_custody_chain(
             target_type="email", target_id=email_uid,

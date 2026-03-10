@@ -14,7 +14,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from .chunker import chunk_attachment, chunk_email
+from .chunker import EmailChunk, chunk_attachment, chunk_email
 from .config import configure_logging, get_settings
 from .parse_olm import parse_olm
 from .validation import positive_int as _shared_positive_int
@@ -37,11 +37,13 @@ class _EmbedPipeline:
         email_db: Any,
         entity_extractor_fn: Any,
         batch_size: int,
+        ingestion_run_id: int | None = None,
     ) -> None:
         self._embedder = embedder
         self._email_db = email_db
         self._entity_extractor_fn = entity_extractor_fn
         self._batch_size = batch_size
+        self._ingestion_run_id = ingestion_run_id
         self._queue: queue.Queue = queue.Queue(maxsize=4)
         self._thread: threading.Thread | None = None
         self._error: BaseException | None = None
@@ -66,6 +68,8 @@ class _EmbedPipeline:
         """Enqueue a batch for the consumer. Blocks if queue is full (backpressure)."""
         if not chunks and not emails:
             return
+        if self._error is not None:
+            raise self._error
         self._queue.put((chunks, emails))
 
     def finish(self) -> None:
@@ -87,6 +91,14 @@ class _EmbedPipeline:
                 self._process_batch(chunks, emails)
         except BaseException as exc:
             self._error = exc
+            # Drain the queue so the producer never blocks on a full queue
+            while True:
+                try:
+                    item = self._queue.get_nowait()
+                    if item is _SENTINEL:
+                        break
+                except Exception:
+                    break
 
     def _process_batch(self, chunks: list, emails: list) -> None:
         if self._embedder and chunks:
@@ -104,14 +116,27 @@ class _EmbedPipeline:
 
         if self._email_db and emails:
             t0 = time.monotonic()
-            self.sqlite_inserted += self._email_db.insert_emails_batch(emails)
+            inserted_uids = self._email_db.insert_emails_batch(
+                emails, ingestion_run_id=self._ingestion_run_id,
+            )
+            self.sqlite_inserted += len(inserted_uids)
             dt_sqlite = time.monotonic() - t0
             self.sqlite_seconds += dt_sqlite
+
+            # Only run entity extraction + analytics for newly inserted emails
+            new_emails = [em for em in emails if em.uid in inserted_uids]
+            if len(new_emails) < len(emails):
+                logger.debug(
+                    "Skipped %d already-inserted emails for entity/analytics processing",
+                    len(emails) - len(new_emails),
+                )
 
             t1 = time.monotonic()
             has_entities = False
             if self._entity_extractor_fn:
-                for em in emails:
+                for em in new_emails:
+                    if not em.clean_body:
+                        continue
                     entities = self._entity_extractor_fn(em.clean_body, em.sender_email)
                     if entities:
                         self._email_db.insert_entities_batch(
@@ -121,7 +146,7 @@ class _EmbedPipeline:
                         )
                         has_entities = True
             # Insert Exchange-extracted entities (always available from XML)
-            for em in emails:
+            for em in new_emails:
                 exchange_entities = _exchange_entities_from_email(em)
                 if exchange_entities:
                     self._email_db.insert_entities_batch(em.uid, exchange_entities, commit=False)
@@ -134,7 +159,7 @@ class _EmbedPipeline:
 
             # Compute language and sentiment analytics
             t2 = time.monotonic()
-            self._compute_analytics(emails)
+            self._compute_analytics(new_emails)
             dt_analytics = time.monotonic() - t2
             self.analytics_seconds += dt_analytics
 
@@ -303,6 +328,11 @@ def ingest(
         logger.info("Database: %s", embedder.chromadb_path)
         logger.info("Model: %s", embedder.model_name)
         logger.info("Existing chunks in DB: %s", embedder.count())
+        try:
+            coll_meta = embedder.collection.metadata
+            logger.info("HNSW config: %s", {k: v for k, v in coll_meta.items() if k.startswith("hnsw:")})
+        except Exception:
+            pass
     else:
         logger.info("Database write disabled (dry-run)")
         logger.info("Configured default DB path: %s", chromadb_path or settings.chromadb_path)
@@ -401,6 +431,7 @@ def ingest(
             email_db=email_db,
             entity_extractor_fn=entity_extractor_fn,
             batch_size=batch_size,
+            ingestion_run_id=ingestion_run_id,
         )
         pipeline.start()
 
@@ -429,16 +460,16 @@ def ingest(
 
         # Process attachment contents if enabled
         if attachment_extractor and email.attachment_contents:
-            for att_name, att_bytes in email.attachment_contents:
+            for att_i, (att_name, att_bytes) in enumerate(email.attachment_contents):
                 # Image embedding (separate path from text extraction)
                 if image_embedder_fn and is_image_attachment(att_name):
                     img_embedding = image_embedder_fn(att_name, att_bytes)
                     if img_embedding and embedder:
-                        img_chunk = {
-                            "chunk_id": f"{email.uid}::img::{att_name}",
-                            "text": f"[Image attachment: {att_name}]",
-                            "embedding": img_embedding,
-                            "metadata": {
+                        img_chunk = EmailChunk(
+                            uid=email.uid,
+                            chunk_id=f"{email.uid}::img::{att_name}::{att_i}",
+                            text=f"[Image attachment: {att_name}]",
+                            metadata={
                                 "uid": email.uid,
                                 "subject": email_dict.get("subject", ""),
                                 "sender_name": email_dict.get("sender_name", ""),
@@ -448,7 +479,8 @@ def ingest(
                                 "chunk_type": "image",
                                 "filename": att_name,
                             },
-                        }
+                            embedding=img_embedding,
+                        )
                         pending_chunks.append(img_chunk)
                         total_chunks_created += 1
                         total_image_embeddings += 1
@@ -468,6 +500,7 @@ def ingest(
                             "date": email_dict.get("date", ""),
                             "folder": email_dict.get("folder", ""),
                         },
+                        att_index=att_i,
                     )
                     total_chunks_created += len(att_chunks)
                     total_attachment_chunks += len(att_chunks)
@@ -479,16 +512,16 @@ def ingest(
 
         progress.update(1)
 
+        parse_seconds += time.monotonic() - t_parse_start
+
         if max_emails is not None and total_emails >= max_emails:
             logger.info("Reached --max-emails=%s; stopping parse loop.", max_emails)
             break
 
-        parse_seconds += time.monotonic() - t_parse_start
-
         if len(pending_chunks) >= batch_size or len(pending_emails) >= batch_size:
             if pipeline:
                 t_q = time.monotonic()
-                pipeline.submit(list(pending_chunks), list(pending_emails))
+                pipeline.submit(pending_chunks, pending_emails)
                 queue_wait_seconds += time.monotonic() - t_q
                 pending_chunks = []
                 pending_emails = []
@@ -497,7 +530,7 @@ def ingest(
     if pipeline:
         if pending_chunks or pending_emails:
             t_q = time.monotonic()
-            pipeline.submit(list(pending_chunks), list(pending_emails))
+            pipeline.submit(pending_chunks, pending_emails)
             queue_wait_seconds += time.monotonic() - t_q
         pipeline.finish()
 
@@ -915,6 +948,7 @@ def reembed(
     resolved_sqlite = sqlite_path or settings.sqlite_path
     email_db = EmailDatabase(resolved_sqlite)
     embedder = EmailEmbedder(chromadb_path=chromadb_path)
+    embedder.set_sparse_db(email_db)
 
     all_uids = email_db.all_uids()
     if not all_uids:
@@ -951,6 +985,7 @@ def reembed(
                 reembedded, len(all_uids), chunks_added,
             )
 
+    embedder.close()
     email_db.close()
     logger.info(
         "Re-embedding complete: %d emails, %d chunks deleted, %d chunks added, %d skipped (no body)",

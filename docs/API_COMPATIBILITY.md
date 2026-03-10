@@ -448,7 +448,8 @@ The following 70 tool names are stable for `0.1.x`:
     3. `min_relevance: int | null` (optional, bounded 1-5)
     4. `category: str | null` (optional)
 57. `evidence_stats`
-    1. no parameters
+    1. `category: str | null` (optional, filter by evidence category)
+    2. `min_relevance: int | null` (optional, bounded 1-5)
 58. `evidence_add_batch`
     1. `items: list[EvidenceAddInput]` (required, 1-20 items)
 59. `evidence_search`

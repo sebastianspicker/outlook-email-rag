@@ -11,6 +11,18 @@ from chromadb.config import Settings as ChromaSettings
 
 DEFAULT_PAGE_SIZE = 1000
 
+# HNSW tuning for bulk ingestion.  batch_size delays graph construction until
+# N elements are buffered, avoiding O(n) rebalancing on every .add() call.
+# num_threads parallelises the index build across CPU cores.
+HNSW_DEFAULTS: dict[str, object] = {
+    "hnsw:space": "cosine",
+    "hnsw:batch_size": 50_000,
+    "hnsw:sync_threshold": 50_000,
+    "hnsw:num_threads": os.cpu_count() or 4,
+    "hnsw:M": 16,
+    "hnsw:construction_ef": 128,
+}
+
 
 def to_builtin_list(value: Any) -> Any:
     """Convert tensor/ndarray-like values to Python lists when needed."""
@@ -28,11 +40,19 @@ def get_chroma_client(chromadb_path: str):
     )
 
 
-def get_collection(client, collection_name: str):
-    """Return the canonical email collection."""
+def get_collection(client, collection_name: str, *, hnsw_overrides: dict[str, object] | None = None):
+    """Return the canonical email collection.
+
+    ``hnsw_overrides`` can customise HNSW parameters for bulk-import vs. search
+    workloads.  They are only applied when the collection is **created**; an
+    existing collection keeps its original settings.
+    """
+    metadata = dict(HNSW_DEFAULTS)
+    if hnsw_overrides:
+        metadata.update(hnsw_overrides)
     return client.get_or_create_collection(
         name=collection_name,
-        metadata={"hnsw:space": "cosine"},
+        metadata=metadata,
     )
 
 

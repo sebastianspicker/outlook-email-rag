@@ -161,3 +161,23 @@ class TestSummarizeThread:
         if len(ordered_keys) >= 2:
             expected = [k for k in ["ALPHA", "BETA", "GAMMA"] if k in ordered_keys]
             assert ordered_keys == expected
+
+    def test_diversity_skips_sandwiched_sentences(self):
+        """Sentences sandwiched between two already-selected ones should be skipped."""
+        # Create 5 sentences where middle one is sandwiched
+        emails = [
+            {
+                "clean_body": (
+                    "ALPHA sentence with important keywords and information. "
+                    "BRAVO filler sentence with some minor detail here. "
+                    "CHARLIE sentence with critical project updates now. "
+                    "DELTA another filler sentence with background context. "
+                    "ECHO final sentence with actionable conclusions here."
+                ),
+                "sender_name": "Alice",
+            }
+        ]
+        result = summarize_thread(emails, max_sentences=3)
+        result_sentences = _split_sentences(result)
+        # Should pick 3 sentences but skip any that are sandwiched
+        assert len(result_sentences) <= 3

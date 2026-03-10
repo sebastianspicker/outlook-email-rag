@@ -40,7 +40,10 @@ async def run_with_network(deps, fn):
         if net is None:
             from ..network_analysis import CommunicationNetwork
 
-            net = CommunicationNetwork(db)
+            try:
+                net = CommunicationNetwork(db)
+            except Exception as exc:
+                return json_error(f"Network analysis unavailable: {exc}")
             db._cached_comm_network = net
         return fn(db, net)
     return await deps.offload(_run)

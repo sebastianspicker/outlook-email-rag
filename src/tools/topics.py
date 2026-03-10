@@ -50,11 +50,23 @@ def register(mcp, deps) -> None:
                 return json_error("Provide either uid or query.")
 
             retriever = deps.get_retriever()
-            if params.query:
-                results = retriever.search(params.query, top_k=params.top_k)
-                return deps.sanitize(retriever.format_results_for_claude(results))
+            query = params.query
+            if params.uid and not query:
+                db = deps.get_email_db()
+                if db:
+                    email = db.get_email_full(params.uid)
+                    if not email:
+                        return json_error(f"Email not found: {params.uid}")
+                    query = email.get("body_text") or email.get("subject") or ""
+                if not query:
+                    return json_error("Could not retrieve email text for similarity search.")
 
-            return json_error("UID-based similarity requires embeddings. Use query instead.")
+            results = retriever.search(query, top_k=params.top_k + 1)
+            # Exclude the source email itself from results
+            if params.uid:
+                results = [r for r in results if r.metadata.get("uid") != params.uid]
+            results = results[:params.top_k]
+            return deps.sanitize(retriever.format_results_for_claude(results))
         return await deps.offload(_run)
 
     @mcp.tool(name="email_cluster_emails", annotations=deps.tool_annotations("Emails in Cluster"))

@@ -7,6 +7,20 @@ and this project adheres to semantic versioning principles for public interfaces
 
 ## [Unreleased]
 
+### Fixed
+
+#### Codebase Bug Audit — Rounds 5-7 (9 bugs)
+
+- **P1: Legacy CLI dispatch broken** — `_infer_subcommand()` now sets `*_action` attributes (e.g. `analytics_action`, `evidence_action`) so that legacy `--stats`, `--evidence-list`, etc. flags reach the correct handler branch instead of hitting `sys.exit(2)`.
+- **P1: Image embeddings computed but discarded** — `EmailChunk` gains an optional `embedding` field; `add_chunks()` splits batches into pre-embedded (images) vs needs-encoding (text) groups. Previously, `image_embedder_fn()` output was silently discarded and the placeholder text `"[Image attachment: …]"` was re-encoded instead.
+- **P2: `_has_subcommand` flag-value collision** — simplified to only check `argv[0]`, preventing false subcommand detection when a flag value like `--db-path analytics` contained a subcommand name.
+- **P2: Hybrid search inflated `raw_count`** — `raw_count` now measured before `_merge_hybrid()` appends BM25/sparse results, eliminating up to 6 unnecessary retry iterations.
+- **P2: `QueryExpander.expand` substring skip** — changed from `term in query` substring check to word-boundary regex, so query `"art"` no longer skips term `"artificial"`.
+- **P2: Phone regex false positives** — added `_DATE_LIKE_RE` exclusion to skip date strings (`2024-01-15`, `15/01/2024`) that previously matched `_PHONE_RE`.
+- **P2: Evidence report stats showed unfiltered globals** — `evidence_stats()` now accepts `category` and `min_relevance` params; `EvidenceExporter` passes filters through.
+- **P2: Attachment chunk ID collision** — `chunk_attachment()` takes new `att_index` param; two attachments with the same filename on the same email now produce unique chunk IDs.
+- **P2: `has_attachments`/`priority` type mismatch** — verified existing coercion in `result_filters.py` handles both `str` and native types correctly; added regression tests.
+
 ### Added
 
 #### OLM Metadata Extraction & Search Quality
@@ -28,7 +42,7 @@ and this project adheres to semantic versioning principles for public interfaces
 
 #### Code Decomposition
 
-- `src/db_schema.py`: SQLite schema DDL and migrations (v3–v8).
+- `src/db_schema.py`: SQLite schema DDL and migrations (v3–v9).
 - `src/db_attachments.py`: Attachment query mixin with dedup filter builder.
 - `src/db_custody.py`: Chain-of-custody mixin.
 - `src/db_entities.py`: Entity storage mixin.
@@ -292,7 +306,7 @@ and this project adheres to semantic versioning principles for public interfaces
 - Simplified `_serialize_results` helper in MCP server to direct `retriever.serialize_results()` call.
 - Removed trivial wrapper functions `_sanitize_terminal_text()` (CLI) and `_sanitize_untrusted_text()` (MCP server).
 - Ingest progress log interval reduced from 500 to 100 emails.
-- README rewritten to reflect 70 MCP tools, 1145+ tests, full architecture.
+- README rewritten to reflect 70 MCP tools, 1200+ tests, full architecture.
 - `docs/API_COMPATIBILITY.md` expanded to cover all 70 tools and all CLI flags.
 - Default embedding model changed to `BAAI/bge-m3` (multilingual, 1024 dims). Requires re-ingestion.
 

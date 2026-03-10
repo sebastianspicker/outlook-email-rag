@@ -129,8 +129,8 @@ class ThreadAnalyzer:
                 if dl_match:
                     deadline = dl_match.group(1).strip()
 
-                # Detect urgency
-                is_urgent = any(w in text.lower() for w in _URGENCY_WORDS)
+                # Detect urgency — check the action item text, not the full body
+                is_urgent = any(w in action_text.lower() for w in _URGENCY_WORDS)
 
                 # Assignee: if "I'll" pattern, assignee is sender
                 assignee = ""

@@ -60,7 +60,7 @@ class QuerySuggester:
                     "label": f"[{e['entity_type']}] {e['entity_text']}",
                     "value": e["entity_text"],
                     "type": e["entity_type"],
-                    "count": e["mention_count"],
+                    "count": e["total_mentions"],
                 }
                 for e in entities
             ]

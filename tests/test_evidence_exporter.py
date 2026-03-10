@@ -237,3 +237,37 @@ def test_export_file_creates_parent_dirs(tmp_path):
     assert Path(out).exists()
     assert result["format"] == "html"
     db.close()
+
+
+# ── Evidence stats filtering ──────────────────────────────────
+
+
+def test_evidence_stats_unfiltered():
+    db = _seed_db()
+    stats = db.evidence_stats()
+    assert stats["total"] == 3
+    db.close()
+
+
+def test_evidence_stats_with_category_filter():
+    db = _seed_db()
+    stats = db.evidence_stats(category="discrimination")
+    assert stats["total"] == 1
+    assert stats["by_category"][0]["category"] == "discrimination"
+    db.close()
+
+
+def test_evidence_stats_with_min_relevance_filter():
+    db = _seed_db()
+    stats = db.evidence_stats(min_relevance=4)
+    assert stats["total"] == 2  # relevance 5 + relevance 4
+    db.close()
+
+
+def test_evidence_stats_with_both_filters():
+    db = _seed_db()
+    stats = db.evidence_stats(category="discrimination", min_relevance=5)
+    assert stats["total"] == 1
+    stats2 = db.evidence_stats(category="harassment", min_relevance=5)
+    assert stats2["total"] == 0
+    db.close()

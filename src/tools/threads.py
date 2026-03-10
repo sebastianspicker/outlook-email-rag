@@ -85,10 +85,34 @@ def register(mcp, deps) -> None:
 
                 return json_response(
                     [{"text": a.text, "assignee": a.assignee, "deadline": a.deadline,
-                      "is_urgent": a.is_urgent} for a in all_items[:params.limit]],
+                      "is_urgent": a.is_urgent, "source_uid": a.source_uid}
+                     for a in all_items[:params.limit]],
                 )
 
-            return json_error("Provide conversation_id to extract action items.")
+            if params.days:
+                from datetime import datetime, timedelta
+
+                retriever = deps.get_retriever()
+                cutoff = (datetime.now() - timedelta(days=params.days)).strftime("%Y-%m-%d")
+                results = retriever.search_filtered(
+                    query="action items tasks todo", top_k=params.limit * 3,
+                    date_from=cutoff,
+                )
+                all_items = []
+                for r in results:
+                    items = analyzer.extract_action_items(
+                        r.text,
+                        sender=r.metadata.get("sender_email", ""),
+                        source_uid=r.metadata.get("uid", ""),
+                    )
+                    all_items.extend(items)
+                return json_response(
+                    [{"text": a.text, "assignee": a.assignee, "deadline": a.deadline,
+                      "is_urgent": a.is_urgent, "source_uid": a.source_uid}
+                     for a in all_items[:params.limit]],
+                )
+
+            return json_error("Provide conversation_id or days to extract action items.")
         return await deps.offload(_run)
 
     @mcp.tool(name="email_decisions", annotations=deps.tool_annotations("Extract Decisions"))
@@ -127,11 +151,36 @@ def register(mcp, deps) -> None:
                     all_decisions.extend(decisions)
 
                 return json_response(
-                    [{"text": d.text, "made_by": d.made_by, "date": d.date}
+                    [{"text": d.text, "made_by": d.made_by, "date": d.date,
+                      "source_uid": d.source_uid}
                      for d in all_decisions],
                 )
 
-            return json_error("Provide conversation_id to extract decisions.")
+            if params.days:
+                from datetime import datetime, timedelta
+
+                retriever = deps.get_retriever()
+                cutoff = (datetime.now() - timedelta(days=params.days)).strftime("%Y-%m-%d")
+                results = retriever.search_filtered(
+                    query="decided agreed approved confirmed", top_k=100,
+                    date_from=cutoff,
+                )
+                all_decisions = []
+                for r in results:
+                    decisions = analyzer.extract_decisions(
+                        r.text,
+                        sender=r.metadata.get("sender_email", ""),
+                        date=r.metadata.get("date", ""),
+                        source_uid=r.metadata.get("uid", ""),
+                    )
+                    all_decisions.extend(decisions)
+                return json_response(
+                    [{"text": d.text, "made_by": d.made_by, "date": d.date,
+                      "source_uid": d.source_uid}
+                     for d in all_decisions],
+                )
+
+            return json_error("Provide conversation_id or days to extract decisions.")
         return await deps.offload(_run)
 
     @mcp.tool(
@@ -198,14 +247,14 @@ def register(mcp, deps) -> None:
                         label = topic.get("label", "").lower()
                         if any(w in label for w in query.lower().split() if len(w) > 3):
                             detected_intent["topic_match"] = {
-                                "id": topic["topic_id"],
+                                "id": topic["id"],
                                 "label": topic["label"],
                             }
                             break
                 except Exception:
                     pass
 
-            formatted = retriever.format_results_for_claude(results)
+            formatted = deps.sanitize(retriever.format_results_for_claude(results))
             return json_response({
                 "query": query, "count": len(results),
                 "detected_intent": detected_intent,

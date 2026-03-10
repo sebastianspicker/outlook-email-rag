@@ -105,6 +105,7 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
             "hybrid": params.hybrid, "topic_id": params.topic_id,
             "cluster_id": params.cluster_id, "expand_query": params.expand_query,
             "attachment_name": params.attachment_name, "attachment_type": params.attachment_type,
+            "category": params.category, "is_calendar": params.is_calendar,
         }
         payload["model"] = get_settings().embedding_model
         return json_response(payload)
@@ -125,7 +126,7 @@ async def email_list_folders() -> str:
         lines = [f"Folders in the email archive ({len(folders)} total):\n"]
         for entry in folders:
             lines.append(f"  {entry['count']:>5} emails - {entry['folder']}")
-        return "\n".join(lines)
+        return _deps.sanitize("\n".join(lines))
     return await _deps.offload(_run)
 
 

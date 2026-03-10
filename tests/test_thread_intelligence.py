@@ -54,7 +54,8 @@ class TestActionItemExtraction:
         items = self.analyzer.extract_action_items(text)
         # Should detect deadline from "by 03/15"
         deadline_items = [a for a in items if a.deadline]
-        assert len(deadline_items) >= 1 or len(items) >= 1  # At least action is found
+        assert len(items) >= 1, "Should extract at least one action item"
+        assert len(deadline_items) >= 1, "Should detect deadline from 'by 03/15'"
 
     def test_empty_text(self):
         assert self.analyzer.extract_action_items("") == []
@@ -249,3 +250,25 @@ class TestMCPThreadTools:
         inp = DecisionsInput(conversation_id="xyz", days=30)
         assert inp.conversation_id == "xyz"
         assert inp.days == 30
+
+
+class TestUrgencyScopeOnActionText:
+    """Urgency should be checked against action item text, not the full email body."""
+
+    def test_urgency_only_on_matching_item(self):
+        from src.thread_intelligence import ThreadAnalyzer
+
+        ta = ThreadAnalyzer()
+        body = (
+            "Please update the style guide for the website. "
+            "Also, we need to finalize the budget ASAP."
+        )
+        items = ta.extract_action_items(body)
+        # If any items found, urgency should only apply to the ASAP item
+        for it in items:
+            if "asap" in it.text.lower() or "budget" in it.text.lower():
+                # This item mentions ASAP, may be urgent
+                pass
+            else:
+                # Items not mentioning urgency words should NOT be urgent
+                assert not it.is_urgent, f"Non-urgent text marked urgent: {it.text}"

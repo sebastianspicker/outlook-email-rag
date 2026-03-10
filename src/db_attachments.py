@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 
+def _escape_like(text: str) -> str:
+    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _attachment_filter_conditions(
     filename: str | None,
     extension: str | None,
@@ -12,15 +17,15 @@ def _attachment_filter_conditions(
     conditions: list[str] = []
     params: list = []
     if filename:
-        conditions.append("a.name LIKE ?")
-        params.append(f"%{filename}%")
+        conditions.append("a.name LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(filename)}%")
     if extension:
         ext = extension if extension.startswith(".") else f".{extension}"
-        conditions.append("LOWER(a.name) LIKE ?")
-        params.append(f"%{ext.lower()}")
+        conditions.append("LOWER(a.name) LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(ext.lower())}")
     if mime_type:
-        conditions.append("a.mime_type LIKE ?")
-        params.append(f"%{mime_type}%")
+        conditions.append("a.mime_type LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(mime_type)}%")
     return conditions, params
 
 
@@ -47,21 +52,24 @@ class AttachmentMixin:
             "SELECT COUNT(DISTINCT email_uid) AS cnt FROM attachments"
         ).fetchone()["cnt"]
 
-        # Extension distribution
-        ext_rows = self.conn.execute(
-            """SELECT
-                   CASE WHEN INSTR(name, '.') > 0
-                        THEN LOWER(SUBSTR(name, INSTR(name, '.') - LENGTH(name)))
-                        ELSE '' END AS ext,
-                   COUNT(*) AS cnt,
-                   COALESCE(SUM(size), 0) AS total_size
-               FROM attachments
-               GROUP BY ext ORDER BY cnt DESC LIMIT 30"""
+        # Extension distribution — compute in Python for correct last-dot handling
+        all_att_rows = self.conn.execute(
+            "SELECT name, COALESCE(size, 0) AS size FROM attachments"
         ).fetchall()
-        by_extension = [
-            {"extension": r["ext"], "count": r["cnt"], "total_size": r["total_size"]}
-            for r in ext_rows
-        ]
+        ext_agg: dict[str, dict] = {}
+        for r in all_att_rows:
+            name = r["name"] or ""
+            dot_pos = name.rfind(".")
+            ext = name[dot_pos:].lower() if dot_pos > 0 else ""
+            if ext not in ext_agg:
+                ext_agg[ext] = {"count": 0, "total_size": 0}
+            ext_agg[ext]["count"] += 1
+            ext_agg[ext]["total_size"] += r["size"]
+        by_extension = sorted(
+            [{"extension": ext, "count": v["count"], "total_size": v["total_size"]}
+             for ext, v in ext_agg.items()],
+            key=lambda x: x["count"], reverse=True,
+        )[:30]
 
         # Top filenames
         top_rows = self.conn.execute(
@@ -88,29 +96,25 @@ class AttachmentMixin:
         offset: int = 0,
     ) -> dict:
         """Browse attachments with optional filters. Joins with emails table."""
-        query = (
-            "SELECT a.name, a.mime_type, a.size, a.is_inline,"
-            " a.email_uid, e.subject, e.sender_email, e.date"
-            " FROM attachments a JOIN emails e ON a.email_uid = e.uid"
-        )
+        from_clause = " FROM attachments a JOIN emails e ON a.email_uid = e.uid"
         conditions, params = _attachment_filter_conditions(filename, extension, mime_type)
         if sender:
-            conditions.append("(e.sender_email LIKE ? OR e.sender_name LIKE ?)")
-            params.extend([f"%{sender}%", f"%{sender}%"])
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
+            conditions.append("(e.sender_email LIKE ? ESCAPE '\\' OR e.sender_name LIKE ? ESCAPE '\\')")
+            params.extend([f"%{_escape_like(sender)}%", f"%{_escape_like(sender)}%"])
+        where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         # Get total count
-        count_query = query.replace(
-            "SELECT a.name, a.mime_type, a.size, a.is_inline,"
-            " a.email_uid, e.subject, e.sender_email, e.date",
-            "SELECT COUNT(*) AS cnt",
-        )
-        total = self.conn.execute(count_query, params).fetchone()["cnt"]
+        total = self.conn.execute(
+            "SELECT COUNT(*) AS cnt" + from_clause + where_clause, params
+        ).fetchone()["cnt"]
 
-        query += " ORDER BY e.date DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-        rows = self.conn.execute(query, params).fetchall()
+        rows = self.conn.execute(
+            "SELECT a.name, a.mime_type, a.size, a.is_inline,"
+            " a.email_uid, e.subject, e.sender_email, e.date"
+            + from_clause + where_clause
+            + " ORDER BY e.date DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
         return {
             "attachments": [dict(r) for r in rows],
             "total": total,

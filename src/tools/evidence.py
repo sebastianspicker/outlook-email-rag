@@ -340,8 +340,8 @@ def register(mcp, deps) -> None:
     async def evidence_categories() -> str:
         """List all evidence categories with current item counts.
 
-        Returns all 10 canonical categories (discrimination, harassment,
-        sexual_harassment, insult, bossing, retaliation, exclusion,
-        microaggression, hostile_environment, other) with counts.
+        Returns all 10 canonical categories (bossing, harassment,
+        discrimination, retaliation, hostile_environment, micromanagement,
+        exclusion, gaslighting, workload, general) with counts.
         """
         return await run_with_db(deps, lambda db: json_response(db.evidence_categories()))

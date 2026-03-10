@@ -15,9 +15,6 @@ from src.storage import (
 
 # ── to_builtin_list ─────────────────────────────────────────────────
 
-class test_to_builtin_list_with_numpy_array:
-    pass
-
 
 def test_to_builtin_list_converts_numpy_array():
     arr = np.array([1, 2, 3])

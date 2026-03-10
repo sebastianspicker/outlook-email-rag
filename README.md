@@ -1,7 +1,7 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![MCP Tools](https://img.shields.io/badge/MCP_tools-70-purple)
-![Tests](https://img.shields.io/badge/tests-1145%2B-brightgreen)
+![Tests](https://img.shields.io/badge/tests-1200%2B-brightgreen)
 
 # Email RAG
 
@@ -47,6 +47,11 @@ flowchart LR
     F2 --> H[("SQLite\nmetadata")]
     B1 --> H
     B --> H
+
+    B --> ATT{"Image\nattachment?"}
+    ATT -- yes --> IMG["Visualized-BGE-M3\npre-computed embedding"]
+    IMG --> G
+    ATT -- no --> C
 
     H --> NLP["NLP Pipeline"]
     NLP --> N1["Entity\nextraction"]
@@ -113,6 +118,21 @@ flowchart LR
     CUSTODY --> REVIEW["evidence_list\nevidence_timeline"]
     REVIEW --> EXPORT["evidence_export\ndossier_generate"]
     EXPORT --> OUTPUT["HTML / PDF / CSV\nfor legal review"]
+```
+
+### Chunk embedding pipeline
+
+```mermaid
+flowchart TB
+    CHUNKS["Email chunks\n(batch)"] --> SPLIT{"Pre-computed\nembedding?"}
+    SPLIT -- "yes (images)" --> PRE["Use existing\n1024-d vector"]
+    SPLIT -- "no (text)" --> ENCODE["BGE-M3\nencode_all()"]
+    ENCODE --> DENSE["Dense embeddings"]
+    ENCODE --> SPARSE["Sparse vectors"]
+    PRE --> MERGE["Merge results"]
+    DENSE --> MERGE
+    MERGE --> CHROMA[("ChromaDB\nadd()")]
+    SPARSE --> SQLITE[("SQLite\nsparse_vectors")]
 ```
 
 **Key properties:**
@@ -766,7 +786,7 @@ block-beta
 | `src/embedder.py` | Generates embeddings with BGE-M3 (via MultiVectorEmbedder) and writes to ChromaDB |
 | `src/retriever.py` | Semantic search, 16-param filter logic, hybrid search, reranking, stats |
 | `src/email_db.py` | SQLite metadata store (mixin-based: schema, attachments, custody, entities, analytics, evidence) |
-| `src/db_schema.py` | SQLite schema DDL and migrations (v3–v8) |
+| `src/db_schema.py` | SQLite schema DDL and migrations (v3–v9) |
 | `src/db_attachments.py` | Attachment query mixin |
 | `src/db_custody.py` | Chain-of-custody mixin |
 | `src/db_entities.py` | Entity storage mixin |
@@ -942,7 +962,7 @@ pip install -r requirements-dev.txt
 # or with pip install -e .[dev]
 
 ruff check .          # linting
-pytest -q             # tests (1145+ tests)
+pytest -q             # tests (1200+ tests)
 bandit -r src -q      # security scan
 ```
 
@@ -966,7 +986,7 @@ outlook-email-rag/
 │   ├── chunker.py               # email + attachment chunking
 │   ├── embedder.py              # embedding + ChromaDB writes
 │   ├── email_db.py              # SQLite metadata store (mixin-based)
-│   ├── db_schema.py             # SQLite schema DDL + migrations (v3–v8)
+│   ├── db_schema.py             # SQLite schema DDL + migrations (v3–v9)
 │   ├── db_attachments.py        # attachment query mixin
 │   ├── db_custody.py            # chain-of-custody mixin
 │   ├── db_entities.py           # entity storage mixin
@@ -1032,7 +1052,7 @@ outlook-email-rag/
 │       ├── thread_export.html   # email/thread export template
 │       ├── evidence_report.html # evidence report template
 │       └── dossier.html         # proof dossier template
-├── tests/                       # 1145+ tests (57 test files)
+├── tests/                       # 1200+ tests (57 test files)
 ├── data/                        # put your .olm file here
 ├── .claude/
 │   └── settings.json            # auto-registers MCP server in Claude Code

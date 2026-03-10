@@ -39,16 +39,17 @@ class TestKeywordExtractor:
         )
         kw_texts = [kw for kw, _ in keywords]
         # Should find bigrams like "quarterly report" or "budget review"
-        assert any(" " in kw for kw in kw_texts) or len(kw_texts) > 0
+        assert len(kw_texts) > 0, "Should extract keywords"
+        assert any(" " in kw for kw in kw_texts), "Should include bigrams"
 
     def test_extract_keywords_scores_sorted(self):
         extractor = KeywordExtractor()
         keywords = extractor.extract_keywords(
             "project management project timeline project milestones schedule deadlines"
         )
-        if len(keywords) > 1:
-            scores = [s for _, s in keywords]
-            assert scores == sorted(scores, reverse=True)
+        assert len(keywords) > 1, "Should extract multiple keywords from varied text"
+        scores = [s for _, s in keywords]
+        assert scores == sorted(scores, reverse=True)
 
     def test_extract_corpus_keywords(self):
         extractor = KeywordExtractor(min_df=1)

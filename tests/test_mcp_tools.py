@@ -291,7 +291,7 @@ def test_ingest_input_accepts_extract_attachments_and_embed_images():
 
 @pytest.mark.asyncio
 async def test_email_diagnostics_returns_json(monkeypatch):
-    from src.mcp_server import ToolDeps, _offload
+    from src.mcp_server import _offload
     from src.tools import diagnostics
 
     class DummyEmbedder:
@@ -421,6 +421,26 @@ class TestAttachmentFilters:
         r = SearchResult(chunk_id="x", text="", metadata={"attachment_filename": "slides.pptx"}, distance=0.1)
         assert _matches_attachment_type(r, ".pptx") is True
         assert _matches_attachment_type(r, "pptx") is True
+
+    def test_matches_attachment_type_no_substring_false_positive(self):
+        """Filtering for .doc should NOT match .docx files."""
+        from src.result_filters import _matches_attachment_type
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"attachment_names": "report.docx"}, distance=0.1)
+        assert _matches_attachment_type(r, "doc") is False
+        assert _matches_attachment_type(r, "docx") is True
+
+    def test_matches_category_no_substring_false_positive(self):
+        """Filtering for 'urgent' should NOT match 'Non-Urgent'."""
+        from src.result_filters import _matches_category
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="x", text="", metadata={"categories": "Non-Urgent, Important"}, distance=0.1)
+        assert _matches_category(r, "urgent") is False
+        assert _matches_category(r, "Non-Urgent") is True
+        assert _matches_category(r, "Important") is True
+        assert _matches_category(r, "import") is False
 
 
 @pytest.mark.asyncio

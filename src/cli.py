@@ -553,7 +553,13 @@ def _build_legacy_parser() -> argparse.ArgumentParser:
 
 
 def _infer_subcommand(args: argparse.Namespace) -> str | None:
-    """Map legacy flat-flag usage to the recommended subcommand."""
+    """Map legacy flat-flag usage to the recommended subcommand.
+
+    In addition to returning the subcommand name, this sets the
+    ``*_action`` attribute that the subcommand handlers expect
+    (e.g. ``args.analytics_action``).  Without this, legacy flags
+    would always hit the ``else`` branch and ``sys.exit(2)``.
+    """
     if getattr(args, "query", None) is not None:
         return "search"
     if getattr(args, "browse", False):
@@ -562,22 +568,78 @@ def _infer_subcommand(args: argparse.Namespace) -> str | None:
         "export_thread", "export_email", "generate_report", "export_network",
     ]):
         return "export"
-    if any(getattr(args, f, None) for f in [
-        "evidence_list", "evidence_export", "evidence_stats",
-        "evidence_verify", "dossier", "custody_chain", "provenance",
-    ]):
+
+    # ── Evidence ──
+    if getattr(args, "evidence_list", False):
+        args.evidence_action = "list"
         return "evidence"
-    if any(getattr(args, f, None) for f in [
-        "stats", "list_senders", "suggest", "top_contacts",
-        "volume", "heatmap", "response_times",
-    ]) or getattr(args, "entities", None) is not None:
+    if getattr(args, "evidence_export", None):
+        args.evidence_action = "export"
+        args.output_path = args.evidence_export
+        return "evidence"
+    if getattr(args, "evidence_stats", False):
+        args.evidence_action = "stats"
+        return "evidence"
+    if getattr(args, "evidence_verify", False):
+        args.evidence_action = "verify"
+        return "evidence"
+    if getattr(args, "dossier", None):
+        args.evidence_action = "dossier"
+        args.output_path = args.dossier
+        return "evidence"
+    if getattr(args, "custody_chain", False):
+        args.evidence_action = "custody"
+        return "evidence"
+    if getattr(args, "provenance", None):
+        args.evidence_action = "provenance"
+        args.uid = args.provenance
+        return "evidence"
+
+    # ── Analytics ──
+    if getattr(args, "stats", False):
+        args.analytics_action = "stats"
         return "analytics"
-    if any(getattr(args, f, None) for f in [
-        "generate_training_data", "fine_tune",
-    ]):
+    if getattr(args, "list_senders", False):
+        args.analytics_action = "senders"
+        return "analytics"
+    if getattr(args, "suggest", False):
+        args.analytics_action = "suggest"
+        return "analytics"
+    if getattr(args, "top_contacts", None):
+        args.analytics_action = "contacts"
+        if not hasattr(args, "email_address"):
+            args.email_address = args.top_contacts
+        return "analytics"
+    if getattr(args, "volume", False):
+        args.analytics_action = "volume"
+        return "analytics"
+    if getattr(args, "entities", None) is not None:
+        args.analytics_action = "entities"
+        if not hasattr(args, "entity_type"):
+            args.entity_type = args.entities or None
+        return "analytics"
+    if getattr(args, "heatmap", False):
+        args.analytics_action = "heatmap"
+        return "analytics"
+    if getattr(args, "response_times", False):
+        args.analytics_action = "response-times"
+        return "analytics"
+
+    # ── Training ──
+    if getattr(args, "generate_training_data", None):
+        args.training_action = "generate-data"
+        args.output_path = args.generate_training_data
         return "training"
+    if getattr(args, "fine_tune", None):
+        args.training_action = "fine-tune"
+        args.data_path = args.fine_tune
+        return "training"
+
+    # ── Admin ──
     if getattr(args, "reset_index", False):
+        args.admin_action = "reset-index"
         return "admin"
+
     return None  # interactive mode
 
 
@@ -587,14 +649,16 @@ _SUBCOMMANDS = frozenset({"search", "browse", "export", "evidence", "analytics",
 
 
 def _has_subcommand(argv: list[str] | None) -> bool:
-    """Check whether argv starts with a known subcommand name."""
+    """Check whether argv starts with a known subcommand name.
+
+    Only checks argv[0] — subcommands must come first.  Previous logic
+    skipped flags and tested the first non-flag token, which broke when
+    a flag value (e.g. ``--db-path /tmp/analytics``) happened to collide
+    with a subcommand name.
+    """
     if argv is None:
         argv = sys.argv[1:]
-    for arg in argv:
-        if arg.startswith("-"):
-            continue  # skip flags before subcommand
-        return arg in _SUBCOMMANDS
-    return False
+    return bool(argv) and argv[0] in _SUBCOMMANDS
 
 
 # ── Unified parse_args ────────────────────────────────────────────

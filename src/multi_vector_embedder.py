@@ -285,6 +285,9 @@ def _normalize_colbert(colbert_vecs: list[Any]) -> list[np.ndarray]:
         if isinstance(vecs, np.ndarray):
             result.append(vecs)
         elif hasattr(vecs, "numpy"):
+            # Handle GPU/MPS tensors that can't call .numpy() directly
+            if hasattr(vecs, "detach"):
+                vecs = vecs.detach().cpu()
             result.append(vecs.numpy())
         else:
             result.append(np.array(vecs))

@@ -75,7 +75,7 @@ class CommunicationNetwork:
             "most_connected": [
                 {"email": email, "centrality": round(score, 4)} for email, score in most_connected
             ],
-            "communities": communities[:top_n],
+            "communities": [{"members": c} for c in communities[:top_n]],
             "bridge_nodes": [
                 {"email": email, "betweenness": round(score, 4)} for email, score in bridge_nodes
             ],
@@ -200,6 +200,10 @@ class CommunicationNetwork:
         for entry in timeline:
             try:
                 dt = datetime.fromisoformat(entry["date"].replace("Z", "+00:00"))
+                # Normalize to naive UTC to avoid mixed-timezone comparison errors
+                if dt.tzinfo is not None:
+                    from datetime import timezone
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
                 dated_events.append((dt, entry["sender_email"]))
             except (ValueError, TypeError):
                 continue

@@ -1064,3 +1064,36 @@ def test_to_dict_includes_new_metadata_fields():
     assert d["thread_topic"] == "Q4 Budget"
     assert d["inference_classification"] == "Focused"
     assert d["is_calendar_message"] is True
+
+
+def test_extract_html_body_no_duplicate_tail():
+    """_extract_html_body should not duplicate tail text of child elements."""
+    from lxml import etree
+
+    from src.parse_olm import _extract_html_body
+
+    xml = "<body>Hello <b>bold</b> and <i>italic</i> world</body>"
+    el = etree.fromstring(xml)
+    result = _extract_html_body(el)
+    # "and" should appear exactly once, not twice
+    assert result.count(" and ") == 1
+    assert result.count(" world") == 1
+    assert "bold" in result
+
+
+def test_html_to_text_strips_comments():
+    """HTML comments (especially Outlook conditionals) should be stripped cleanly."""
+    from src.html_converter import html_to_text
+
+    # Outlook conditional comment containing '>'
+    html = '<!--[if gte mso 9]><xml>stuff</xml><![endif]-->Real content here'
+    result = html_to_text(html)
+    assert "Real content here" in result
+    assert "mso" not in result
+    assert "endif" not in result
+
+    # Comment with comparison operator
+    html2 = "<!-- value > threshold -->Visible text"
+    result2 = html_to_text(html2)
+    assert "Visible text" in result2
+    assert "threshold" not in result2

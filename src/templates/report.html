@@ -156,7 +156,7 @@
   <tbody>
   {% for r in response_times %}
   <tr>
-    <td>{{ r.replier }}</td>
+    <td>{{ r.sender }}</td>
     <td>{{ "%.1f" | format(r.avg_response_hours) }}</td>
     <td>{{ r.response_count }}</td>
   </tr>

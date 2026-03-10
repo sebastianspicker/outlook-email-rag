@@ -307,7 +307,7 @@ class EntitySearchInput(StrictInput):
     entity: str = Field(..., description="Entity text to search for (partial match).", min_length=1)
     entity_type: Optional[str] = Field(
         default=None,
-        description="Filter by entity type: 'organization', 'url', 'phone', 'mention', 'email'.",
+        description="Filter by entity type: 'organization', 'url', 'phone', 'email', 'person', 'event'.",
     )
     limit: int = Field(default=20, ge=1, le=100)
 
@@ -316,7 +316,7 @@ class ListEntitiesInput(PlainInput):
     """Input for listing top entities."""
 
     entity_type: Optional[str] = Field(
-        default=None, description="Filter by type: 'organization', 'url', 'phone', 'mention', 'email'."
+        default=None, description="Filter by type: 'organization', 'url', 'phone', 'email', 'person', 'event'."
     )
     limit: int = Field(default=20, ge=1, le=100)
 
@@ -604,9 +604,9 @@ class EvidenceAddInput(StrictInput):
     category: str = Field(
         ...,
         description=(
-            "Evidence category: discrimination, harassment, sexual_harassment, "
-            "insult, bossing, retaliation, exclusion, microaggression, "
-            "hostile_environment, or other."
+            "Evidence category: bossing, harassment, discrimination, retaliation, "
+            "hostile_environment, micromanagement, exclusion, gaslighting, "
+            "workload, or general."
         ),
         min_length=1,
     )

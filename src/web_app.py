@@ -192,8 +192,13 @@ def render_results_summary(results: list[Any], active_filters: list[str], sort_l
         st.markdown(chips, unsafe_allow_html=True)
 
 
+@st.cache_resource
 def _get_email_db_safe():
-    """Try to get EmailDatabase instance, return None if unavailable."""
+    """Try to get EmailDatabase instance, return None if unavailable.
+
+    Cached via st.cache_resource so only one connection is created
+    per Streamlit server process (avoids leaking SQLite connections).
+    """
     import os
 
     try:
@@ -256,7 +261,7 @@ def render_dashboard_page() -> None:
         contacts = db.top_contacts(email_input, limit=15)
         if contacts:
             df_contacts = pd.DataFrame(contacts)
-            st.bar_chart(df_contacts, x="partner", y="total_count")
+            st.bar_chart(df_contacts, x="partner", y="total")
         else:
             st.info(f"No contacts found for {email_input}")
 
@@ -281,7 +286,7 @@ def render_entity_page() -> None:
 
     import pandas as pd
 
-    entity_types = ["All", "organization", "url", "phone", "mention", "email"]
+    entity_types = ["All", "organization", "person", "url", "phone", "email", "event"]
     selected_type = st.selectbox("Entity Type", entity_types, index=0)
     entity_type = None if selected_type == "All" else selected_type
 
@@ -456,11 +461,14 @@ def render_evidence_page() -> None:
             from src.evidence_exporter import EvidenceExporter
 
         exporter = EvidenceExporter(db)
-        export_result = exporter.export(
-            fmt=export_format,
-            min_relevance=export_min_rel if export_min_rel > 1 else None,
-            category=cat_filter,
-        )
+        export_kwargs = {
+            "min_relevance": export_min_rel if export_min_rel > 1 else None,
+            "category": cat_filter,
+        }
+        if export_format == "csv":
+            export_result = exporter.export_csv(**export_kwargs)
+        else:
+            export_result = exporter.export_html(**export_kwargs)
 
         if export_format == "html" and "html" in export_result:
             st.download_button(

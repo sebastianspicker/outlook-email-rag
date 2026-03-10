@@ -35,7 +35,7 @@ class TemporalAnalyzer:
         if not dates:
             return []
 
-        dt_series = pd.to_datetime(dates, errors="coerce").dropna()
+        dt_series = pd.to_datetime(dates, errors="coerce", utc=True).dropna()
         if dt_series.empty:
             return []
 
@@ -58,7 +58,7 @@ class TemporalAnalyzer:
         if not dates:
             return []
 
-        dt_series = pd.to_datetime(dates, errors="coerce").dropna()
+        dt_series = pd.to_datetime(dates, errors="coerce", utc=True).dropna()
         if dt_series.empty:
             return []
 

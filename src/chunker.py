@@ -26,6 +26,7 @@ class EmailChunk:
     chunk_id: str     # uid__chunk_N
     text: str         # The text to embed
     metadata: dict    # Stored alongside the vector in ChromaDB
+    embedding: list[float] | None = None  # Pre-computed embedding (e.g. image)
 
 
 # Tuning parameters
@@ -248,18 +249,8 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         "inference_classification": email_dict.get("inference_classification", "") or "",
     }
 
-    # Embed categories and calendar tag in search text
-    categories = email_dict.get("categories", []) or []
-    categories_line = f"\nCategories: {', '.join(categories)}" if categories else ""
-    calendar_tag = "\n[Calendar/Meeting]" if email_dict.get("is_calendar_message") else ""
-
-    # Embed attachment names in search text for semantic retrieval
-    attachment_line = f"\nAttachments: {att_names_str}" if att_names else ""
-
-    extra_lines = f"{calendar_tag}{categories_line}{attachment_line}"
-
     if len(body) <= MAX_CHUNK_CHARS:
-        text = f"{header}{extra_lines}\n\n{body}{quoted_note}{sig_note}" if body else f"{header}{extra_lines}"
+        text = f"{header}\n\n{body}{quoted_note}{sig_note}" if body else header
         return [
             EmailChunk(
                 uid=uid,
@@ -277,7 +268,7 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
     for i, segment in enumerate(body_segments):
         if i == 0:
             # First chunk gets full header + extra metadata lines
-            text = f"{header}{extra_lines}\n\n[Part 1/{len(body_segments)}]\n{segment}"
+            text = f"{header}\n\n[Part 1/{len(body_segments)}]\n{segment}"
         else:
             # Continuation chunks get context header for embedding quality
             context_parts = []
@@ -356,6 +347,7 @@ def chunk_attachment(
     filename: str,
     text: str,
     parent_metadata: dict,
+    att_index: int = 0,
 ) -> list[EmailChunk]:
     """Chunk extracted attachment text for embedding.
 
@@ -364,6 +356,7 @@ def chunk_attachment(
         filename: The attachment filename.
         text: Extracted text content from the attachment.
         parent_metadata: Metadata from the parent email (subject, date, sender, etc.).
+        att_index: Attachment index within the parent email (disambiguates same-name files).
 
     Returns:
         List of EmailChunk objects for the attachment content.
@@ -373,7 +366,7 @@ def chunk_attachment(
 
     subject = parent_metadata.get("subject", "")
     date = parent_metadata.get("date", "")
-    filename_hash = hashlib.md5(filename.encode(), usedforsecurity=False).hexdigest()[:8]
+    filename_hash = hashlib.md5(f"{filename}_{att_index}".encode(), usedforsecurity=False).hexdigest()[:8]
     header = f"[Attachment: {filename} from email \"{subject}\" ({date})]"
 
     base_metadata = {

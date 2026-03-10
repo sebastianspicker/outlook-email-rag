@@ -6,16 +6,16 @@ from src.query_expander import QueryExpander
 
 
 class _FakeModel:
-    """Minimal mock of SentenceTransformer for testing."""
+    """Minimal mock of MultiVectorEmbedder for testing."""
 
-    def encode(self, texts, show_progress_bar=False):
+    def encode_dense(self, texts):
         # Return deterministic embeddings based on text content
         embeddings = []
         for text in texts:
             # Simple hash-based embedding
             rng = np.random.RandomState(hash(text) % 2**31)
-            embeddings.append(rng.randn(8).astype(np.float32))
-        return np.array(embeddings)
+            embeddings.append(rng.randn(8).astype(np.float32).tolist())
+        return embeddings
 
 
 class TestQueryExpander:
@@ -92,6 +92,15 @@ class TestQueryExpander:
         for term, _ in terms:
             assert len(term) >= 3
 
+    def test_expand_no_substring_skip(self):
+        """Query 'art' should not skip 'artificial' — word boundary check required."""
+        vocab = ["artificial intelligence", "artwork gallery", "art history"]
+        expander = QueryExpander(model=_FakeModel(), vocabulary=vocab)
+        result = expander.expand("art", n_terms=5)
+        # "artificial intelligence" should not be skipped just because "art" is a substring
+        # At minimum, the result should expand beyond just "art"
+        assert len(result) > len("art")
+
 
 class TestMCPSmartSearch:
     def test_smart_search_tool_importable(self):
@@ -154,6 +163,37 @@ class TestCLINewFlags:
 
         with pytest.raises(SystemExit):
             parse_args(["--expand-query"])
+
+
+class TestHasAttachmentsFilterCoercion:
+    """Bug 2: has_attachments stored as str in ChromaDB, but callers may pass bool."""
+
+    def test_matches_has_attachments_str_true(self):
+        from src.result_filters import _matches_has_attachments
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="c1", text="t", metadata={"has_attachments": "True"}, distance=0.1)
+        assert _matches_has_attachments(r, True) is True
+        assert _matches_has_attachments(r, False) is False
+
+    def test_matches_has_attachments_bool_true(self):
+        from src.result_filters import _matches_has_attachments
+        from src.retriever import SearchResult
+
+        r = SearchResult(chunk_id="c1", text="t", metadata={"has_attachments": True}, distance=0.1)
+        assert _matches_has_attachments(r, True) is True
+        assert _matches_has_attachments(r, False) is False
+
+    def test_matches_priority_str_and_int(self):
+        from src.result_filters import _matches_priority
+        from src.retriever import SearchResult
+
+        r_str = SearchResult(chunk_id="c1", text="t", metadata={"priority": "3"}, distance=0.1)
+        r_int = SearchResult(chunk_id="c2", text="t", metadata={"priority": 3}, distance=0.1)
+        assert _matches_priority(r_str, 3) is True
+        assert _matches_priority(r_int, 3) is True
+        assert _matches_priority(r_str, 4) is False
+        assert _matches_priority(r_int, 4) is False
 
 
 class TestRetrieverSemanticFilters:

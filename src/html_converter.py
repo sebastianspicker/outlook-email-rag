@@ -28,6 +28,7 @@ _RE_LINK = re.compile(r'<a\s[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', re.DO
 _RE_BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _RE_P_CLOSE = re.compile(r"</p>", re.IGNORECASE)
 _RE_DIV_CLOSE = re.compile(r"</div>", re.IGNORECASE)
+_RE_COMMENT = re.compile(r"<!--[\s\S]*?-->")
 _RE_ALL_TAGS = re.compile(r"<[^>]+>")
 _RE_WHITESPACE_COLLAPSE = re.compile(r"\s+")
 
@@ -91,6 +92,8 @@ def html_to_text(html: str) -> str:
     text = _RE_P_CLOSE.sub("\n", text)
     text = _RE_DIV_CLOSE.sub("\n", text)
 
+    # Strip HTML comments (before tag removal — comments contain '>')
+    text = _RE_COMMENT.sub("", text)
     # Strip remaining tags
     text = _RE_ALL_TAGS.sub("", text)
     text = unescape(text)

@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 _ADDR_RE = re.compile(r"^(.*?)\s*<([^>]+)>$")
 
 
+def _escape_like(text: str) -> str:
+    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _safe_json_parse(raw: str | None, default=None):
     """Parse a JSON string, returning default (or []) on failure."""
     if not raw or not isinstance(raw, str):
@@ -100,7 +105,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         if len(chunk_ids) != len(sparse_vectors):
             raise ValueError("chunk_ids and sparse_vectors must have same length")
 
-        inserted = 0
+        rows: list[tuple] = []
         for cid, sv in zip(chunk_ids, sparse_vectors):
             if not sv:
                 continue
@@ -110,14 +115,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             token_blob = struct.pack(f"<{len(token_ids)}i", *token_ids)
             weight_blob = struct.pack(f"<{len(weights)}f", *weights)
 
-            self.conn.execute(
+            rows.append((cid, token_blob, weight_blob, len(token_ids)))
+
+        if rows:
+            self.conn.executemany(
                 "INSERT OR REPLACE INTO sparse_vectors(chunk_id, token_ids, weights, num_tokens) "
                 "VALUES(?, ?, ?, ?)",
-                (cid, token_blob, weight_blob, len(token_ids)),
+                rows,
             )
-            inserted += 1
-        self.conn.commit()
-        return inserted
+            self.conn.commit()
+        return len(rows)
 
     def get_sparse_vector(self, chunk_id: str) -> dict[int, float] | None:
         """Retrieve a single sparse vector by chunk_id."""
@@ -176,12 +183,13 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
     # Write operations
     # ------------------------------------------------------------------
 
-    def insert_email(self, email: Email) -> bool:
+    def insert_email(self, email: Email, *, ingestion_run_id: int | None = None) -> bool:
         """Insert a single email and update contacts/edges.
 
         Returns False if uid already exists (duplicate).
         """
         cur = self.conn.cursor()
+        content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
         categories_json = json.dumps(getattr(email, "categories", []) or [])
         references_json = json.dumps(getattr(email, "references", []) or [])
         try:
@@ -190,9 +198,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                    sender_email, date, folder, email_type, has_attachments,
                    attachment_count, priority, is_read, conversation_id,
                    in_reply_to, base_subject, body_length, body_text, body_html,
-                   categories, thread_topic, inference_classification,
-                   is_calendar_message, references_json)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   content_sha256, categories, thread_topic, inference_classification,
+                   is_calendar_message, references_json, ingestion_run_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     email.uid,
                     email.message_id,
@@ -209,14 +217,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                     email.conversation_id,
                     email.in_reply_to,
                     email.base_subject,
-                    len(email.clean_body),
+                    len(email.clean_body) if email.clean_body else 0,
                     email.clean_body,
                     email.body_html,
+                    content_sha256,
                     categories_json,
                     getattr(email, "thread_topic", "") or "",
                     getattr(email, "inference_classification", "") or "",
                     int(getattr(email, "is_calendar_message", False)),
                     references_json,
+                    ingestion_run_id,
                 ),
             )
         except sqlite3.IntegrityError:
@@ -288,14 +298,20 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         self.conn.commit()
         return True
 
-    def insert_emails_batch(self, emails: list[Email]) -> int:
-        """Insert a batch of emails in a single transaction. Returns count inserted.
+    def insert_emails_batch(
+        self, emails: list[Email], ingestion_run_id: int | None = None,
+    ) -> set[str]:
+        """Insert a batch of emails in a single transaction.
+
+        Returns the set of UIDs that were actually inserted (new emails).
+        The set is truthy/has ``len()`` so callers that only need the count
+        still work via ``len(result)`` or ``bool(result)``.
 
         Uses batched parameter collection for recipients, categories,
         attachments, contacts, and communication edges to reduce per-row
         execute() overhead.
         """
-        inserted = 0
+        inserted_uids: set[str] = set()
         cur = self.conn.cursor()
 
         # Collect rows for executemany() across the whole batch
@@ -316,8 +332,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                        attachment_count, priority, is_read, conversation_id,
                        in_reply_to, base_subject, body_length, body_text, body_html,
                        content_sha256, categories, thread_topic,
-                       inference_classification, is_calendar_message, references_json)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       inference_classification, is_calendar_message, references_json,
+                       ingestion_run_id)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         email.uid,
                         email.message_id,
@@ -334,7 +351,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                         email.conversation_id,
                         email.in_reply_to,
                         email.base_subject,
-                        len(email.clean_body),
+                        len(email.clean_body) if email.clean_body else 0,
                         email.clean_body,
                         email.body_html,
                         content_sha256,
@@ -343,6 +360,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                         getattr(email, "inference_classification", "") or "",
                         int(getattr(email, "is_calendar_message", False)),
                         references_json,
+                        ingestion_run_id,
                     ),
                 )
                 if cur.rowcount == 0:
@@ -394,7 +412,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                         if em:
                             edge_rows.append((email.sender_email, em, email.date, email.date))
 
-                inserted += 1
+                inserted_uids.add(email.uid)
 
             # Batch insert collected rows
             if recipient_rows:
@@ -444,7 +462,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         except Exception:
             self.conn.rollback()
             raise
-        return inserted
+        return inserted_uids
 
     def _upsert_contact(
         self,
@@ -549,9 +567,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         rows = self.conn.execute(
             """SELECT uid, subject, body_text, date, sender_name, sender_email
                FROM emails
-               WHERE sender_email LIKE ?
+               WHERE sender_email LIKE ? ESCAPE '\\'
                ORDER BY date DESC LIMIT ?""",
-            (f"%{sender_email}%", limit),
+            (f"%{_escape_like(sender_email)}%", limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -603,9 +621,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         rows = self.conn.execute(
             """SELECT uid, subject, sender_email, date, folder
                FROM emails
-               WHERE references_json LIKE ?
+               WHERE references_json LIKE ? ESCAPE '\\'
                ORDER BY date ASC LIMIT ?""",
-            (f"%{message_id}%", limit),
+            (f"%{_escape_like(message_id)}%", limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -664,8 +682,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         email["to"] = recipients["to"]
         email["cc"] = recipients["cc"]
         email["bcc"] = recipients["bcc"]
-        email["categories"] = _safe_json_parse(email.get("categories"))
-        email["references"] = _safe_json_parse(email.get("references_json"))
+        email["categories"] = _safe_json_parse(email.pop("categories", None))
+        email["references"] = _safe_json_parse(email.pop("references_json", None))
         # Attachments from normalized table
         email["attachments"] = self.attachments_for_email(uid)
         return email
@@ -709,8 +727,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             email["to"] = recips["to"]
             email["cc"] = recips["cc"]
             email["bcc"] = recips["bcc"]
-            email["categories"] = _safe_json_parse(email.get("categories"))
-            email["references"] = _safe_json_parse(email.get("references_json"))
+            email["categories"] = _safe_json_parse(email.pop("categories", None))
+            email["references"] = _safe_json_parse(email.pop("references_json", None))
             email["attachments"] = attachments_by_uid.get(uid, [])
             result[uid] = email
         return result
@@ -725,13 +743,32 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         ).fetchall()
         uids = [row["uid"] for row in rows]
         all_recipients = self._recipients_for_uids(uids) if uids else {}
+        # Batch-fetch attachments (same pattern as get_emails_full_batch)
+        attachments_by_uid: dict[str, list[dict]] = {}
+        if uids:
+            placeholders = ",".join("?" * len(uids))
+            att_rows = self.conn.execute(
+                "SELECT name, mime_type, size, content_id, is_inline, email_uid"
+                f" FROM attachments WHERE email_uid IN ({placeholders})",
+                uids,
+            ).fetchall()
+            for a in att_rows:
+                attachments_by_uid.setdefault(a["email_uid"], []).append({
+                    "name": a["name"], "mime_type": a["mime_type"],
+                    "size": a["size"], "content_id": a["content_id"],
+                    "is_inline": a["is_inline"],
+                })
         result = []
         for row in rows:
             email = dict(row)
-            recips = all_recipients.get(email["uid"], {"to": [], "cc": [], "bcc": []})
+            uid = email["uid"]
+            recips = all_recipients.get(uid, {"to": [], "cc": [], "bcc": []})
             email["to"] = recips["to"]
             email["cc"] = recips["cc"]
             email["bcc"] = recips["bcc"]
+            email["categories"] = _safe_json_parse(email.pop("categories", None))
+            email["references"] = _safe_json_parse(email.pop("references_json", None))
+            email["attachments"] = attachments_by_uid.get(uid, [])
             result.append(email)
         return result
 
@@ -775,8 +812,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             conditions.append("folder = ?")
             params.append(folder)
         if sender:
-            conditions.append("sender_email LIKE ?")
-            params.append(f"%{sender}%")
+            conditions.append("sender_email LIKE ? ESCAPE '\\'")
+            params.append(f"%{_escape_like(sender)}%")
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
@@ -893,7 +930,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                     att.get("mime_type", ""),
                     att.get("size", 0),
                     att.get("content_id", ""),
-                    int(bool(att.get("content_id"))),
+                    int(att.get("is_inline", False)),
                 ),
             )
 
@@ -915,8 +952,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
     def delete_sparse_by_uid(self, uid: str) -> int:
         """Delete sparse vectors for all chunks of an email. Returns count deleted."""
         cur = self.conn.execute(
-            "DELETE FROM sparse_vectors WHERE chunk_id LIKE ?",
-            (f"{uid}__%",),
+            "DELETE FROM sparse_vectors WHERE chunk_id LIKE ? ESCAPE '\\'",
+            (f"{_escape_like(uid)}\\_\\_%",),
         )
         self.conn.commit()
         return cur.rowcount
@@ -994,14 +1031,10 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         results = []
         for subject in subjects:
             rows = self.conn.execute(
-                "SELECT uid, body_length FROM emails WHERE base_subject = ?",
+                "SELECT uid, body_text FROM emails WHERE base_subject = ?",
                 (subject,),
             ).fetchall()
-            # We don't store body in SQLite, but we can return UIDs
-            # The caller will need to use the body from elsewhere
-            # For simplicity, return empty bodies — the dedup detector
-            # will need to fetch bodies from ChromaDB or other source
-            emails = [(row["uid"], "") for row in rows]
+            emails = [(row["uid"], row["body_text"] or "") for row in rows]
             results.append((subject, emails))
 
         return results

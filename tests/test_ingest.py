@@ -1,6 +1,10 @@
+import queue
+import threading
+import time
+
 import pytest
 
-from src.ingest import main, parse_args
+from src.ingest import _SENTINEL, _EmbedPipeline, main, parse_args
 
 
 def test_parse_args_rejects_non_positive_batch_size():
@@ -350,6 +354,12 @@ def test_reembed_rechunks_and_upserts(monkeypatch, tmp_path):
         def __init__(self, **_kw):
             pass
 
+        def set_sparse_db(self, db):
+            pass
+
+        def close(self):
+            pass
+
         def get_existing_ids(self, refresh=False):
             return set()
 
@@ -398,6 +408,12 @@ def test_reembed_skips_emails_without_body(monkeypatch, tmp_path):
 
     class _MockEmbedderForReembed:
         def __init__(self, **_kw):
+            pass
+
+        def set_sparse_db(self, db):
+            pass
+
+        def close(self):
             pass
 
         def get_existing_ids(self, refresh=False):
@@ -807,6 +823,71 @@ def test_exchange_entities_dedup_with_regex(tmp_path):
     db.close()
 
 
+def test_incremental_skips_existing_emails(monkeypatch, tmp_path):
+    """incremental=True should skip emails already in SQLite and not re-extract entities."""
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+    from src.email_db import EmailDatabase
+
+    emails = [_make_mock_email(i) for i in range(1, 4)]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: emails)
+    monkeypatch.setattr(
+        ingest_mod, "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+
+    # First ingest: all 3 emails inserted
+    stats1 = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+    assert stats1["sqlite_inserted"] == 3
+    assert stats1["skipped_incremental"] == 0
+
+    # Second ingest with incremental: all 3 skipped at parse-loop level
+    stats2 = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file, incremental=True)
+    assert stats2["skipped_incremental"] == 3
+    assert stats2["sqlite_inserted"] == 0
+    assert stats2["chunks_added"] == 0
+
+    db = EmailDatabase(sqlite_file)
+    assert db.email_count() == 3
+    db.close()
+
+
+def test_incremental_processes_new_emails(monkeypatch, tmp_path):
+    """incremental=True should process only new emails, skipping existing ones."""
+    import src.embedder as embedder_mod
+    import src.ingest as ingest_mod
+    from src.email_db import EmailDatabase
+
+    first_batch = [_make_mock_email(i) for i in range(1, 3)]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: first_batch)
+    monkeypatch.setattr(
+        ingest_mod, "chunk_email",
+        lambda email: [{"chunk_id": f"{email.get('uid', 'x')}-a"}],
+    )
+    monkeypatch.setattr(embedder_mod, "EmailEmbedder", _MockEmbedder)
+
+    sqlite_file = str(tmp_path / "test.db")
+
+    # First ingest: 2 emails
+    stats1 = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file)
+    assert stats1["sqlite_inserted"] == 2
+
+    # Second ingest with 3 emails (2 old + 1 new), incremental mode
+    mixed_batch = [_make_mock_email(i) for i in range(1, 4)]
+    monkeypatch.setattr(ingest_mod, "parse_olm", lambda _path, **_kw: mixed_batch)
+
+    stats2 = ingest_mod.ingest("mock.olm", dry_run=False, sqlite_path=sqlite_file, incremental=True)
+    assert stats2["skipped_incremental"] == 2
+    assert stats2["sqlite_inserted"] == 1
+
+    db = EmailDatabase(sqlite_file)
+    assert db.email_count() == 3
+    db.close()
+
+
 def test_timing_flag_parsed():
     args = parse_args(["data/file.olm", "--timing"])
     assert args.timing is True
@@ -917,3 +998,44 @@ def test_reingest_metadata_backfills_v7_fields(monkeypatch, tmp_path):
     cats = db.conn.execute("SELECT category FROM email_categories").fetchall()
     assert {r["category"] for r in cats} == {"Important", "Project X"}
     db.close()
+
+
+def test_pipeline_consumer_error_does_not_deadlock():
+    """When consumer thread raises, producer should not block on full queue."""
+    pipeline = _EmbedPipeline.__new__(_EmbedPipeline)
+    pipeline._queue = queue.Queue(maxsize=2)
+    pipeline._embedder = None
+    pipeline._email_db = None
+    pipeline._ingestion_run_id = None
+    pipeline._batch_size = 64
+    pipeline._error = None
+    pipeline._thread = None
+    pipeline.chunks_added = 0
+    pipeline.sqlite_inserted = 0
+    pipeline.batches_written = 0
+    pipeline.embed_seconds = 0.0
+    pipeline.write_seconds = 0.0
+    pipeline.sqlite_seconds = 0.0
+    pipeline.entity_seconds = 0.0
+    pipeline._detailed_timing = False
+    pipeline.analytics_seconds = 0.0
+
+    # Override _process_batch to always raise
+    def _failing_batch(chunks, emails):
+        raise RuntimeError("test error")
+
+    pipeline._process_batch = _failing_batch
+    pipeline._thread = threading.Thread(target=pipeline._run, daemon=True)
+    pipeline._thread.start()
+
+    # Submit work — consumer will crash on first batch
+    pipeline._queue.put((["chunk1"], []))
+    time.sleep(0.2)
+
+    # The consumer should have drained the queue, so this put should not block
+    # even though the consumer has died
+    pipeline._queue.put(([" chunk2"], []))
+    pipeline._queue.put(_SENTINEL)
+    pipeline._thread.join(timeout=2)
+    assert not pipeline._thread.is_alive(), "Consumer thread should have exited"
+    assert pipeline._error is not None

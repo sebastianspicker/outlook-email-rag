@@ -414,3 +414,73 @@ class TestSubcommandDetection:
         for name in ["search", "browse", "export", "evidence",
                       "analytics", "training", "admin"]:
             assert _has_subcommand([name]) is True, f"{name} not detected"
+
+    def test_has_subcommand_ignores_flag_values(self):
+        """Flag values like --db-path /tmp/analytics should not be detected as subcommands."""
+        from src.cli import _has_subcommand
+
+        assert _has_subcommand(["--db-path", "analytics"]) is False
+        assert _has_subcommand(["--chromadb-path", "/tmp/admin"]) is False
+        assert _has_subcommand(["--log-level", "search"]) is False
+
+
+# ── Legacy dispatch sets action attributes ────────────────────────
+
+
+class TestLegacyDispatchActions:
+    """Verify _infer_subcommand sets *_action attributes for legacy flags."""
+
+    def test_stats_sets_analytics_action(self):
+        args = parse_args(["--stats"])
+        assert args.subcommand == "analytics"
+        assert args.analytics_action == "stats"
+
+    def test_list_senders_sets_analytics_action(self):
+        args = parse_args(["--list-senders", "20"])
+        assert args.subcommand == "analytics"
+        assert args.analytics_action == "senders"
+
+    def test_suggest_sets_analytics_action(self):
+        args = parse_args(["--suggest"])
+        assert args.subcommand == "analytics"
+        assert args.analytics_action == "suggest"
+
+    def test_volume_sets_analytics_action(self):
+        args = parse_args(["--volume", "month"])
+        assert args.subcommand == "analytics"
+        assert args.analytics_action == "volume"
+
+    def test_heatmap_sets_analytics_action(self):
+        args = parse_args(["--heatmap"])
+        assert args.subcommand == "analytics"
+        assert args.analytics_action == "heatmap"
+
+    def test_response_times_sets_analytics_action(self):
+        args = parse_args(["--response-times"])
+        assert args.subcommand == "analytics"
+        assert args.analytics_action == "response-times"
+
+    def test_evidence_list_sets_evidence_action(self):
+        args = parse_args(["--evidence-list"])
+        assert args.subcommand == "evidence"
+        assert args.evidence_action == "list"
+
+    def test_evidence_stats_sets_evidence_action(self):
+        args = parse_args(["--evidence-stats"])
+        assert args.subcommand == "evidence"
+        assert args.evidence_action == "stats"
+
+    def test_evidence_verify_sets_evidence_action(self):
+        args = parse_args(["--evidence-verify"])
+        assert args.subcommand == "evidence"
+        assert args.evidence_action == "verify"
+
+    def test_reset_index_sets_admin_action(self):
+        args = parse_args(["--reset-index"])
+        assert args.subcommand == "admin"
+        assert args.admin_action == "reset-index"
+
+    def test_generate_training_data_sets_training_action(self):
+        args = parse_args(["--generate-training-data", "out.jsonl"])
+        assert args.subcommand == "training"
+        assert args.training_action == "generate-data"
