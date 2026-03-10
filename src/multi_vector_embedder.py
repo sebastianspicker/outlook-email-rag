@@ -139,12 +139,26 @@ class MultiVectorEmbedder:
         """Load SentenceTransformer as dense-only fallback."""
         from sentence_transformers import SentenceTransformer
 
-        logger.info(
-            "Loading SentenceTransformer: %s (device=%s) — sparse/ColBERT unavailable",
-            self.model_name,
-            self.device,
-        )
-        self._model = SentenceTransformer(self.model_name, device=self.device)
+        # Try local cache first to skip ~30 HTTP HEAD requests to HF Hub.
+        try:
+            self._model = SentenceTransformer(
+                self.model_name, device=self.device, local_files_only=True,
+            )
+            logger.info(
+                "Loaded SentenceTransformer from cache: %s (device=%s)",
+                self.model_name,
+                self.device,
+            )
+        except (OSError, TypeError):
+            # OSError → model not in local cache, need to download
+            # TypeError → older sentence-transformers without local_files_only
+            logger.info(
+                "Downloading SentenceTransformer: %s (device=%s)",
+                self.model_name,
+                self.device,
+            )
+            self._model = SentenceTransformer(self.model_name, device=self.device)
+
         self._backend = _BackendInfo(name="sentence_transformer")
 
     def _ensure_loaded(self) -> None:
@@ -212,15 +226,36 @@ class MultiVectorEmbedder:
     def encode_all(self, texts: list[str]) -> MultiVectorResult:
         """Single forward pass returning all enabled modes.
 
-        This is the most efficient path: one model.encode() call extracts
-        dense, sparse, and ColBERT in parallel.
+        On MPS, texts are processed in explicit sub-batches with GPU cache
+        clearing between them to prevent memory accumulation that tanks
+        throughput on sustained workloads.
         """
         self._ensure_loaded()
+        use_sub_batching = self.device == "mps" and len(texts) > self.batch_size
 
         if self.backend.name == "flag":
-            return_sparse = self._sparse_enabled
-            return_colbert = self._colbert_enabled
+            return self._encode_all_flag(texts, use_sub_batching)
 
+        # SentenceTransformer: dense only
+        if use_sub_batching:
+            all_vecs = []
+            for i in range(0, len(texts), self.batch_size):
+                sub = texts[i : i + self.batch_size]
+                vecs = self._model.encode(sub, batch_size=self.batch_size, show_progress_bar=False)
+                all_vecs.append(vecs)
+                self._mps_cache_clear()
+            combined = np.concatenate(all_vecs, axis=0)
+            return MultiVectorResult(dense=_to_list_of_lists(combined))
+
+        vecs = self._model.encode(texts, batch_size=self.batch_size, show_progress_bar=False)
+        return MultiVectorResult(dense=_to_list_of_lists(vecs))
+
+    def _encode_all_flag(self, texts: list[str], use_sub_batching: bool) -> MultiVectorResult:
+        """FlagEmbedding path for encode_all — single call or MPS sub-batched."""
+        return_sparse = self._sparse_enabled
+        return_colbert = self._colbert_enabled
+
+        if not use_sub_batching:
             output = self._model.encode(
                 texts,
                 batch_size=self.batch_size,
@@ -229,16 +264,37 @@ class MultiVectorEmbedder:
                 return_colbert_vecs=return_colbert,
             )
             self._mps_cache_clear()
+            return MultiVectorResult(
+                dense=_to_list_of_lists(output["dense_vecs"]),
+                sparse=_convert_sparse(output["lexical_weights"]) if return_sparse else None,
+                colbert=_normalize_colbert(output["colbert_vecs"]) if return_colbert else None,
+            )
 
-            dense = _to_list_of_lists(output["dense_vecs"])
-            sparse = _convert_sparse(output["lexical_weights"]) if return_sparse else None
-            colbert = _normalize_colbert(output["colbert_vecs"]) if return_colbert else None
+        # MPS sub-batched: clear GPU cache between sub-batches
+        all_dense: list = []
+        all_sparse: list[dict] = []
+        all_colbert: list = []
 
-            return MultiVectorResult(dense=dense, sparse=sparse, colbert=colbert)
+        for i in range(0, len(texts), self.batch_size):
+            sub = texts[i : i + self.batch_size]
+            output = self._model.encode(
+                sub,
+                batch_size=self.batch_size,
+                return_dense=True,
+                return_sparse=return_sparse,
+                return_colbert_vecs=return_colbert,
+            )
+            all_dense.append(output["dense_vecs"])
+            if return_sparse:
+                all_sparse.extend(output["lexical_weights"])
+            if return_colbert:
+                all_colbert.extend(output["colbert_vecs"])
+            self._mps_cache_clear()
 
-        # SentenceTransformer: dense only
-        vecs = self._model.encode(texts, batch_size=self.batch_size, show_progress_bar=False)
-        return MultiVectorResult(dense=_to_list_of_lists(vecs))
+        dense = _to_list_of_lists(np.concatenate(all_dense, axis=0))
+        sparse = _convert_sparse(all_sparse) if return_sparse else None
+        colbert = _normalize_colbert(all_colbert) if return_colbert else None
+        return MultiVectorResult(dense=dense, sparse=sparse, colbert=colbert)
 
     def warmup(self) -> None:
         """Force model load and run a tiny encode to prime GPU memory."""

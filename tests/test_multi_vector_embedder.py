@@ -508,3 +508,35 @@ def test_warmup_loads_model_and_encodes():
     emb.warmup()
     assert emb._model is not None
     assert emb._backend is not None
+
+
+# ── MPS sub-batching ──────────────────────────────────────────────
+
+
+def test_encode_all_mps_sub_batching():
+    """On MPS, encode_all should sub-batch to clear GPU cache between groups."""
+    emb = MultiVectorEmbedder(model_name="BAAI/bge-m3", device="cpu")
+    emb._load_model()
+    # Simulate MPS device with batch_size=2 to force sub-batching
+    emb.device = "mps"
+    emb.batch_size = 2
+
+    texts = ["text1", "text2", "text3", "text4", "text5"]
+    result = emb.encode_all(texts)
+
+    assert len(result.dense) == 5
+    # Each embedding should have same dimensionality
+    dims = {len(v) for v in result.dense}
+    assert len(dims) == 1
+
+
+def test_encode_all_no_sub_batching_when_small():
+    """When texts fit in one batch, no sub-batching needed (even on 'MPS')."""
+    emb = MultiVectorEmbedder(model_name="BAAI/bge-m3", device="cpu")
+    emb._load_model()
+    emb.device = "mps"
+    emb.batch_size = 32
+
+    texts = ["short text"]
+    result = emb.encode_all(texts)
+    assert len(result.dense) == 1
