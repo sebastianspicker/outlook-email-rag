@@ -319,7 +319,7 @@ class MultiVectorEmbedder:
 
                 if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                     torch.mps.empty_cache()
-            except ImportError:
+            except (ImportError, RuntimeError):
                 pass
 
 
