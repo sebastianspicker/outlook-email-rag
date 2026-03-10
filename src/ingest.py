@@ -50,6 +50,13 @@ class _EmbedPipeline:
 
         self._detailed_timing = False
 
+        # Thermal cooldown: sleep between batches to prevent sustained throttling.
+        # Default 0 (off). Set INGEST_BATCH_COOLDOWN=2 for 2-second breather.
+        self._cooldown = float(os.environ.get("INGEST_BATCH_COOLDOWN", "0"))
+
+        # SQLite WAL checkpoint interval (every N batches, 0=off)
+        self._wal_checkpoint_interval = int(os.environ.get("INGEST_WAL_CHECKPOINT_INTERVAL", "10"))
+
         # Accumulated stats (written only by consumer thread)
         self.chunks_added = 0
         self.sqlite_inserted = 0
@@ -165,6 +172,29 @@ class _EmbedPipeline:
 
             self.write_seconds += dt_sqlite + dt_entity + dt_analytics
 
+        # Periodic SQLite WAL checkpoint to keep WAL file bounded
+        if (
+            self._wal_checkpoint_interval > 0
+            and self._email_db
+            and self.batches_written % self._wal_checkpoint_interval == 0
+        ):
+            self._checkpoint_wal()
+
+        # Thermal cooldown: brief sleep to let Apple Silicon cool down
+        if self._cooldown > 0:
+            time.sleep(self._cooldown)
+
+    def _checkpoint_wal(self) -> None:
+        """Run a passive WAL checkpoint on the email SQLite database.
+
+        PASSIVE mode checkpoints whatever it can without blocking writers,
+        keeping the WAL file from growing unboundedly during long ingestions.
+        """
+        try:
+            self._email_db.conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            logger.debug("SQLite WAL checkpoint completed (batch %d)", self.batches_written)
+        except Exception:
+            logger.debug("WAL checkpoint failed (non-critical)", exc_info=True)
 
     def _compute_analytics(self, emails: list) -> None:
         """Detect language and sentiment for emails in this batch."""
@@ -456,6 +486,10 @@ def ingest(
             batch_size=batch_size,
             ingestion_run_id=ingestion_run_id,
         )
+        if pipeline._cooldown > 0:
+            logger.info("Batch cooldown: %.1fs (INGEST_BATCH_COOLDOWN)", pipeline._cooldown)
+        if pipeline._wal_checkpoint_interval > 0:
+            logger.info("WAL checkpoint every %d batches", pipeline._wal_checkpoint_interval)
         pipeline.start()
 
     # Progress bar (tqdm if available, else no-op)

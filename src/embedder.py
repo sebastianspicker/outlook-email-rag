@@ -134,6 +134,7 @@ class EmailEmbedder:
         pre_embedded = [c for c in new_chunks if c.embedding is not None]
 
         encoded_embeddings: list[list[float]] = []
+        t_encode_start = time.monotonic()
         if needs_encoding:
             texts = [c.text for c in needs_encoding]
             result: MultiVectorResult = self.embedder.encode_all(texts)
@@ -143,6 +144,7 @@ class EmailEmbedder:
                 self._store_sparse(
                     [c.chunk_id for c in needs_encoding], result.sparse,
                 )
+        dt_encode = time.monotonic() - t_encode_start
 
         # Build merged lists: encoded chunks + pre-embedded chunks
         all_ids: list[str] = []
@@ -165,6 +167,7 @@ class EmailEmbedder:
 
         # ── Store to ChromaDB in batches (HNSW-friendly writes) ────────
         added = 0
+        t_write_start = time.monotonic()
         for batch_start in range(0, len(all_ids), batch_size):
             batch_end = batch_start + batch_size
             self.collection.add(
@@ -176,13 +179,15 @@ class EmailEmbedder:
             batch_count = min(batch_size, len(all_ids) - batch_start)
             existing.update(all_ids[batch_start:batch_end])
             added += batch_count
-            if show_progress:
-                elapsed = time.monotonic() - t_start
-                rate = added / elapsed if elapsed > 0 else 0
-                logger.info(
-                    "Stored %s/%s chunks (%.1fs, %.0f chunks/s)...",
-                    added, len(new_chunks), elapsed, rate,
-                )
+        dt_write = time.monotonic() - t_write_start
+
+        if show_progress:
+            elapsed = time.monotonic() - t_start
+            rate = added / elapsed if elapsed > 0 else 0
+            logger.info(
+                "Stored %s chunks (%.1fs total: encode=%.1fs, chromadb=%.1fs, %.0f chunks/s)",
+                added, elapsed, dt_encode, dt_write, rate,
+            )
 
         return added
 

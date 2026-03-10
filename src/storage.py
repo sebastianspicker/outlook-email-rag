@@ -16,8 +16,8 @@ DEFAULT_PAGE_SIZE = 1000
 # num_threads parallelises the index build across CPU cores.
 HNSW_DEFAULTS: dict[str, object] = {
     "hnsw:space": "cosine",
-    "hnsw:batch_size": 50_000,
-    "hnsw:sync_threshold": 50_000,
+    "hnsw:batch_size": 100_000,
+    "hnsw:sync_threshold": 100_000,
     "hnsw:num_threads": os.cpu_count() or 4,
     "hnsw:M": 16,
     "hnsw:construction_ef": 128,

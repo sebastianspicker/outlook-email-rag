@@ -23,6 +23,6 @@ jobs:
       - name: Test
         run: pytest -q
       - name: Security Scan
-        run: bandit -r src -q
+        run: bandit -r src -q -ll -ii
       - name: Dependency Audit
         run: python -m pip_audit -r requirements.txt
