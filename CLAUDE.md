@@ -1,65 +1,40 @@
 # Email RAG — Instructions for Claude
 
-You have access to a local email archive via 70 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
+You have access to a local email archive via 46 MCP tools under the `email_search` server. The archive contains the user's Outlook emails indexed with BGE-M3 embeddings, stored in ChromaDB (vectors) and SQLite (metadata). Everything runs locally — no data leaves the machine.
 
-## How to Search
+For the full tool reference, see `docs/CLAUDE-TOOLS.md`.
 
-Start broad, then narrow down:
+## Workflow
 
-- `email_search` — general semantic search (start here for most queries)
-- `email_search_structured` — power search combining sender, subject, folder, CC, To, BCC, date range, attachment filter (has_attachments, attachment_name, attachment_type), priority, email type, topic, cluster, reranking, and hybrid search. Also replaces the old per-field convenience wrappers (search by sender, date, recipient).
-- `email_smart_search` — auto-detects intent (person names, topics) and routes accordingly
-- `email_find_similar` — find emails similar to a known one (great for pattern discovery)
-- `email_search_by_entity` — find emails mentioning an organization, URL, or phone number
-- `email_find_people` — search by person name mentioned in email bodies
-- `email_search_thread` — retrieve all emails in a conversation thread
-- `email_search_by_thread_topic` — find all emails sharing a thread topic (more reliable than conversation_id for some threads)
-- `email_list_categories` — list all Outlook categories with email counts
-- `email_browse_calendar` — browse calendar/meeting emails with date filtering
-- `email_search_by_attachment` — find emails with matching attachments (by filename, extension, or MIME type)
+**Triage mode** — scan the archive broadly (answering "what's relevant?"):
+1. Issue 3-5 `email_triage` calls in one message with different queries (50-100 results each, ultra-compact ~80 tokens/result). FastMCP executes them concurrently.
+2. `email_deep_context` on emails of interest — returns full body + thread summary + existing evidence + sender stats in one call.
+3. `evidence_add` with exact quotes from the full body text.
 
-## Attachment Discovery
+**Investigation mode** — deep analysis, building a case:
+1. `email_search_structured` with filters (sender, date, folder, attachment, category).
+2. `email_thread_summary`, `email_action_items`, `email_decisions` for thread analysis.
+3. `relationship_paths`, `coordinated_timing`, `email_entity_timeline` for connections.
+4. `evidence_add` / `evidence_add_batch` to collect evidence. `email_dossier` to export.
 
-- `email_list_attachments` — browse all attachments with filters (filename, extension, MIME type, sender) and pagination
-- `email_search_by_attachment` — find emails that have attachments matching criteria (filename, extension, MIME type)
-- `email_attachment_stats` — aggregate statistics: counts, sizes, type distribution, top filenames
-- `email_search_structured` also supports `attachment_name` (partial filename match) and `attachment_type` (file extension) filters
+**Progressive investigation** — multi-pass with dedup (recommended for thorough scans):
+1. Pick a `scan_id` (e.g., `"harassment_case"`). Pass it to all triage/search calls.
+2. **Phase 1 (Scan):** 3-5 `email_triage(scan_id=...)` calls — server auto-deduplicates across calls.
+3. **Phase 2 (Refine):** `email_search_structured(scan_id=...)` + `email_find_similar(scan_id=...)` — only unseen results appear.
+4. `email_scan(action='flag', uids=[...], label='bossing', phase=1)` to mark candidates.
+5. **Phase 3 (Deep):** `email_scan(action='candidates')` → `email_deep_context` on each → `evidence_add_batch`.
+6. `email_scan(action='status')` for session overview at any time.
 
-## How to Analyze
+**Quick lookup** — known email or person:
+`email_deep_context` for a known UID. `email_find_similar` to surface patterns from one email.
 
-Once you find relevant emails, dig deeper:
+## Response Truncation
 
-- `email_thread_summary` — summarize a conversation thread
-- `email_action_items` — extract action items and assignments from threads
-- `email_decisions` — extract decisions made in threads
-- `email_top_contacts` — find top communication partners
-- `email_communication_between` — bidirectional stats between two people
-- `email_network_analysis` — centrality, communities, bridge nodes
-- `relationship_paths` — find communication paths between two people through intermediaries
-- `shared_recipients` — identify recipients common to multiple senders
-- `coordinated_timing` — detect time windows where multiple senders were simultaneously active
-- `relationship_summary` — one-call profile: top contacts, community, bridge score, send/receive ratio
-- `email_volume_over_time` — email volume trends (day/week/month)
-- `email_activity_pattern` — activity heatmap (hour vs day-of-week)
-- `email_response_times` — average response times per sender
-- `email_writing_analysis` — writing style and readability metrics per sender
-- `email_entity_timeline` — track how often an entity appears over time
+Bodies are truncated to ~500 chars in search/browse results. Use `email_deep_context` to read complete text (soft-limited to 10K chars). Total responses are capped at ~8K tokens — narrow your search if results are omitted. All limits are configurable via env vars (`MCP_MAX_BODY_CHARS`, `MCP_MAX_RESPONSE_TOKENS`, `MCP_MAX_FULL_BODY_CHARS`). Set `MCP_MODEL_PROFILE` to `haiku`, `sonnet`, or `opus` to auto-tune all budget knobs for the calling model's context size (default: `auto` = sonnet). Per-variable env overrides always take precedence over profiles.
 
-## How to Collect Evidence
+## Evidence Categories
 
-The evidence system lets users mark emails and quotes as evidence items with categories, relevance scores, and chain-of-custody tracking.
-
-1. **Add evidence:** `evidence_add` with the email UID, the exact quote, a category, a brief summary, relevance score (1-5), and optional notes. The system auto-verifies the quote against the source email.
-2. **Batch add:** `evidence_add_batch` for up to 20 items at once.
-3. **Review:** `evidence_list` to see all collected evidence (filter by category, relevance, email UID).
-4. **Update:** `evidence_update` to refine category, quote, summary, relevance, or notes.
-5. **Verify:** `evidence_verify` to re-verify all quotes against source emails.
-6. **Timeline:** `evidence_timeline` to view evidence chronologically.
-7. **Search:** `evidence_search` to search within evidence items by text.
-
-### Evidence Categories
-
-Use these canonical categories:
+Use these canonical categories with `evidence_add`:
 
 - `bossing` — intimidation, power abuse, unreasonable demands
 - `harassment` — hostile behavior, bullying, unwanted conduct
@@ -72,57 +47,13 @@ Use these canonical categories:
 - `workload` — unreasonable assignments, impossible deadlines
 - `general` — other relevant evidence
 
-### Relevance Scores
+## Relevance Scores
 
 - **5** — direct proof, strongest evidence
 - **4** — strong evidence, clear pattern
 - **3** — supporting evidence, adds context
 - **2** — background information, minor relevance
 - **1** — tangential, worth preserving
-
-## How to Export and Report
-
-- `evidence_export` — export evidence collection as HTML report or CSV
-- `dossier_generate` — generate comprehensive proof dossier (HTML/PDF) combining evidence, source emails, relationship analysis, and chain of custody
-- `dossier_preview` — preview dossier contents before generating
-- `email_export` — export a single email (by uid) or conversation thread (by conversation_id) as formatted HTML/PDF
-- `email_generate_report` — generate an HTML overview report of the entire archive
-- `email_export_network` — export communication network as GraphML for Gephi/Cytoscape
-
-## Chain of Custody
-
-Every action is logged with SHA-256 hashes and timestamps:
-
-- `custody_chain` — view the audit trail (filter by email UID, event type, date range)
-- `email_provenance` — full provenance for an email: OLM source hash, ingestion run, custody events
-- `evidence_provenance` — full chain for an evidence item: details + source email provenance + history
-
-## Browsing and Reading
-
-- `email_get_full` — read the complete body of a specific email by UID
-- `email_browse` — page through emails (with sender/date/folder filters)
-- `email_search_thread` — retrieve all emails in a conversation thread
-
-## Archive Overview
-
-- `email_stats` — total counts, date range, senders, folders
-- `email_list_senders` — top senders by frequency
-- `email_list_folders` — all folders with counts
-- `email_topics` — discovered topics with labels
-- `email_clusters` — email clusters with sizes
-- `email_keywords` — top keywords (global or per sender/folder)
-- `email_language_stats` — language distribution
-- `email_sentiment_overview` — sentiment distribution
-- `email_find_duplicates` — find near-duplicate emails
-
-## Diagnostics
-
-- `email_diagnostics` — show embedding model, backend, device, sparse/ColBERT status, and sparse index info
-- `email_ingest` — trigger ingestion of an .olm file from within Claude
-- `email_reingest_bodies` — backfill full body text for older emails
-- `email_reingest_metadata` — backfill v7 metadata (categories, thread topics, calendar, references, attachments)
-- `email_reingest_analytics` — backfill language detection and sentiment analysis for emails missing analytics data
-- `email_reembed` — rebuild ChromaDB embeddings from corrected body text in SQLite
 
 ## Tips
 

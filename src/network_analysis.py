@@ -138,6 +138,9 @@ class CommunicationNetwork:
         if source not in undirected or target not in undirected:
             return []
 
+        if source == target:
+            return [{"error": "source and target are the same address"}]
+
         paths = []
         try:
             for path_nodes in nx.shortest_simple_paths(undirected, source, target):

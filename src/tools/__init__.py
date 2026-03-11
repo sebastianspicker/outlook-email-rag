@@ -17,13 +17,13 @@ if TYPE_CHECKING:
 from . import (
     attachments,
     browse,
-    categories,
     data_quality,
     diagnostics,
     entities,
     evidence,
     network,
     reporting,
+    scan,
     search,
     temporal,
     threads,
@@ -41,9 +41,9 @@ _MODULES = [
     reporting,
     browse,
     evidence,
-    categories,
     diagnostics,
     attachments,
+    scan,
 ]
 
 

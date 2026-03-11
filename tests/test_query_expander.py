@@ -108,13 +108,6 @@ class TestMCPSmartSearch:
 
         assert callable(threads.register)
 
-    def test_smart_search_input(self):
-        from src.mcp_models import SmartSearchInput
-
-        inp = SmartSearchInput(query="budget discussion", top_k=5)
-        assert inp.query == "budget discussion"
-        assert inp.top_k == 5
-
     def test_structured_search_has_topic_id(self):
         from src.mcp_models import EmailSearchStructuredInput
 

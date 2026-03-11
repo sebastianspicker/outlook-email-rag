@@ -316,11 +316,11 @@ class DossierGenerator:
         # Evidence index table
         evidence_index = []
         for item in enriched_items:
-            raw_date = item.get("date", "")
-            sender_short = item.get("sender_name") or item.get("sender_email", "")
+            raw_date = item.get("date") or ""
+            sender_short = item.get("sender_name") or item.get("sender_email") or ""
             if len(sender_short) > 30:
                 sender_short = sender_short[:27] + "..."
-            summary_raw = item.get("summary", "")
+            summary_raw = item.get("summary") or ""
             idx_rel = int(item.get("relevance") or 0)
             evidence_index.append({
                 "evidence_number": item.get("evidence_number", ""),

@@ -425,8 +425,16 @@ class EvidenceMixin:
         self,
         category: str | None = None,
         min_relevance: int | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict]:
         """Return evidence items in chronological order for narrative building.
+
+        Args:
+            category: Filter by evidence category.
+            min_relevance: Minimum relevance score.
+            limit: Maximum items to return (None = unlimited).
+            offset: Number of items to skip (for pagination).
 
         Returns:
             List of evidence items ordered by date ascending.
@@ -443,10 +451,18 @@ class EvidenceMixin:
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC",
-            params,
-        ).fetchall()
+        sql = f"SELECT * FROM evidence_items{where} ORDER BY date ASC"
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+        elif offset > 0:
+            # OFFSET requires LIMIT in SQLite; use -1 for unlimited
+            sql += " LIMIT -1"
+        if offset > 0:
+            sql += " OFFSET ?"
+            params.append(offset)
+
+        rows = self.conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
     def evidence_categories(self) -> list[dict]:

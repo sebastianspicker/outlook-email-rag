@@ -119,15 +119,61 @@ def build_result_header(metadata: Mapping[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def format_context_block(text: str, metadata: Mapping[str, Any], score: float) -> str:
+def truncate_body(text: str, max_chars: int) -> str:
+    """Truncate email body text to *max_chars* characters.
+
+    Normalizes non-breaking spaces (``\\xa0``) to regular spaces before
+    truncation.  Returns the text unchanged when *max_chars* is ``<= 0``
+    (unlimited) or the text already fits.  Otherwise appends a hint to
+    use ``email_get_full``.
+    """
+    text = text.replace("\xa0", " ")
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n[...truncated. Use email_deep_context with the UID to read full text.]"
+
+
+def format_context_block(
+    text: str, metadata: Mapping[str, Any], score: float, *, max_body_chars: int = 0,
+) -> str:
     """Format a single result block for Claude context."""
     header = build_result_header(metadata)
-    return f"---\n{header}\nRelevance: {score:.2f}\n---\n{text}\n"
+    body = truncate_body(text, max_body_chars)
+    return f"---\n{header}\nRelevance: {score:.2f}\n---\n{body}\n"
 
 
 def estimate_tokens(text: str) -> int:
     """Rough token estimate for Claude context budgeting (~4 chars per token)."""
     return max(1, len(text) // 4)
+
+
+def format_triage_results(
+    results: list, preview_chars: int = 200,
+) -> list[dict]:
+    """Format search results as ultra-compact triage entries.
+
+    Returns minimal dicts with uid, sender, date, subject, score, and an
+    optional body preview.  Designed for high-volume scanning where token
+    economy matters (~80 tokens per result at preview_chars=200).
+    """
+    compact = []
+    for r in results:
+        meta = r.metadata
+        entry: dict[str, Any] = {
+            "uid": meta.get("uid", ""),
+            "sender": meta.get("sender_email", ""),
+            "date": str(meta.get("date", ""))[:10],
+            "subject": meta.get("subject", ""),
+            "score": round(r.score, 3),
+        }
+        if preview_chars > 0:
+            body = r.text or ""
+            if len(body) > preview_chars:
+                entry["preview"] = body[:preview_chars] + "..."
+            else:
+                entry["preview"] = body
+        compact.append(entry)
+    return compact
 
 
 def _as_list(value: Any) -> list[str]:

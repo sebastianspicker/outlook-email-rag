@@ -6,7 +6,6 @@ from ..mcp_models import (
     EntityNetworkInput,
     EntitySearchInput,
     EntityTimelineInput,
-    FindPeopleInput,
     ListEntitiesInput,
 )
 from .utils import json_response, run_with_db
@@ -33,21 +32,7 @@ def register(mcp, deps) -> None:
         return await run_with_db(deps, lambda db:
             json_response(db.entity_co_occurrences(params.entity, limit=params.limit)))
 
-    @mcp.tool(name="email_find_people", annotations=deps.tool_annotations("Find People in Emails"))
-    async def email_find_people(params: FindPeopleInput) -> str:
-        """Search emails by person name mentioned in the email body.
-
-        Uses NLP-extracted person entities (names like 'John Smith', 'Dr. Mueller').
-        Requires entity extraction during ingestion.
-
-        Args:
-            params: name (str) - person name to search, limit (int).
-
-        Returns:
-            JSON list of emails mentioning that person.
-        """
-        return await run_with_db(deps, lambda db:
-            json_response(db.people_in_emails(params.name, limit=params.limit)))
+    # email_find_people removed — subsumed by email_search_by_entity(entity_type="person")
 
     @mcp.tool(name="email_entity_timeline", annotations=deps.tool_annotations("Entity Mention Timeline"))
     async def email_entity_timeline(params: EntityTimelineInput) -> str:

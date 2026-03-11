@@ -23,6 +23,26 @@ and this project adheres to semantic versioning principles for public interfaces
 
 ### Added
 
+#### Progressive Multi-Pass Scan Sessions
+
+- `src/scan_session.py`: in-memory session state with TTL auto-cleanup.
+- `scan_id` parameter on `email_triage`, `email_search_structured`, `email_find_similar`.
+- `email_scan` tool: status/flag/candidates/reset actions for session management.
+- 38 new tests in `tests/test_scan_session.py`.
+
+#### Model-Aware MCP Response Profiles
+
+- `MCP_MODEL_PROFILE` env var (`haiku`/`sonnet`/`opus`/`auto`) selects budget presets.
+- Per-tool result clamping in `email_triage` and `email_search_structured`.
+- `email_diagnostics` includes `mcp_profile` + `mcp_budget` dict.
+
+#### MCP Response Budgeting
+
+- `mcp_max_full_body_chars` setting (default 10000) for `email_deep_context`.
+- `serialize_results()` token budget with `max_response_tokens`.
+- `\xa0` normalization in `html_to_text()` and `truncate_body()`.
+- CLAUDE.md split — tool reference moved to `docs/CLAUDE-TOOLS.md`.
+
 #### OLM Metadata Extraction & Search Quality
 
 - Parse OLM fields: categories, thread_topic, thread_index, inference_classification, is_calendar_message, meeting_data, Exchange-extracted links/emails/contacts/meetings, attachment content_id.
@@ -76,13 +96,20 @@ and this project adheres to semantic versioning principles for public interfaces
 
 ### Changed
 
+#### MCP Tool Consolidation (70→45)
+
+- Removed 4 search tools subsumed by existing tools: `email_search` → `email_search_structured`, `email_get_full` → `email_deep_context`, `email_find_people` → `email_search_by_entity`, `email_smart_search` → `email_search_structured(expand_query=True)`.
+- Merged 13 tools into 6 via `Optional[id]` discriminators: clusters/topics, thread lookup, contacts, evidence query/overview, dossier.
+- Consolidated 17 tools into 5 via discriminator parameters: `email_temporal(analysis=...)`, `email_quality(check=...)`, `email_report(type=...)`, `email_attachments(mode=...)`, `email_admin(action=...)`.
+- Deleted `categories.py` (absorbed into `browse.py`).
+
 #### MCP Tool Consolidation (74→70)
 
 - Removed 3 search wrappers (`email_search_by_sender`, `email_search_by_date`, `email_search_by_recipient`) — subsumed by `email_search_structured`.
 - Merged `email_model_info` + `email_sparse_status` → `email_diagnostics`.
 - Merged `email_export_thread` + `email_export_single` → `email_export` (with `uid` or `conversation_id`).
 - Moved reingest/reembed tools from `browse.py` to `diagnostics.py`.
-- `src/tools/` reorganized: 70 tools across 13 domain modules (was 54 tools in 9 modules).
+- `src/tools/` reorganized: 46 tools across 13 domain modules (was 54 tools in 9 modules).
 
 - `src/config.py`, `src/reranker.py`: Default rerank model changed from `cross-encoder/ms-marco-MiniLM-L-6-v2` (English-only) to `BAAI/bge-reranker-v2-m3` (multilingual, aligned with BGE-M3 embeddings). Drop-in replacement via `sentence_transformers.CrossEncoder`.
 - `src/fine_tuner.py`: FlagEmbedding status changed from `"config_written"` to `"config_ready"` with clear training command in output.
@@ -306,8 +333,8 @@ and this project adheres to semantic versioning principles for public interfaces
 - Simplified `_serialize_results` helper in MCP server to direct `retriever.serialize_results()` call.
 - Removed trivial wrapper functions `_sanitize_terminal_text()` (CLI) and `_sanitize_untrusted_text()` (MCP server).
 - Ingest progress log interval reduced from 500 to 100 emails.
-- README rewritten to reflect 70 MCP tools, 1200+ tests, full architecture.
-- `docs/API_COMPATIBILITY.md` expanded to cover all 70 tools and all CLI flags.
+- README rewritten to reflect 46 MCP tools, 1360+ tests, full architecture.
+- `docs/API_COMPATIBILITY.md` expanded to cover all 46 tools and all CLI flags.
 - Default embedding model changed to `BAAI/bge-m3` (multilingual, 1024 dims). Requires re-ingestion.
 
 ### Removed

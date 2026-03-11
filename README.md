@@ -1,7 +1,7 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![MCP Tools](https://img.shields.io/badge/MCP_tools-70-purple)
-![Tests](https://img.shields.io/badge/tests-1216-brightgreen)
+![MCP Tools](https://img.shields.io/badge/MCP_tools-46-purple)
+![Tests](https://img.shields.io/badge/tests-1363-brightgreen)
 
 # Email RAG
 
@@ -58,7 +58,7 @@ flowchart LR
     NLP --> N2["Topic\nmodeling"]
     NLP --> N3["Email\nclustering"]
 
-    I["You ask\nClaude"] --> J["70 MCP tools\ncalled by Claude"]
+    I["You ask\nClaude"] --> J["46 MCP tools\ncalled by Claude"]
     J --> G
     J --> H
     G --> K["Ranked\nresults"]
@@ -72,7 +72,7 @@ flowchart LR
 sequenceDiagram
     participant You
     participant Claude as Claude Code
-    participant MCP as MCP Server (70 tools)
+    participant MCP as MCP Server (46 tools)
     participant VDB as ChromaDB (vectors)
     participant SQL as SQLite (metadata)
 
@@ -245,7 +245,7 @@ The project includes a `.claude/settings.json` that automatically registers the 
 
 ## Using with Claude Code (MCP Server)
 
-This is the primary way to use Email RAG. Claude Code talks to your email index through 70 MCP tools — you just ask questions in plain English.
+This is the primary way to use Email RAG. Claude Code talks to your email index through 46 MCP tools — you just ask questions in plain English.
 
 ### How it connects
 
@@ -271,7 +271,7 @@ After opening the project in Claude Code, you can check that the tools loaded:
 
 1. Type `/mcp` in the Claude Code prompt
 2. Look for `email_search` in the server list — it should show as **connected**
-3. You should see all 70 tools listed beneath it
+3. You should see all 46 tools listed beneath it
 
 If it shows as disconnected:
 - Make sure the virtual environment exists: `ls .venv/bin/python`
@@ -760,7 +760,7 @@ block-beta
     end
 
     block:interfaces["Interfaces"]:1
-        mcp["mcp_server.py + tools/\n70 MCP tools\n(primary)"]
+        mcp["mcp_server.py + tools/\n46 MCP tools\n(primary)"]
         cli["cli.py\n7 subcommand groups"]
         ui["web_app.py\nStreamlit UI"]
     end
@@ -777,35 +777,35 @@ block-beta
     sqlite --> ui
 ```
 
-### MCP tool modules (70 tools)
+### MCP tool modules (46 tools)
 
 ```mermaid
 block-beta
     columns 4
 
     block:search_tools["Search & Discovery"]:1
-        s1["search.py\n5 tools"]
+        s1["search.py\n6 tools"]
         s2["threads.py\n4 tools"]
-        s3["topics.py\n7 tools"]
-        s4["categories.py\n2 tools"]
+        s3["topics.py\n4 tools"]
+        s4["scan.py\n1 tool"]
     end
 
     block:analysis_tools["Analysis"]:1
-        a1["network.py\n7 tools"]
-        a2["temporal.py\n3 tools"]
-        a3["entities.py\n5 tools"]
-        a4["data_quality.py\n3 tools"]
+        a1["network.py\n6 tools"]
+        a2["temporal.py\n1 tool"]
+        a3["entities.py\n4 tools"]
+        a4["data_quality.py\n1 tool"]
     end
 
     block:evidence_tools["Evidence & Export"]:1
-        e1["evidence.py\n17 tools"]
-        e2["reporting.py\n3 tools"]
+        e1["evidence.py\n13 tools"]
+        e2["reporting.py\n1 tool"]
         e3["browse.py\n3 tools"]
-        e4["attachments.py\n3 tools"]
+        e4["attachments.py\n1 tool"]
     end
 
     block:admin_tools["Admin"]:1
-        d1["diagnostics.py\n5 tools"]
+        d1["diagnostics.py\n1 tool"]
         d2["utils.py\nshared helpers"]
     end
 ```
@@ -829,8 +829,8 @@ block-beta
 | `src/evidence_exporter.py` | Export evidence reports as HTML, CSV, or PDF for legal review |
 | `src/dossier_generator.py` | Proof dossier combining evidence, emails, relationships, and custody chain |
 | `src/mcp_models.py` | Pydantic input models for all MCP tool parameters |
-| `src/mcp_server.py` | FastMCP server exposing 70 tools for Claude Code |
-| `src/tools/` | MCP tool subpackage — 70 tools across 13 domain modules (search, browse, evidence, entities, network, categories, attachments, diagnostics, etc.) |
+| `src/mcp_server.py` | FastMCP server exposing 46 tools for Claude Code |
+| `src/tools/` | MCP tool subpackage — 46 tools across 13 domain modules (search, browse, evidence, entities, network, scan, attachments, diagnostics, etc.) |
 | `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
 | `src/cli.py` | Rich terminal interface with 7 subcommand groups and 58 flags — legacy flat-flag syntax still supported |
 | `src/web_app.py` | Streamlit search UI with filters, thread view, CSV export |
@@ -1107,7 +1107,7 @@ outlook-email-rag/
 ├── src/
 │   ├── __init__.py              # package marker
 │   ├── __main__.py              # python -m src -> MCP server
-│   ├── mcp_server.py            # 70 MCP tools for Claude Code
+│   ├── mcp_server.py            # 46 MCP tools for Claude Code
 │   ├── retriever.py             # search, filters, hybrid, reranking
 │   ├── ingest.py                # ingestion pipeline
 │   ├── parse_olm.py             # OLM XML parser
@@ -1161,28 +1161,29 @@ outlook-email-rag/
 │   ├── dashboard_charts.py      # Streamlit chart helpers
 │   ├── mcp_models.py            # Pydantic input models for MCP tools
 │   ├── dossier_generator.py     # proof dossier (evidence + context)
-│   ├── tools/                   # MCP tool modules (70 tools in 13 domain modules)
+│   ├── scan_session.py          # scan session state management
+│   ├── tools/                   # MCP tool modules (46 tools in 13 domain modules)
 │   │   ├── __init__.py          # register_all() dispatcher
 │   │   ├── utils.py             # shared helpers (ToolDeps, formatters)
-│   │   ├── search.py            # core search (5 tools)
+│   │   ├── search.py            # core search + triage (6 tools)
 │   │   ├── browse.py            # email reading & export (3 tools)
-│   │   ├── categories.py        # categories & calendar (2 tools)
-│   │   ├── attachments.py       # attachment search & stats (3 tools)
-│   │   ├── diagnostics.py       # diagnostics & reingest (5 tools)
-│   │   ├── data_quality.py      # duplicates, language, sentiment (3 tools)
-│   │   ├── entities.py          # entity search & NLP (5 tools)
-│   │   ├── evidence.py          # evidence CRUD, custody, dossier (17 tools)
-│   │   ├── network.py           # network & relationships (7 tools)
-│   │   ├── reporting.py         # reports & writing analysis (3 tools)
-│   │   ├── temporal.py          # volume, heatmap, response times (3 tools)
-│   │   ├── threads.py           # thread intelligence & search (4 tools)
-│   │   └── topics.py            # topics, clusters, keywords (7 tools)
+│   │   ├── attachments.py       # attachment discovery (1 tool)
+│   │   ├── diagnostics.py       # admin operations (1 tool)
+│   │   ├── data_quality.py      # data quality checks (1 tool)
+│   │   ├── entities.py          # entity search & NLP (4 tools)
+│   │   ├── evidence.py          # evidence CRUD, custody, dossier (13 tools)
+│   │   ├── network.py           # network & relationships (6 tools)
+│   │   ├── reporting.py         # reports & writing analysis (1 tool)
+│   │   ├── temporal.py          # temporal analysis (1 tool)
+│   │   ├── threads.py           # thread intelligence (4 tools)
+│   │   ├── topics.py            # topics, clusters, discovery (4 tools)
+│   │   └── scan.py              # scan session management (1 tool)
 │   └── templates/
 │       ├── report.html          # archive report template
 │       ├── thread_export.html   # email/thread export template
 │       ├── evidence_report.html # evidence report template
 │       └── dossier.html         # proof dossier template
-├── tests/                       # 1200+ tests (57 test files)
+├── tests/                       # 1360+ tests
 ├── data/                        # put your .olm file here
 ├── .claude/
 │   └── settings.json            # auto-registers MCP server in Claude Code

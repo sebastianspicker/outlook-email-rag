@@ -533,6 +533,32 @@ def test_evidence_timeline_empty():
     db.close()
 
 
+def test_evidence_timeline_offset():
+    """Timeline with offset skips earlier items."""
+    db = EmailDatabase(":memory:")
+    _seed_evidence(db)
+
+    all_items = db.evidence_timeline()
+    assert len(all_items) == 4
+
+    offset_items = db.evidence_timeline(limit=10, offset=2)
+    assert len(offset_items) == 2
+    # Should be the last 2 items chronologically
+    assert offset_items[0]["date"] == all_items[2]["date"]
+    assert offset_items[1]["date"] == all_items[3]["date"]
+    db.close()
+
+
+def test_evidence_timeline_offset_beyond_results():
+    """Offset beyond total should return empty."""
+    db = EmailDatabase(":memory:")
+    _seed_evidence(db)
+
+    items = db.evidence_timeline(offset=100)
+    assert items == []
+    db.close()
+
+
 # ── evidence_categories ──────────────────────────────────────
 
 

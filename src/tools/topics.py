@@ -1,31 +1,29 @@
-"""Cluster, topic, keyword, and query suggestion MCP tools."""
+"""Cluster, topic, similarity, and discovery MCP tools."""
 
 from __future__ import annotations
 
 from ..mcp_models import (
-    ClusterEmailsInput,
+    EmailClustersInput,
+    EmailDiscoveryInput,
+    EmailTopicsInput,
     FindSimilarInput,
-    QuerySuggestionsInput,
-    SearchByTopicInput,
-    TopKeywordsInput,
 )
 from .utils import json_error, json_response, run_with_db
 
 
 def register(mcp, deps) -> None:
-    """Register cluster, topic, keyword, and suggestion tools."""
+    """Register cluster, topic, similarity, and discovery tools."""
 
-    @mcp.tool(name="email_clusters", annotations=deps.tool_annotations("List Email Clusters"))
-    async def email_clusters_tool() -> str:
-        """List all email clusters with sizes, representative subjects, and labels.
+    @mcp.tool(name="email_clusters", annotations=deps.tool_annotations("Email Clusters"))
+    async def email_clusters(params: EmailClustersInput) -> str:
+        """List all clusters or emails in a specific cluster.
 
-        Clusters group similar emails together based on embedding similarity.
-        Requires clustering during ingestion.
-
-        Returns:
-            JSON list of cluster summaries.
+        Omit cluster_id to list all clusters with sizes and labels.
+        Set cluster_id to list emails in that cluster, sorted by centroid proximity.
         """
         def _work(db):
+            if params.cluster_id is not None:
+                return json_response(db.emails_in_cluster(params.cluster_id, limit=params.limit))
             results = db.cluster_summary()
             if not results:
                 return json_error("No clusters available. Run ingestion with --cluster.")
@@ -38,12 +36,6 @@ def register(mcp, deps) -> None:
 
         Provide either uid (to find emails similar to a specific email) or
         query (to find emails similar to a text description).
-
-        Args:
-            params: uid or query, top_k.
-
-        Returns:
-            JSON list of similar emails with similarity scores.
         """
         def _run():
             if not params.uid and not params.query:
@@ -62,84 +54,53 @@ def register(mcp, deps) -> None:
                     return json_error("Could not retrieve email text for similarity search.")
 
             results = retriever.search(query, top_k=params.top_k + 1)
-            # Exclude the source email itself from results
             if params.uid:
                 results = [r for r in results if r.metadata.get("uid") != params.uid]
             results = results[:params.top_k]
+            scan_meta = None
+            if params.scan_id:
+                from ..scan_session import filter_seen
+                results, scan_meta = filter_seen(params.scan_id, results)
+            if scan_meta:
+                payload = retriever.serialize_results(query or "", results)
+                payload["_scan"] = scan_meta
+                return json_response(payload)
             return deps.sanitize(retriever.format_results_for_claude(results))
         return await deps.offload(_run)
 
-    @mcp.tool(name="email_cluster_emails", annotations=deps.tool_annotations("Emails in Cluster"))
-    async def email_cluster_emails(params: ClusterEmailsInput) -> str:
-        """Get emails in a specific cluster, sorted by proximity to centroid.
+    @mcp.tool(name="email_topics", annotations=deps.tool_annotations("Email Topics"))
+    async def email_topics(params: EmailTopicsInput) -> str:
+        """List all topics or emails assigned to a specific topic.
 
-        Args:
-            params: cluster_id (int), limit (int).
-
-        Returns:
-            JSON list of emails in the cluster.
-        """
-        return await run_with_db(deps, lambda db:
-            json_response(db.emails_in_cluster(params.cluster_id, limit=params.limit)))
-
-    @mcp.tool(name="email_topics", annotations=deps.tool_annotations("List Discovered Topics"))
-    async def email_topics() -> str:
-        """List all discovered topics with labels, top words, and email counts.
-
-        Topics are discovered via NMF topic modeling during ingestion.
-        Each topic has an auto-generated label from its top words.
-
-        Returns:
-            JSON list of {id, label, top_words, email_count} entries.
+        Omit topic_id to list all discovered topics with labels and top words.
+        Set topic_id to list emails for that topic, ranked by relevance.
         """
         def _work(db):
+            if params.topic_id is not None:
+                return json_response(db.emails_by_topic(params.topic_id, limit=params.limit))
             results = db.topic_distribution()
             if not results:
                 return json_error("No topics available. Run ingestion with --extract-keywords.")
             return json_response(results)
         return await run_with_db(deps, _work)
 
-    @mcp.tool(name="email_search_by_topic", annotations=deps.tool_annotations("Search Emails by Topic"))
-    async def email_search_by_topic(params: SearchByTopicInput) -> str:
-        """Find emails assigned to a specific topic, ranked by relevance.
+    @mcp.tool(name="email_discovery", annotations=deps.tool_annotations("Keyword & Suggestion Discovery"))
+    async def email_discovery(params: EmailDiscoveryInput) -> str:
+        """Discover keywords or get search suggestions.
 
-        Args:
-            params: topic_id (int) - ID from email_topics, limit (int).
-
-        Returns:
-            JSON list of emails with topic weight.
-        """
-        return await run_with_db(deps, lambda db:
-            json_response(db.emails_by_topic(params.topic_id, limit=params.limit)))
-
-    @mcp.tool(name="email_keywords", annotations=deps.tool_annotations("Top Keywords"))
-    async def email_keywords(params: TopKeywordsInput) -> str:
-        """Top keywords across the archive or filtered by sender/folder.
-
-        Keywords are extracted via TF-IDF during ingestion.
-
-        Args:
-            params: sender (optional), folder (optional), limit (int).
-
-        Returns:
-            JSON list of {keyword, avg_score, email_count} entries.
+        mode='keywords': top keywords across the archive (filterable by sender/folder).
+        mode='suggestions': categorized search suggestions based on indexed data.
         """
         def _work(db):
-            results = db.top_keywords(sender=params.sender, folder=params.folder, limit=params.limit)
-            if not results:
-                return json_error("No keywords available. Run ingestion with --extract-keywords.")
-            return json_response(results)
-        return await run_with_db(deps, _work)
-
-    @mcp.tool(name="email_query_suggestions", annotations=deps.tool_annotations("Query Suggestions"))
-    async def email_query_suggestions(params: QuerySuggestionsInput) -> str:
-        """Get search suggestions based on indexed email data.
-
-        Returns categorized suggestions including top senders, folders,
-        and entities to help discover relevant search queries.
-        """
-        def _work(db):
-            from ..query_suggestions import QuerySuggester
-
-            return json_response(QuerySuggester(db).suggest(limit=params.limit))
+            if params.mode == "keywords":
+                results = db.top_keywords(
+                    sender=params.sender, folder=params.folder, limit=params.limit,
+                )
+                if not results:
+                    return json_error("No keywords available. Run ingestion with --extract-keywords.")
+                return json_response(results)
+            if params.mode == "suggestions":
+                from ..query_suggestions import QuerySuggester
+                return json_response(QuerySuggester(db).suggest(limit=params.limit))
+            return json_error(f"Invalid mode: {params.mode}. Use 'keywords' or 'suggestions'.")
         return await run_with_db(deps, _work)

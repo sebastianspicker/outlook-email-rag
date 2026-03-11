@@ -1,61 +1,41 @@
-"""Attachment browsing and discovery MCP tools."""
+"""Attachment discovery MCP tools."""
 
 from __future__ import annotations
 
-from ..mcp_models import ListAttachmentsInput, SearchByAttachmentInput
-from .utils import json_response, run_with_db
+from ..mcp_models import EmailAttachmentsInput
+from .utils import json_error, json_response, run_with_db
 
 
 def register(mcp, deps) -> None:
     """Register attachment discovery tools."""
 
     @mcp.tool(
-        name="email_list_attachments",
-        annotations=deps.tool_annotations("List Attachments"),
+        name="email_attachments",
+        annotations=deps.tool_annotations("Attachment Discovery"),
     )
-    async def email_list_attachments(params: ListAttachmentsInput) -> str:
-        """Browse all attachments in the archive with optional filters.
+    async def email_attachments(params: EmailAttachmentsInput) -> str:
+        """Attachment discovery: list, search, or get statistics.
 
-        Lists attachment name, type, size, and the email they belong to.
-        Filter by filename, extension, MIME type, or sender. Supports pagination.
+        mode='list': browse all attachments with filters and pagination.
+        mode='search': find emails with matching attachments.
+        mode='stats': aggregate statistics (counts, sizes, type distribution).
         """
         def _work(db):
-            result = db.list_attachments(
-                filename=params.filename, extension=params.extension,
-                mime_type=params.mime_type, sender=params.sender,
-                limit=params.limit, offset=params.offset,
+            if params.mode == "list":
+                return json_response(db.list_attachments(
+                    filename=params.filename, extension=params.extension,
+                    mime_type=params.mime_type, sender=params.sender,
+                    limit=params.limit, offset=params.offset,
+                ))
+            if params.mode == "search":
+                results = db.search_emails_by_attachment(
+                    filename=params.filename, extension=params.extension,
+                    mime_type=params.mime_type, limit=params.limit,
+                )
+                return json_response({"emails": results, "count": len(results)})
+            if params.mode == "stats":
+                return json_response(db.attachment_stats())
+            return json_error(
+                f"Invalid mode: {params.mode}. Use 'list', 'search', or 'stats'."
             )
-            return json_response(result)
-        return await run_with_db(deps, _work)
-
-    @mcp.tool(
-        name="email_search_by_attachment",
-        annotations=deps.tool_annotations("Search by Attachment"),
-    )
-    async def email_search_by_attachment(params: SearchByAttachmentInput) -> str:
-        """Find emails that have attachments matching the given criteria.
-
-        Returns emails with their matching attachment names. Filter by
-        filename (partial match), file extension, or MIME type.
-        """
-        def _work(db):
-            results = db.search_emails_by_attachment(
-                filename=params.filename, extension=params.extension,
-                mime_type=params.mime_type, limit=params.limit,
-            )
-            return json_response({"emails": results, "count": len(results)})
-        return await run_with_db(deps, _work)
-
-    @mcp.tool(
-        name="email_attachment_stats",
-        annotations=deps.tool_annotations("Attachment Statistics"),
-    )
-    async def email_attachment_stats() -> str:
-        """Get aggregate statistics about attachments in the archive.
-
-        Returns total count, total size, emails with attachments,
-        distribution by file extension, and most common filenames.
-        """
-        def _work(db):
-            return json_response(db.attachment_stats())
         return await run_with_db(deps, _work)

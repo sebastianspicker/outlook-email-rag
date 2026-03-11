@@ -1,13 +1,12 @@
-"""Thread intelligence and smart search MCP tools."""
+"""Thread intelligence MCP tools."""
 
 from __future__ import annotations
 
 from ..mcp_models import (
     ActionItemsInput,
     DecisionsInput,
-    SmartSearchInput,
+    EmailThreadLookupInput,
     ThreadSummaryInput,
-    ThreadTopicSearchInput,
 )
 from .utils import json_error, json_response, run_with_db
 
@@ -15,18 +14,38 @@ from .utils import json_error, json_response, run_with_db
 def register(mcp, deps) -> None:
     """Register thread intelligence tools."""
 
+    @mcp.tool(name="email_thread_lookup", annotations=deps.tool_annotations("Thread Lookup"))
+    async def email_thread_lookup(params: EmailThreadLookupInput) -> str:
+        """Retrieve all emails in a thread by conversation_id or thread_topic.
+
+        Provide exactly one: conversation_id (from search result metadata)
+        or thread_topic (from OLM metadata). Returns all thread emails sorted by date.
+        """
+        if params.conversation_id:
+            def _run():
+                retriever = deps.get_retriever()
+                results = retriever.search_by_thread(
+                    conversation_id=params.conversation_id, top_k=params.limit,
+                )
+                if not results:
+                    return "No emails found for this conversation thread."
+                return deps.sanitize(retriever.format_results_for_claude(results))
+            return await deps.offload(_run)
+
+        def _work(db):
+            emails = db.thread_by_topic(params.thread_topic, limit=params.limit)
+            return json_response({
+                "thread_topic": params.thread_topic,
+                "emails": emails, "count": len(emails),
+            })
+        return await run_with_db(deps, _work)
+
     @mcp.tool(name="email_thread_summary", annotations=deps.tool_annotations("Summarize Thread"))
     async def email_thread_summary(params: ThreadSummaryInput) -> str:
         """Summarize a conversation thread using extractive summarization.
 
         Selects the most important sentences from the thread based on
         TF-IDF scoring with position bias.
-
-        Args:
-            params: conversation_id (str), max_sentences (int).
-
-        Returns:
-            JSON with thread summary text.
         """
         def _run():
             retriever = deps.get_retriever()
@@ -54,12 +73,6 @@ def register(mcp, deps) -> None:
         """Extract action items from a thread or across recent emails.
 
         Detects patterns like 'please do X', 'need to', 'I will', 'by Friday'.
-
-        Args:
-            params: conversation_id or days, limit.
-
-        Returns:
-            JSON list of action items with assignee and deadline.
         """
         def _run():
             from ..thread_intelligence import ThreadAnalyzer
@@ -120,12 +133,6 @@ def register(mcp, deps) -> None:
         """Extract decisions from email threads.
 
         Detects patterns like 'we decided', 'agreed to', 'approved', 'go ahead with'.
-
-        Args:
-            params: conversation_id or days.
-
-        Returns:
-            JSON list of decisions with who made them and when.
         """
         def _run():
             from ..thread_intelligence import ThreadAnalyzer
@@ -153,7 +160,7 @@ def register(mcp, deps) -> None:
                 return json_response(
                     [{"text": d.text, "made_by": d.made_by, "date": d.date,
                       "source_uid": d.source_uid}
-                     for d in all_decisions],
+                     for d in all_decisions[:params.limit]],
                 )
 
             if params.days:
@@ -177,87 +184,8 @@ def register(mcp, deps) -> None:
                 return json_response(
                     [{"text": d.text, "made_by": d.made_by, "date": d.date,
                       "source_uid": d.source_uid}
-                     for d in all_decisions],
+                     for d in all_decisions[:params.limit]],
                 )
 
             return json_error("Provide conversation_id or days to extract decisions.")
-        return await deps.offload(_run)
-
-    @mcp.tool(
-        name="email_search_by_thread_topic",
-        annotations=deps.tool_annotations("Search by Thread Topic"),
-    )
-    async def email_search_by_thread_topic(params: ThreadTopicSearchInput) -> str:
-        """Find all emails sharing a thread topic.
-
-        Thread topics are extracted from OLM metadata and group related
-        emails more reliably than conversation_id in some cases.
-
-        Args:
-            params: thread_topic (str), limit (int).
-
-        Returns:
-            JSON with matching emails sorted by date.
-        """
-        def _work(db):
-            emails = db.thread_by_topic(params.thread_topic, limit=params.limit)
-            return json_response({
-                "thread_topic": params.thread_topic,
-                "emails": emails, "count": len(emails),
-            })
-        return await run_with_db(deps, _work)
-
-    @mcp.tool(
-        name="email_smart_search",
-        annotations=deps.tool_annotations("Smart Search"),
-    )
-    async def email_smart_search(params: SmartSearchInput) -> str:
-        """Auto-routing search that detects intent from query text.
-
-        Automatically detects person names, topics, and entities in the query
-        and applies relevant filters. Best for exploratory queries where you
-        don't know which filters to use. For precise filtered searches, use
-        email_search_structured instead.
-        """
-        def _run():
-            retriever = deps.get_retriever()
-            query = params.query
-            detected_intent: dict = {}
-
-            # Strategy 1: Always do expanded semantic search
-            results = retriever.search_filtered(
-                query=query, top_k=params.top_k, expand_query=True,
-            )
-            detected_intent["expand_query"] = True
-
-            # Strategy 2: If we have entity DB, also search person entities
-            db = deps.get_email_db()
-            if db:
-                try:
-                    person_results = db.people_in_emails(query, limit=5)
-                    if person_results:
-                        detected_intent["person_matches"] = len(person_results)
-                except Exception:
-                    pass
-
-                # Strategy 3: Check if query matches a known topic
-                try:
-                    topic_dist = db.topic_distribution()
-                    for topic in topic_dist:
-                        label = topic.get("label", "").lower()
-                        if any(w in label for w in query.lower().split() if len(w) > 3):
-                            detected_intent["topic_match"] = {
-                                "id": topic["id"],
-                                "label": topic["label"],
-                            }
-                            break
-                except Exception:
-                    pass
-
-            formatted = deps.sanitize(retriever.format_results_for_claude(results))
-            return json_response({
-                "query": query, "count": len(results),
-                "detected_intent": detected_intent,
-                "formatted_results": formatted,
-            })
         return await deps.offload(_run)

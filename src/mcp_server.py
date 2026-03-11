@@ -4,23 +4,42 @@ MCP Server for Email RAG.
 Exposes email search as tools that Claude Code can call directly.
 Run with: python -m src.mcp_server
 
-Configure in Claude Code's MCP settings:
+Claude Code MCP settings (~/.claude.json):
 {
     "mcpServers": {
         "email_search": {
-            "command": "/path/to/.venv/bin/python",
+            "command": "/absolute/path/to/.venv/bin/python",
             "args": ["-m", "src.mcp_server"],
-            "cwd": "/path/to/email-rag"
+            "cwd": "/absolute/path/to/outlook-email-rag"
         }
     }
 }
+
+Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):
+{
+    "mcpServers": {
+        "email_search": {
+            "command": "/absolute/path/to/.venv/bin/python",
+            "args": ["-m", "src.mcp_server"],
+            "cwd": "/absolute/path/to/outlook-email-rag"
+        }
+    }
+}
+
+IMPORTANT: Use absolute paths — relative paths will fail in GUI apps
+that launch the server from a different working directory.
 """
 
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
+import logging
+import os
+import sys
 import threading
+from pathlib import Path
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -29,7 +48,90 @@ from mcp.types import ToolAnnotations
 from .config import get_settings
 from .sanitization import sanitize_untrusted_text
 
+logger = logging.getLogger(__name__)
+
 load_dotenv()
+
+# ── Instance lock ─────────────────────────────────────────────
+
+_lock_fd = None
+
+
+def _acquire_instance_lock() -> None:
+    """Acquire an exclusive file lock to prevent concurrent instances.
+
+    Uses ``fcntl.flock`` (Unix) with ``LOCK_EX | LOCK_NB``.  On Windows
+    (no ``fcntl``), logs a warning and continues without locking.
+    """
+    global _lock_fd
+    try:
+        import fcntl
+    except ImportError:
+        logger.warning("fcntl not available (Windows?) — skipping instance lock")
+        return
+
+    settings = get_settings()
+    data_dir = Path(settings.sqlite_path).parent
+    data_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = data_dir / "mcp_server.lock"
+
+    fd = open(lock_path, "w")  # noqa: SIM115
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        # Lock held by another process — read existing PID for diagnostics
+        try:
+            existing_pid = lock_path.read_text().strip()
+        except Exception:
+            existing_pid = "unknown"
+        logger.error(
+            "Another MCP server instance is already running (PID %s). "
+            "Only one instance can access the database at a time.",
+            existing_pid,
+        )
+        fd.close()
+        raise SystemExit(1)
+
+    fd.write(str(os.getpid()))
+    fd.flush()
+    _lock_fd = fd
+    atexit.register(_release_lock)
+
+
+def _release_lock() -> None:
+    global _lock_fd
+    if _lock_fd is not None:
+        try:
+            _lock_fd.close()
+        except Exception:
+            pass
+        _lock_fd = None
+
+
+def _log_startup_info() -> None:
+    """Log diagnostic info to stderr on startup."""
+    settings = get_settings()
+    sqlite_exists = os.path.exists(settings.sqlite_path)
+    chromadb_exists = os.path.isdir(settings.chromadb_path)
+    logger.info(
+        "MCP server starting — PID=%d python=%s cwd=%s",
+        os.getpid(), sys.executable, os.getcwd(),
+    )
+    logger.info(
+        "  sqlite=%s (exists=%s) chromadb=%s (exists=%s)",
+        settings.sqlite_path, sqlite_exists, settings.chromadb_path, chromadb_exists,
+    )
+    logger.info(
+        "  profile=%s body=%d tokens=%d full=%d json=%d triage_cap=%d search_cap=%d",
+        settings.mcp_model_profile,
+        settings.mcp_max_body_chars, settings.mcp_max_response_tokens,
+        settings.mcp_max_full_body_chars, settings.mcp_max_json_response_chars,
+        settings.mcp_max_triage_results, settings.mcp_max_search_results,
+    )
+
+
+_acquire_instance_lock()
+_log_startup_info()
 
 mcp = FastMCP("email_mcp")
 
@@ -142,9 +244,7 @@ register_all(mcp, ToolDeps)
 
 from .mcp_models import (  # noqa: E402, F401
     EmailIngestInput,
-    EmailSearchInput,
     EmailSearchStructuredInput,
-    EmailSearchThreadInput,
     ListSendersInput,
 )
 from .tools.search import (  # noqa: E402, F401
@@ -152,9 +252,7 @@ from .tools.search import (  # noqa: E402, F401
     email_ingest,
     email_list_folders,
     email_list_senders,
-    email_search,
     email_search_structured,
-    email_search_thread,
     email_stats,
 )
 

@@ -7,6 +7,37 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
+# ── Model-aware MCP response profiles ─────────────────────────
+# Each profile sets defaults for all MCP budget knobs.
+# Per-variable env overrides always take precedence over profile defaults.
+MODEL_PROFILES: dict[str, dict[str, int]] = {
+    "haiku": {
+        "mcp_max_body_chars": 300,
+        "mcp_max_response_tokens": 4000,
+        "mcp_max_full_body_chars": 5000,
+        "mcp_max_json_response_chars": 16000,
+        "mcp_max_triage_results": 30,
+        "mcp_max_search_results": 15,
+    },
+    "sonnet": {
+        "mcp_max_body_chars": 500,
+        "mcp_max_response_tokens": 8000,
+        "mcp_max_full_body_chars": 10000,
+        "mcp_max_json_response_chars": 32000,
+        "mcp_max_triage_results": 50,
+        "mcp_max_search_results": 30,
+    },
+    "opus": {
+        "mcp_max_body_chars": 800,
+        "mcp_max_response_tokens": 16000,
+        "mcp_max_full_body_chars": 20000,
+        "mcp_max_json_response_chars": 64000,
+        "mcp_max_triage_results": 100,
+        "mcp_max_search_results": 50,
+    },
+}
+MODEL_PROFILES["auto"] = MODEL_PROFILES["sonnet"]
+
 
 def _get_system_memory_gb() -> float:
     """Return total system memory in GB. Falls back to 8.0 on error."""
@@ -84,10 +115,25 @@ class Settings:
     colbert_rerank_enabled: bool = False
     embedding_batch_size: int = 0  # 0 = auto-detect via resolve_embedding_batch_size
     mps_float16: bool = False
+    mcp_max_body_chars: int = 500  # 0 = unlimited
+    mcp_max_response_tokens: int = 8000  # 0 = unlimited
+    mcp_max_full_body_chars: int = 10000  # soft limit for email_get_full; 0 = unlimited
+    mcp_max_json_response_chars: int = 32000  # safety net for JSON tools; ~8K tokens; 0 = unlimited
+    mcp_model_profile: str = "auto"
+    mcp_max_triage_results: int = 50  # max results for email_triage
+    mcp_max_search_results: int = 30  # max results for email_search_structured
 
     @classmethod
     def from_env(cls) -> "Settings":
-        """Build settings from environment variables with safe defaults."""
+        """Build settings from environment variables with safe defaults.
+
+        MCP budget knobs use profile defaults: env override > profile > hardcoded.
+        """
+        profile_name = os.getenv("MCP_MODEL_PROFILE", "auto").lower()
+        profile = MODEL_PROFILES.get(profile_name, MODEL_PROFILES["auto"])
+        if profile_name not in MODEL_PROFILES:
+            profile_name = "auto"
+
         return cls(
             chromadb_path=os.getenv("CHROMADB_PATH", cls.chromadb_path),
             sqlite_path=os.getenv("SQLITE_PATH", cls.sqlite_path),
@@ -103,6 +149,15 @@ class Settings:
             colbert_rerank_enabled=os.getenv("COLBERT_RERANK_ENABLED", "").lower() in ("1", "true", "yes"),
             embedding_batch_size=_int_from_env("EMBEDDING_BATCH_SIZE", cls.embedding_batch_size, min_value=0, max_value=256),
             mps_float16=os.getenv("MPS_FLOAT16", "").lower() in ("1", "true", "yes"),
+            mcp_max_body_chars=_int_from_env("MCP_MAX_BODY_CHARS", profile["mcp_max_body_chars"], min_value=0),
+            mcp_max_response_tokens=_int_from_env("MCP_MAX_RESPONSE_TOKENS", profile["mcp_max_response_tokens"], min_value=0),
+            mcp_max_full_body_chars=_int_from_env("MCP_MAX_FULL_BODY_CHARS", profile["mcp_max_full_body_chars"], min_value=0),
+            mcp_max_json_response_chars=_int_from_env(
+                "MCP_MAX_JSON_RESPONSE_CHARS", profile["mcp_max_json_response_chars"], min_value=0,
+            ),
+            mcp_model_profile=profile_name,
+            mcp_max_triage_results=_int_from_env("MCP_MAX_TRIAGE_RESULTS", profile["mcp_max_triage_results"], min_value=1),
+            mcp_max_search_results=_int_from_env("MCP_MAX_SEARCH_RESULTS", profile["mcp_max_search_results"], min_value=1),
         )
 
 
@@ -135,6 +190,13 @@ def resolve_runtime_settings(
         colbert_rerank_enabled=base.colbert_rerank_enabled,
         embedding_batch_size=base.embedding_batch_size,
         mps_float16=base.mps_float16,
+        mcp_max_body_chars=base.mcp_max_body_chars,
+        mcp_max_response_tokens=base.mcp_max_response_tokens,
+        mcp_max_full_body_chars=base.mcp_max_full_body_chars,
+        mcp_max_json_response_chars=base.mcp_max_json_response_chars,
+        mcp_model_profile=base.mcp_model_profile,
+        mcp_max_triage_results=base.mcp_max_triage_results,
+        mcp_max_search_results=base.mcp_max_search_results,
     )
 
 

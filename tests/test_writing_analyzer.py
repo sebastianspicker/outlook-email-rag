@@ -179,16 +179,3 @@ class TestMCPWritingTool:
 
         assert callable(reporting.register)
 
-    def test_writing_analysis_input(self):
-        from src.mcp_models import WritingAnalysisInput
-
-        inp = WritingAnalysisInput(sender="alice@co.com", limit=20)
-        assert inp.sender == "alice@co.com"
-        assert inp.limit == 20
-
-    def test_writing_analysis_input_defaults(self):
-        from src.mcp_models import WritingAnalysisInput
-
-        inp = WritingAnalysisInput()
-        assert inp.sender is None
-        assert inp.limit == 10

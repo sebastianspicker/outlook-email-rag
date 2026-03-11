@@ -259,8 +259,3 @@ class TestMCPClusterTools:
 
         assert callable(topics.register)
 
-    def test_cluster_emails_input(self):
-        from src.mcp_models import ClusterEmailsInput
-
-        inp = ClusterEmailsInput(cluster_id=5, limit=20)
-        assert inp.cluster_id == 5

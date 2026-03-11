@@ -98,6 +98,7 @@ def html_to_text(html: str) -> str:
     # Strip remaining tags
     text = _RE_ALL_TAGS.sub("", text)
     text = unescape(text)
+    text = text.replace("\xa0", " ")
     return clean_text(text)
 
 

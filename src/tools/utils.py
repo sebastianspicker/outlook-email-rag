@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class ToolDepsProto(Protocol):
@@ -57,9 +60,80 @@ async def run_with_retriever(deps, fn):
     return await deps.offload(lambda: fn(deps.get_retriever()))
 
 
-def json_response(data, **kwargs):
-    """Standardized JSON serialization for tool responses."""
-    return json.dumps(data, indent=2, **kwargs)
+def json_response(data, *, max_chars: int | None = None, **kwargs):
+    """Standardized JSON serialization with optional size guard.
+
+    If the serialized JSON exceeds *max_chars* (default from
+    ``mcp_max_json_response_chars`` setting), the largest top-level list
+    is trimmed to fit and a ``_truncated`` metadata key is added.
+    """
+    raw = json.dumps(data, indent=2, **kwargs)
+
+    if max_chars is None:
+        from ..config import get_settings
+        max_chars = get_settings().mcp_max_json_response_chars
+
+    if max_chars > 0 and len(raw) > max_chars:
+        return _truncate_json(data, raw, max_chars, **kwargs)
+    return raw
+
+
+def _truncate_json(data, raw: str, max_chars: int, **kwargs) -> str:
+    """Trim the largest list in *data* until the JSON fits *max_chars*."""
+    if not isinstance(data, dict):
+        # Can't intelligently trim non-dict responses — hard-truncate
+        return raw[:max_chars] + '\n... [response truncated]'
+
+    # Find the largest list value in the top-level dict
+    largest_key = None
+    largest_len = 0
+    for key, val in data.items():
+        if isinstance(val, list) and len(val) > largest_len:
+            largest_key = key
+            largest_len = len(val)
+
+    if largest_key is None:
+        # No list to trim — hard-truncate
+        return raw[:max_chars] + '\n... [response truncated]'
+    if largest_len <= 1:
+        # Single-item list — return as-is; per-tool compact mode handles item size
+        return raw
+
+    # Binary search for how many items fit
+    lo, hi = 1, largest_len
+    original_list = data[largest_key]
+    best = 1
+
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        data[largest_key] = original_list[:mid]
+        data["_truncated"] = {
+            "field": largest_key,
+            "shown": mid,
+            "original_count": largest_len,
+            "note": f"Response trimmed to fit {max_chars} char limit. Use limit/offset to paginate.",
+        }
+        candidate = json.dumps(data, indent=2, **kwargs)
+        if len(candidate) <= max_chars:
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    # Apply best fit
+    data[largest_key] = original_list[:best]
+    data["_truncated"] = {
+        "field": largest_key,
+        "shown": best,
+        "original_count": largest_len,
+        "note": f"Response trimmed to fit {max_chars} char limit. Use limit/offset to paginate.",
+    }
+    result = json.dumps(data, indent=2, **kwargs)
+    logger.debug(
+        "json_response truncated %s from %d to %d items (%d chars)",
+        largest_key, largest_len, best, len(result),
+    )
+    return result
 
 
 def json_error(message):

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from ..mcp_models import (
-    CommunicationBetweenInput,
     CoordinatedTimingInput,
+    EmailContactsInput,
     NetworkAnalysisInput,
     RelationshipPathsInput,
     RelationshipSummaryInput,
     SharedRecipientsInput,
-    TopContactsInput,
 )
 from .utils import json_response, run_with_db, run_with_network
 
@@ -17,24 +16,18 @@ from .utils import json_response, run_with_db, run_with_network
 def register(mcp, deps) -> None:
     """Register network analysis tools."""
 
-    @mcp.tool(name="email_top_contacts", annotations=deps.tool_annotations("Top Email Contacts"))
-    async def email_top_contacts(params: TopContactsInput) -> str:
-        """Find top communication partners for an email address.
+    @mcp.tool(name="email_contacts", annotations=deps.tool_annotations("Email Contacts"))
+    async def email_contacts(params: EmailContactsInput) -> str:
+        """Top contacts for a person, or bidirectional stats between two people.
 
-        Returns contacts ranked by total bidirectional email frequency
-        (emails sent to + received from each partner).
+        Omit compare_with to get top communication partners ranked by frequency.
+        Set compare_with to get bidirectional communication stats between two addresses.
         """
+        if params.compare_with:
+            return await run_with_db(deps, lambda db:
+                json_response(db.communication_between(params.email_address, params.compare_with)))
         return await run_with_db(deps, lambda db:
             json_response(db.top_contacts(params.email_address, limit=params.limit)))
-
-    @mcp.tool(
-        name="email_communication_between",
-        annotations=deps.tool_annotations("Communication Between Two Contacts"),
-    )
-    async def email_communication_between(params: CommunicationBetweenInput) -> str:
-        """Get bidirectional communication stats between two email addresses."""
-        return await run_with_db(deps, lambda db:
-            json_response(db.communication_between(params.email_a, params.email_b)))
 
     @mcp.tool(name="email_network_analysis", annotations=deps.tool_annotations("Email Network Analysis"))
     async def email_network_analysis(params: NetworkAnalysisInput) -> str:
@@ -74,7 +67,9 @@ def register(mcp, deps) -> None:
             results = net.shared_recipients(
                 email_addresses=params.email_addresses, min_shared=params.min_shared,
             )
-            return json_response({"shared_recipients": results, "count": len(results)})
+            total = len(results)
+            results = results[:params.limit]
+            return json_response({"shared_recipients": results, "count": len(results), "total": total})
         return await run_with_network(deps, _work)
 
     @mcp.tool(
@@ -92,7 +87,9 @@ def register(mcp, deps) -> None:
                 email_addresses=params.email_addresses,
                 window_hours=params.window_hours, min_events=params.min_events,
             )
-            return json_response({"windows": windows, "count": len(windows)})
+            total = len(windows)
+            windows = windows[:params.limit]
+            return json_response({"windows": windows, "count": len(windows), "total": total})
         return await run_with_network(deps, _work)
 
     @mcp.tool(

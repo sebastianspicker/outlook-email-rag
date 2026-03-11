@@ -120,24 +120,6 @@ async def test_email_list_senders_sanitizes_control_sequences(monkeypatch):
     assert "\x07" not in output
 
 
-@pytest.mark.asyncio
-async def test_email_search_sanitizes_control_sequences(monkeypatch):
-    from src import mcp_server
-
-    class DummyRetriever:
-        def search(self, query, top_k=10):
-            return []
-
-        def format_results_for_claude(self, results):
-            return "Unsafe \x1b]8;;https://evil.test\x07 link \x1b[31mred\x1b[0m"
-
-    monkeypatch.setattr(mcp_server, "get_retriever", lambda: DummyRetriever())
-    output = await mcp_server.email_search(mcp_server.EmailSearchInput(query="security"))
-
-    assert "evil.test" not in output
-    assert "\x1b" not in output
-    assert "\x07" not in output
-
 
 @pytest.mark.asyncio
 async def test_email_list_folders_returns_formatted_list(monkeypatch):
@@ -311,7 +293,7 @@ async def test_email_diagnostics_returns_json(monkeypatch):
 
     monkeypatch.setattr(diagnostics, "_deps", MockDeps)
 
-    output = await diagnostics.email_diagnostics()
+    output = await diagnostics.email_diagnostics(MockDeps)
     data = json.loads(output)
 
     assert "embedding_model" in data
@@ -328,6 +310,7 @@ def test_all_tool_modules_importable():
         attachments,
         browse,
         data_quality,
+        diagnostics,
         entities,
         evidence,
         network,
@@ -338,8 +321,8 @@ def test_all_tool_modules_importable():
     )
 
     for module in [
-        attachments, browse, data_quality, entities, evidence, network,
-        reporting, temporal, threads, topics,
+        attachments, browse, data_quality, diagnostics, entities, evidence,
+        network, reporting, temporal, threads, topics,
     ]:
         assert callable(module.register), f"{module.__name__} missing register()"
 

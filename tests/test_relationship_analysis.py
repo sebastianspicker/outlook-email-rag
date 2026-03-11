@@ -176,6 +176,17 @@ def test_find_paths_respects_top_k(db):
     assert len(paths) <= 1
 
 
+def test_find_paths_source_equals_target(db):
+    """Should return error when source and target are the same."""
+    from src.network_analysis import CommunicationNetwork
+
+    net = CommunicationNetwork(db)
+    result = net.find_paths("alice@co.com", "alice@co.com")
+    assert len(result) == 1
+    assert "error" in result[0]
+    assert "same address" in result[0]["error"]
+
+
 # ── shared_recipients (CommunicationNetwork) ─────────────────
 
 

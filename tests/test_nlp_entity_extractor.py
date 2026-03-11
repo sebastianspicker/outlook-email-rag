@@ -435,13 +435,6 @@ class TestMCPTools:
 
         assert callable(entities.register)
 
-    def test_find_people_input_model(self):
-        from src.mcp_models import FindPeopleInput
-
-        inp = FindPeopleInput(name="John", limit=5)
-        assert inp.name == "John"
-        assert inp.limit == 5
-
     def test_entity_timeline_input_model(self):
         from src.mcp_models import EntityTimelineInput
 

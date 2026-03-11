@@ -4,21 +4,28 @@ from __future__ import annotations
 
 from ..mcp_models import (
     CustodyChainInput,
-    DossierGenerateInput,
-    DossierPreviewInput,
+    EmailDossierInput,
     EmailProvenanceInput,
     EvidenceAddBatchInput,
     EvidenceAddInput,
     EvidenceExportInput,
     EvidenceGetInput,
-    EvidenceListInput,
+    EvidenceOverviewInput,
     EvidenceProvenanceInput,
+    EvidenceQueryInput,
     EvidenceRemoveInput,
-    EvidenceSearchInput,
-    EvidenceTimelineInput,
     EvidenceUpdateInput,
 )
 from .utils import json_error, json_response, run_with_db
+
+
+def _compact_evidence_items(items: list[dict]) -> None:
+    """Strip heavy fields from evidence items for compact mode (in-place)."""
+    for item in items:
+        quote = item.pop("key_quote", "")
+        item["quote_preview"] = (quote[:80] + "...") if len(quote) > 80 else quote
+        item.pop("notes", None)
+        item.pop("content_hash", None)
 
 
 def register(mcp, deps) -> None:
@@ -33,15 +40,18 @@ def register(mcp, deps) -> None:
     async def custody_chain(params: CustodyChainInput) -> str:
         """View the chain-of-custody audit trail for evidence handling.
 
-        Shows a chronological log of all evidence lifecycle events:
-        ingestion, evidence additions/updates/removals, and exports.
-        Use to verify evidence handling history and integrity.
+        Shows a chronological log of all evidence lifecycle events.
+        Compact mode (default) omits verbose details JSON.
         """
         def _work(db):
             events = db.get_custody_chain(
                 target_type=params.target_type, target_id=params.target_id,
                 action=params.action, limit=params.limit,
             )
+            if params.compact:
+                for event in events:
+                    event.pop("details", None)
+                    event.pop("content_hash", None)
             return json_response({"events": events, "count": len(events)}, default=str)
         return await run_with_db(deps, _work)
 
@@ -50,11 +60,7 @@ def register(mcp, deps) -> None:
         annotations=deps.tool_annotations("Email Provenance & Source Tracing"),
     )
     async def email_provenance(params: EmailProvenanceInput) -> str:
-        """Full provenance for an email: OLM source hash, ingestion run, custody events.
-
-        One call gives complete traceability from source file to stored email.
-        Use to verify an email's origin and integrity for legal evidence.
-        """
+        """Full provenance for an email: OLM source hash, ingestion run, custody events."""
         def _work(db):
             return json_response(db.email_provenance(params.email_uid), default=str)
         return await run_with_db(deps, _work)
@@ -64,11 +70,7 @@ def register(mcp, deps) -> None:
         annotations=deps.tool_annotations("Evidence Provenance & Chain"),
     )
     async def evidence_provenance(params: EvidenceProvenanceInput) -> str:
-        """Full evidence chain: item details + source email provenance + modification history + content hashes.
-
-        Combines evidence item, source email traceability, and all custody
-        events in one call. Use to present complete provenance to a lawyer.
-        """
+        """Full evidence chain: item details + source email provenance + modification history."""
         def _work(db):
             return json_response(db.evidence_provenance(params.evidence_id), default=str)
         return await run_with_db(deps, _work)
@@ -76,21 +78,26 @@ def register(mcp, deps) -> None:
     # ── Proof Dossier ─────────────────────────────────────────────
 
     @mcp.tool(
-        name="dossier_generate",
-        annotations=deps.idempotent_write_annotations("Generate Proof Dossier"),
+        name="email_dossier",
+        annotations=deps.idempotent_write_annotations("Generate/Preview Proof Dossier"),
     )
-    async def dossier_generate(params: DossierGenerateInput) -> str:
-        """Generate a comprehensive proof dossier combining evidence, source emails,
-        relationship analysis, and chain-of-custody log.
+    async def email_dossier(params: EmailDossierInput) -> str:
+        """Generate or preview a comprehensive proof dossier.
 
-        The main 'export everything for the lawyer' tool. Produces a
-        self-contained HTML or PDF document with integrity hash.
+        Set preview_only=True to check scope (counts, categories, date range)
+        before generating. Default generates a full HTML/PDF dossier combining
+        evidence, source emails, relationship analysis, and chain of custody.
         """
         def _work(db):
+            if params.preview_only:
+                from ..dossier_generator import DossierGenerator
+                return json_response(DossierGenerator(db).preview(
+                    min_relevance=params.min_relevance, category=params.category,
+                ))
+
             network = None
             try:
                 from ..network_analysis import CommunicationNetwork
-
                 network = CommunicationNetwork(db)
             except Exception:
                 pass
@@ -110,24 +117,6 @@ def register(mcp, deps) -> None:
             return json_response(result)
         return await run_with_db(deps, _work)
 
-    @mcp.tool(
-        name="dossier_preview",
-        annotations=deps.tool_annotations("Preview Dossier Contents"),
-    )
-    async def dossier_preview(params: DossierPreviewInput) -> str:
-        """Preview what a dossier would contain without generating it.
-
-        Token-efficient: returns counts, categories, and date range.
-        Use to check scope before full generation.
-        """
-        def _work(db):
-            from ..dossier_generator import DossierGenerator
-
-            return json_response(DossierGenerator(db).preview(
-                min_relevance=params.min_relevance, category=params.category,
-            ))
-        return await run_with_db(deps, _work)
-
     # ── Evidence Management ───────────────────────────────────────
 
     @mcp.tool(
@@ -138,9 +127,8 @@ def register(mcp, deps) -> None:
         """Add an evidence item linked to a specific email.
 
         The key_quote MUST be an exact substring from the email body — it is
-        automatically verified against stored body text. Unverified quotes are
-        flagged. Use email_get_full to read the full email body before extracting
-        a quote. Sender, date, recipients, and subject are auto-populated.
+        automatically verified against stored body text. Use email_deep_context
+        to read the full email body before extracting a quote.
         """
         def _work(db):
             try:
@@ -154,19 +142,46 @@ def register(mcp, deps) -> None:
         return await run_with_db(deps, _work)
 
     @mcp.tool(
-        name="evidence_list",
-        annotations=deps.tool_annotations("List Evidence Items"),
+        name="evidence_query",
+        annotations=deps.tool_annotations("Query Evidence Items"),
     )
-    async def evidence_list(params: EvidenceListInput) -> str:
-        """List evidence items with optional filters.
+    async def evidence_query(params: EvidenceQueryInput) -> str:
+        """List, search, or view evidence timeline in one tool.
 
-        Use to review the evidence collection. Filter by category, minimum
-        relevance, or specific email UID. Returns paginated results sorted by date.
+        Omit query to list all evidence. Set query to search text.
+        Use sort='date' for chronological timeline view.
+        Filter by category, min_relevance, or email_uid.
         """
-        return await run_with_db(deps, lambda db: json_response(db.list_evidence(
-            category=params.category, min_relevance=params.min_relevance,
-            email_uid=params.email_uid, limit=params.limit, offset=params.offset,
-        )))
+        def _work(db):
+            if params.query:
+                # Search mode
+                result = db.search_evidence(
+                    query=params.query, category=params.category,
+                    min_relevance=params.min_relevance, limit=params.limit,
+                )
+                if not params.include_quotes:
+                    _compact_evidence_items(result["items"])
+                return json_response(result)
+
+            if params.sort == "date":
+                # Timeline mode
+                items = db.evidence_timeline(
+                    category=params.category, min_relevance=params.min_relevance,
+                    limit=params.limit, offset=params.offset,
+                )
+                if not params.include_quotes:
+                    _compact_evidence_items(items)
+                return json_response({"items": items, "total": len(items)})
+
+            # List mode
+            result = db.list_evidence(
+                category=params.category, min_relevance=params.min_relevance,
+                email_uid=params.email_uid, limit=params.limit, offset=params.offset,
+            )
+            if not params.include_quotes:
+                _compact_evidence_items(result["items"])
+            return json_response(result)
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="evidence_get",
@@ -186,19 +201,7 @@ def register(mcp, deps) -> None:
         annotations=deps.write_tool_annotations("Update Evidence Item"),
     )
     async def evidence_update(params: EvidenceUpdateInput) -> str:
-        """Update an evidence item's category, quote, summary, relevance, or notes.
-
-        Only the fields you provide will be changed. If key_quote is updated,
-        the quote is re-verified against the email body.
-
-        Args:
-            evidence_id: ID of the evidence item to update.
-            category: New category (optional).
-            key_quote: New key quote (optional, will be re-verified).
-            summary: New summary (optional).
-            relevance: New relevance rating (optional).
-            notes: New notes (optional).
-        """
+        """Update an evidence item's category, quote, summary, relevance, or notes."""
         def _work(db):
             updated = db.update_evidence(
                 params.evidence_id,
@@ -215,11 +218,7 @@ def register(mcp, deps) -> None:
         annotations=deps.write_tool_annotations("Remove Evidence Item"),
     )
     async def evidence_remove(params: EvidenceRemoveInput) -> str:
-        """Remove an evidence item by ID.
-
-        Args:
-            evidence_id: ID of the evidence item to remove.
-        """
+        """Remove an evidence item by ID."""
         def _work(db):
             removed = db.remove_evidence(params.evidence_id)
             if not removed:
@@ -232,12 +231,7 @@ def register(mcp, deps) -> None:
         annotations=deps.write_tool_annotations("Verify Evidence Quotes"),
     )
     async def evidence_verify() -> str:
-        """Re-verify all evidence quotes against source email body text.
-
-        Run periodically to catch incorrectly entered quotes. Checks each
-        key_quote appears (case-insensitive) in the linked email's body_text
-        and updates the verified status. Critical for ensuring zero hallucination.
-        """
+        """Re-verify all evidence quotes against source email body text."""
         return await run_with_db(deps, lambda db: json_response(db.verify_evidence_quotes()))
 
     @mcp.tool(
@@ -245,12 +239,7 @@ def register(mcp, deps) -> None:
         annotations=deps.idempotent_write_annotations("Export Evidence Report"),
     )
     async def evidence_export(params: EvidenceExportInput) -> str:
-        """Export the evidence collection as an HTML report or CSV file.
-
-        HTML includes summary, evidence list with verification status, and full
-        source email appendix. CSV can be opened in Excel. Filter by category
-        or minimum relevance to create focused exports.
-        """
+        """Export the evidence collection as an HTML report or CSV file."""
         def _work(db):
             from ..evidence_exporter import EvidenceExporter
 
@@ -261,16 +250,22 @@ def register(mcp, deps) -> None:
         return await run_with_db(deps, _work)
 
     @mcp.tool(
-        name="evidence_stats",
-        annotations=deps.tool_annotations("Evidence Statistics"),
+        name="evidence_overview",
+        annotations=deps.tool_annotations("Evidence Overview"),
     )
-    async def evidence_stats() -> str:
-        """Get statistics about the evidence collection.
+    async def evidence_overview(params: EvidenceOverviewInput) -> str:
+        """Evidence statistics and category breakdown in one call.
 
         Returns total items, verified/unverified counts, breakdown by category
-        and relevance level.
+        and relevance level, plus all category counts.
         """
-        return await run_with_db(deps, lambda db: json_response(db.evidence_stats()))
+        def _work(db):
+            stats = db.evidence_stats(
+                category=params.category, min_relevance=params.min_relevance,
+            )
+            categories = db.evidence_categories()
+            return json_response({"stats": stats, "categories": categories})
+        return await run_with_db(deps, _work)
 
     @mcp.tool(
         name="evidence_add_batch",
@@ -280,7 +275,6 @@ def register(mcp, deps) -> None:
         """Add multiple evidence items in one call (up to 20).
 
         Each item is independent — if one fails, others still succeed.
-        Use when you find multiple evidence items in one search session.
         """
         def _work(db):
             added: list[dict] = []
@@ -300,48 +294,3 @@ def register(mcp, deps) -> None:
                 "total_added": len(added), "total_failed": len(failed),
             })
         return await run_with_db(deps, _work)
-
-    @mcp.tool(
-        name="evidence_search",
-        annotations=deps.tool_annotations("Search Evidence Items"),
-    )
-    async def evidence_search(params: EvidenceSearchInput) -> str:
-        """Search within existing evidence items by text.
-
-        Searches across key_quote, summary, and notes fields. Use to check
-        whether evidence about a topic has already been collected.
-        """
-        return await run_with_db(deps, lambda db: json_response(db.search_evidence(
-            query=params.query, category=params.category,
-            min_relevance=params.min_relevance, limit=params.limit,
-        )))
-
-    @mcp.tool(
-        name="evidence_timeline",
-        annotations=deps.tool_annotations("Evidence Timeline"),
-    )
-    async def evidence_timeline(params: EvidenceTimelineInput) -> str:
-        """View evidence in chronological order to build a narrative.
-
-        Returns evidence items sorted by date ascending. Use to identify
-        patterns of behavior over time and construct a legal timeline.
-        """
-        def _work(db):
-            items = db.evidence_timeline(
-                category=params.category, min_relevance=params.min_relevance,
-            )
-            return json_response({"items": items, "total": len(items)})
-        return await run_with_db(deps, _work)
-
-    @mcp.tool(
-        name="evidence_categories",
-        annotations=deps.tool_annotations("Evidence Categories"),
-    )
-    async def evidence_categories() -> str:
-        """List all evidence categories with current item counts.
-
-        Returns all 10 canonical categories (bossing, harassment,
-        discrimination, retaliation, hostile_environment, micromanagement,
-        exclusion, gaslighting, workload, general) with counts.
-        """
-        return await run_with_db(deps, lambda db: json_response(db.evidence_categories()))

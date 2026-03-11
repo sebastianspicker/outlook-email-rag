@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from ..formatting import format_triage_results
 from ..mcp_models import (
     EmailIngestInput,
-    EmailSearchInput,
     EmailSearchStructuredInput,
-    EmailSearchThreadInput,
+    EmailTriageInput,
     ListSendersInput,
 )
 from .utils import ToolDepsProto, get_deps, json_error, json_response, run_with_retriever
@@ -41,21 +41,6 @@ def _build_search_kwargs(params: EmailSearchStructuredInput) -> dict:
         if getattr(params, field):
             kwargs[field] = True
     return kwargs
-
-
-async def email_search(params: EmailSearchInput) -> str:
-    """Search the email archive using natural language.
-
-    Use for quick natural language queries without metadata filters.
-    For filtered searches (by sender, date, folder, etc.), use email_search_structured.
-    For auto-intent detection, use email_smart_search.
-    """
-    deps = _d()
-
-    def _run():
-        r = deps.get_retriever()
-        return deps.sanitize(r.format_results_for_claude(r.search(params.query, top_k=params.top_k)))
-    return await deps.offload(_run)
 
 
 async def email_list_senders(params: ListSendersInput) -> str:
@@ -102,11 +87,18 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
     def _run():
         from ..config import get_settings
 
+        settings = get_settings()
         r = deps.get_retriever()
+        effective_top_k = min(params.top_k, settings.mcp_max_search_results)
         search_kwargs = _build_search_kwargs(params)
+        search_kwargs["top_k"] = effective_top_k
         results = r.search_filtered(**search_kwargs)
+        scan_meta = None
+        if params.scan_id:
+            from ..scan_session import filter_seen
+            results, scan_meta = filter_seen(params.scan_id, results)
         payload = r.serialize_results(params.query, results)
-        payload["top_k"] = params.top_k
+        payload["top_k"] = effective_top_k
         payload["filters"] = {
             "sender": params.sender, "subject": params.subject,
             "folder": params.folder, "cc": params.cc, "to": params.to,
@@ -119,7 +111,15 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
             "attachment_name": params.attachment_name, "attachment_type": params.attachment_type,
             "category": params.category, "is_calendar": params.is_calendar,
         }
-        payload["model"] = get_settings().embedding_model
+        payload["model"] = settings.embedding_model
+        if scan_meta:
+            payload["_scan"] = scan_meta
+        if effective_top_k < params.top_k:
+            payload["_capped"] = {
+                "requested": params.top_k,
+                "effective": effective_top_k,
+                "profile": settings.mcp_model_profile,
+            }
         return json_response(payload)
     return await deps.offload(_run)
 
@@ -167,20 +167,68 @@ async def email_ingest(params: EmailIngestInput) -> str:
     return await _d().offload(_run)
 
 
-async def email_search_thread(params: EmailSearchThreadInput) -> str:
-    """Retrieve all emails in a conversation thread.
+def _archive_stats_hint(retriever) -> dict:
+    """Compact archive overview for triage results (total emails, date range, senders)."""
+    try:
+        s = retriever.stats()
+        dr = s.get("date_range", {})
+        return {
+            "total_emails": s.get("total_emails", 0),
+            "date_range": f"{dr.get('earliest', '?')} to {dr.get('latest', '?')}",
+            "unique_senders": s.get("unique_senders", 0),
+        }
+    except Exception:
+        return {}
 
-    Given a ``conversation_id`` (from a previous search result), returns all
-    emails in that thread sorted by date.
+
+async def email_triage(params: EmailTriageInput) -> str:
+    """Fast triage scan: ultra-compact results, high recall, up to 100 emails.
+
+    Returns minimal JSON per result (uid, sender, date, subject, score, preview).
+    Always uses query expansion for maximum recall. Issue 3-5 triage calls
+    with different queries in one message for pseudo-parallel scanning.
     """
     deps = _d()
 
     def _run():
+        from ..config import get_settings
+
+        settings = get_settings()
         r = deps.get_retriever()
-        results = r.search_by_thread(conversation_id=params.conversation_id, top_k=params.top_k)
-        if not results:
-            return "No emails found for this conversation thread."
-        return deps.sanitize(r.format_results_for_claude(results))
+        effective_top_k = min(params.top_k, settings.mcp_max_triage_results)
+        kwargs: dict = {"query": params.query, "top_k": effective_top_k, "expand_query": True}
+        if params.sender:
+            kwargs["sender"] = params.sender
+        if params.date_from:
+            kwargs["date_from"] = params.date_from
+        if params.date_to:
+            kwargs["date_to"] = params.date_to
+        if params.folder:
+            kwargs["folder"] = params.folder
+        if params.has_attachments is not None:
+            kwargs["has_attachments"] = params.has_attachments
+        if params.hybrid:
+            kwargs["hybrid"] = True
+        results = r.search_filtered(**kwargs)
+        scan_meta = None
+        if params.scan_id:
+            from ..scan_session import filter_seen
+            results, scan_meta = filter_seen(params.scan_id, results)
+        triage = format_triage_results(results, preview_chars=params.preview_chars)
+        archive = _archive_stats_hint(r)
+        payload = {
+            "query": params.query, "count": len(triage),
+            "archive": archive, "results": triage,
+        }
+        if scan_meta:
+            payload["_scan"] = scan_meta
+        if effective_top_k < params.top_k:
+            payload["_capped"] = {
+                "requested": params.top_k,
+                "effective": effective_top_k,
+                "profile": settings.mcp_model_profile,
+            }
+        return json_response(payload)
     return await deps.offload(_run)
 
 
@@ -190,10 +238,11 @@ def register(mcp_instance, deps) -> None:
     _deps = deps
 
     ann = deps.tool_annotations
-    mcp_instance.tool(name="email_search", annotations=ann("Search Emails"))(email_search)
+    # email_search removed — subsumed by email_search_structured (no filters = same)
     mcp_instance.tool(name="email_list_senders", annotations=ann("List Email Senders"))(email_list_senders)
     mcp_instance.tool(name="email_stats", annotations=ann("Email Archive Stats"))(email_stats)
     mcp_instance.tool(name="email_search_structured", annotations=ann("Search Emails (Structured JSON)"))(email_search_structured)
     mcp_instance.tool(name="email_list_folders", annotations=ann("List Email Folders"))(email_list_folders)
     mcp_instance.tool(name="email_ingest", annotations=deps.idempotent_write_annotations("Ingest Email Archive"))(email_ingest)
-    mcp_instance.tool(name="email_search_thread", annotations=ann("Search Email Thread"))(email_search_thread)
+    # email_search_thread removed — subsumed by email_thread_lookup in threads.py
+    mcp_instance.tool(name="email_triage", annotations=ann("Fast Triage Scan"))(email_triage)
