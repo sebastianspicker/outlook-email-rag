@@ -31,8 +31,19 @@ data/*.olm
 data/chromadb/
 data/email_metadata.db
 
-# Environment
+# Environment & secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.json
+service_account.json
+*_secret*.json
 
 # Personal Claude instructions (not for public repo)
 CLAUDE.personal.md
