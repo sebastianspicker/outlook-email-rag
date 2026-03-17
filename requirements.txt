@@ -33,3 +33,9 @@ textstat>=0.7.0
 python-dotenv>=1.0.0
 rich>=13.0.0
 streamlit>=1.40.0
+
+# Security: minimum versions for transitive deps with known CVEs
+# PyJWT CVE-2026-32597: missing crit header validation — fix in 2.12.0 (required by mcp)
+PyJWT>=2.12.0
+# tornado CVE-2026-31958/GHSA-78cv-mqj4-43f7: cookie injection + multipart DoS — fix in 6.5.5 (required by streamlit)
+tornado>=6.5.5

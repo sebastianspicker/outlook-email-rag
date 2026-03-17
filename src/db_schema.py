@@ -7,6 +7,17 @@ import sqlite3
 
 logger = logging.getLogger(__name__)
 
+
+def _escape_like(text: str) -> str:
+    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``) for use with ESCAPE '\\'."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _table_columns(cur: sqlite3.Cursor, table: str) -> set[str]:
+    """Return the set of column names for *table* using PRAGMA table_info."""
+    return {row[1] for row in cur.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
 _SCHEMA_VERSION = 9
 
 _SCHEMA_SQL = """\
@@ -263,10 +274,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 def _migrate_to_v3(cur: sqlite3.Cursor) -> None:
     """Add body_text and body_html columns (schema v3)."""
-    existing = {
-        row[1]
-        for row in cur.execute("PRAGMA table_info(emails)").fetchall()
-    }
+    existing = _table_columns(cur, "emails")
     if "body_text" not in existing:
         cur.execute("ALTER TABLE emails ADD COLUMN body_text TEXT")
         logger.info("Schema migration v3: added body_text column")
@@ -277,19 +285,19 @@ def _migrate_to_v3(cur: sqlite3.Cursor) -> None:
 
 def _migrate_to_v4(cur: sqlite3.Cursor) -> None:
     """Add chain-of-custody columns and tables (schema v4)."""
-    ir_cols = {row[1] for row in cur.execute("PRAGMA table_info(ingestion_runs)").fetchall()}
+    ir_cols = _table_columns(cur, "ingestion_runs")
     if "olm_sha256" not in ir_cols:
         cur.execute("ALTER TABLE ingestion_runs ADD COLUMN olm_sha256 TEXT")
         cur.execute("ALTER TABLE ingestion_runs ADD COLUMN file_size_bytes INTEGER")
         cur.execute("ALTER TABLE ingestion_runs ADD COLUMN custodian TEXT DEFAULT 'system'")
         logger.info("Schema migration v4: added ingestion_runs custody columns")
 
-    em_cols = {row[1] for row in cur.execute("PRAGMA table_info(emails)").fetchall()}
+    em_cols = _table_columns(cur, "emails")
     if "content_sha256" not in em_cols:
         cur.execute("ALTER TABLE emails ADD COLUMN content_sha256 TEXT")
         logger.info("Schema migration v4: added emails.content_sha256")
 
-    ev_cols = {row[1] for row in cur.execute("PRAGMA table_info(evidence_items)").fetchall()}
+    ev_cols = _table_columns(cur, "evidence_items")
     if "content_hash" not in ev_cols:
         cur.execute("ALTER TABLE evidence_items ADD COLUMN content_hash TEXT")
         cur.execute("ALTER TABLE evidence_items ADD COLUMN ingestion_run_id INTEGER")
@@ -315,10 +323,7 @@ def _migrate_to_v6(cur: sqlite3.Cursor) -> None:
 
 def _migrate_to_v7(cur: sqlite3.Cursor) -> None:
     """Add categories, calendar, thread_topic, references_json columns + tables (schema v7)."""
-    existing = {
-        row[1]
-        for row in cur.execute("PRAGMA table_info(emails)").fetchall()
-    }
+    existing = _table_columns(cur, "emails")
     new_cols = {
         "categories": "TEXT",
         "thread_topic": "TEXT",
@@ -342,10 +347,7 @@ def _migrate_to_v7(cur: sqlite3.Cursor) -> None:
 
 def _migrate_to_v8(cur: sqlite3.Cursor) -> None:
     """Add language detection and sentiment analysis columns (schema v8)."""
-    existing = {
-        row[1]
-        for row in cur.execute("PRAGMA table_info(emails)").fetchall()
-    }
+    existing = _table_columns(cur, "emails")
     new_cols = {
         "detected_language": "TEXT",
         "sentiment_label": "TEXT",
@@ -365,10 +367,7 @@ def _migrate_to_v8(cur: sqlite3.Cursor) -> None:
 
 def _migrate_to_v9(cur: sqlite3.Cursor) -> None:
     """Add ingestion_run_id to emails for provenance tracking (schema v9)."""
-    existing = {
-        row[1]
-        for row in cur.execute("PRAGMA table_info(emails)").fetchall()
-    }
+    existing = _table_columns(cur, "emails")
     if "ingestion_run_id" not in existing:
         cur.execute("ALTER TABLE emails ADD COLUMN ingestion_run_id INTEGER")
         logger.info("Schema migration v9: added emails.ingestion_run_id")

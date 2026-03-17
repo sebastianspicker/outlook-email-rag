@@ -179,9 +179,7 @@ def format_triage_results(
 def _as_list(value: Any) -> list[str]:
     if value is None:
         return []
-    if isinstance(value, list):
-        return [str(v) for v in value if v]
-    if isinstance(value, tuple):
+    if isinstance(value, (list, tuple)):
         return [str(v) for v in value if v]
     if isinstance(value, str):
         return [value] if value.strip() else []

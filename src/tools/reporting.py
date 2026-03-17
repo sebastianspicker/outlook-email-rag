@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from ..mcp_models import EmailReportInput
 from .utils import json_error, json_response, run_with_db
+
+logger = logging.getLogger(__name__)
 
 
 def register(mcp, deps) -> None:
@@ -44,7 +48,6 @@ def register(mcp, deps) -> None:
 def _writing_analysis(deps, db, sender, limit):
     """Run writing style analysis (extracted for clarity)."""
     from ..writing_analyzer import WritingAnalyzer
-    from .utils import json_error, json_response
 
     retriever = deps.get_retriever()
     analyzer = WritingAnalyzer()
@@ -56,6 +59,7 @@ def _writing_analysis(deps, db, sender, limit):
             )
             return [r.text for r in results if r.text]
         except Exception:
+            logger.debug("search_filtered failed for sender %r", sender_filter, exc_info=True)
             return []
 
     if sender:

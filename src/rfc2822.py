@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import email
+import email.policy
 import functools
 import re
 from email.utils import parsedate_to_datetime
@@ -68,9 +70,6 @@ def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
     headers from body at the first blank line, then handles MIME multipart
     and Content-Transfer-Encoding.
     """
-    import email
-    import email.policy
-
     try:
         msg = email.message_from_string(raw_source, policy=email.policy.default)
     except Exception:

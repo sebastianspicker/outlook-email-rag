@@ -39,16 +39,16 @@ def register(mcp, deps) -> None:
                         ORDER BY cnt DESC
                         """
                     ).fetchall()
-                    if rows:
-                        stats = [{"language": row["detected_language"], "count": row["cnt"]} for row in rows]
-                        return json_response({"languages": stats})
                 except sqlite3.OperationalError:
                     return json_error(
                         "Language columns not found. Run email_admin(action='reingest_analytics')."
                     )
-                return json_error(
-                    "No language data available. Run email_admin(action='reingest_analytics')."
-                )
+                if not rows:
+                    return json_error(
+                        "No language data available. Run email_admin(action='reingest_analytics')."
+                    )
+                stats = [{"language": row["detected_language"], "count": row["cnt"]} for row in rows]
+                return json_response({"languages": stats})
 
             if params.check == "sentiment":
                 try:
@@ -62,19 +62,19 @@ def register(mcp, deps) -> None:
                         ORDER BY cnt DESC
                         """
                     ).fetchall()
-                    if rows:
-                        stats = [
-                            {"sentiment": row["sentiment_label"], "count": row["cnt"], "avg_score": row["avg_score"]}
-                            for row in rows
-                        ]
-                        return json_response({"sentiments": stats})
                 except sqlite3.OperationalError:
                     return json_error(
                         "Sentiment columns not found. Run email_admin(action='reingest_analytics')."
                     )
-                return json_error(
-                    "No sentiment data available. Run email_admin(action='reingest_analytics')."
-                )
+                if not rows:
+                    return json_error(
+                        "No sentiment data available. Run email_admin(action='reingest_analytics')."
+                    )
+                stats = [
+                    {"sentiment": row["sentiment_label"], "count": row["cnt"], "avg_score": row["avg_score"]}
+                    for row in rows
+                ]
+                return json_response({"sentiments": stats})
 
             return json_error(
                 f"Invalid check: {params.check}. Use 'duplicates', 'languages', or 'sentiment'."

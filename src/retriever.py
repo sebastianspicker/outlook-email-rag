@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import collections
 import logging
-import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .config import get_settings, resolve_runtime_settings
@@ -34,6 +34,9 @@ _MAX_FETCH_ATTEMPTS = 6
 
 # Query embedding cache — avoids re-encoding identical queries
 _QUERY_CACHE_MAX = 128
+
+# BGE-M3 dense vector dimension — fallback when collection peek returns no embeddings
+_DEFAULT_EMBEDDING_DIM = 1024
 
 
 @dataclass
@@ -102,7 +105,7 @@ class EmailRetriever:
             self._email_db_checked = True
             settings = getattr(self, "settings", None)
             sqlite_path = getattr(settings, "sqlite_path", None) if settings else None
-            if sqlite_path and os.path.exists(sqlite_path):
+            if sqlite_path and Path(sqlite_path).exists():
                 from .email_db import EmailDatabase
 
                 self._email_db = EmailDatabase(sqlite_path)
@@ -495,7 +498,7 @@ class EmailRetriever:
         if peek and peek.get("embeddings") and len(peek["embeddings"]) > 0:
             dim = len(peek["embeddings"][0])
         else:
-            dim = 1024
+            dim = _DEFAULT_EMBEDDING_DIM
         inv_sqrt = 1.0 / (dim ** 0.5)
         dummy_embedding = [[inv_sqrt] * dim]
 
@@ -766,7 +769,7 @@ class EmailRetriever:
             entry_tokens = estimate_tokens(str(d))
             if max_response_tokens > 0 and cumulative_tokens + entry_tokens > max_response_tokens and out:
                 remaining = len(results) - len(out)
-                out.append({"note": f"{remaining} more result(s) omitted — narrow your search or use email_get_full"})
+                out.append({"note": f"{remaining} more result(s) omitted — narrow your search or use email_deep_context"})
                 break
             out.append(d)
             cumulative_tokens += entry_tokens

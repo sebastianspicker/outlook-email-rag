@@ -174,30 +174,19 @@ def resolve_runtime_settings(
     sqlite_path: str | None = None,
 ) -> Settings:
     """Derive runtime settings from env defaults with optional overrides."""
+    from dataclasses import replace
+
     base = get_settings()
-    return Settings(
-        chromadb_path=chromadb_path or base.chromadb_path,
-        sqlite_path=sqlite_path or base.sqlite_path,
-        embedding_model=embedding_model or base.embedding_model,
-        collection_name=collection_name or base.collection_name,
-        top_k=base.top_k,
-        log_level=base.log_level,
-        rerank_enabled=base.rerank_enabled,
-        rerank_model=base.rerank_model,
-        hybrid_enabled=base.hybrid_enabled,
-        device=base.device,
-        sparse_enabled=base.sparse_enabled,
-        colbert_rerank_enabled=base.colbert_rerank_enabled,
-        embedding_batch_size=base.embedding_batch_size,
-        mps_float16=base.mps_float16,
-        mcp_max_body_chars=base.mcp_max_body_chars,
-        mcp_max_response_tokens=base.mcp_max_response_tokens,
-        mcp_max_full_body_chars=base.mcp_max_full_body_chars,
-        mcp_max_json_response_chars=base.mcp_max_json_response_chars,
-        mcp_model_profile=base.mcp_model_profile,
-        mcp_max_triage_results=base.mcp_max_triage_results,
-        mcp_max_search_results=base.mcp_max_search_results,
-    )
+    overrides: dict[str, str] = {}
+    if chromadb_path:
+        overrides["chromadb_path"] = chromadb_path
+    if sqlite_path:
+        overrides["sqlite_path"] = sqlite_path
+    if embedding_model:
+        overrides["embedding_model"] = embedding_model
+    if collection_name:
+        overrides["collection_name"] = collection_name
+    return replace(base, **overrides)
 
 
 def configure_logging(level: str | None = None) -> None:

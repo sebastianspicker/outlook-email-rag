@@ -6,12 +6,9 @@ import logging
 import sqlite3
 from typing import TYPE_CHECKING
 
+from .db_schema import _escape_like
+
 logger = logging.getLogger(__name__)
-
-
-def _escape_like(text: str) -> str:
-    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class EvidenceMixin:

@@ -394,177 +394,132 @@ Ingest my new export at data/latest-export.olm
 
 When you ask a question like *"Find emails about the Q3 budget from finance"*, Claude:
 
-1. Picks the `email_search_structured` tool (or `email_smart_search` for auto-routing)
+1. Picks the most appropriate tool — typically `email_triage` for broad scans or `email_search_structured` for filtered searches
 2. Sends parameters like `query="Q3 budget"`, `sender="finance"` to the MCP server
 3. The server runs a semantic vector search in ChromaDB, filters by sender, deduplicates, and formats results
 4. Claude reads the results and gives you a sourced answer
 
 You never need to remember tool names or parameters — Claude handles that automatically.
 
-### Available MCP Tools (70)
+### Available MCP Tools (46)
 
-Claude picks the right tool automatically, but here's the full reference:
+Claude picks the right tool automatically. For detailed parameter reference, see [docs/CLAUDE-TOOLS.md](docs/CLAUDE-TOOLS.md).
 
-#### Core Search (5)
-
-| Tool | What it does |
-|------|-------------|
-| `email_search` | Semantic search across all emails |
-| `email_search_structured` | Power search with all filters: sender, subject, folder, CC, To, BCC, dates, attachments, attachment name/type, priority, email type, topic, cluster, reranking, hybrid search |
-| `email_search_thread` | Retrieve all emails in a conversation thread |
-| `email_smart_search` | Intelligent search that auto-routes based on query analysis |
-| `email_find_similar` | Find emails most similar to a given email or text |
-
-#### Archive Info (4)
+#### Search & Triage (6)
 
 | Tool | What it does |
 |------|-------------|
-| `email_list_senders` | List the most frequent senders in your archive |
-| `email_list_folders` | List all folders with email counts |
-| `email_stats` | Archive statistics (total emails, date range, senders, folders) |
-| `email_query_suggestions` | Get search suggestions based on indexed data |
+| `email_triage` | Fast scan: up to 100 ultra-compact results (~80 tokens each). Issue 3–5 calls with different queries; pass `scan_id` to auto-deduplicate across calls |
+| `email_search_structured` | Semantic search with the full filter set: sender, date, folder, CC/To/BCC, attachments, priority, topic, cluster, hybrid search, reranking, query expansion |
+| `email_find_similar` | Find emails most similar to a given email UID or text snippet |
+| `email_search_by_entity` | Find emails mentioning a specific entity (person, org, URL, phone) |
+| `email_thread_lookup` | Retrieve all emails in a thread by `conversation_id` or `thread_topic` |
+| `email_scan` | Manage progressive scan sessions (status/flag/candidates/reset) |
 
-#### Email Reading & Export (3)
-
-| Tool | What it does |
-|------|-------------|
-| `email_get_full` | Get a single email with its complete body text |
-| `email_browse` | Browse emails in pages for systematic review (with filters) |
-| `email_export` | Export a single email (by UID) or conversation thread (by conversation_id) as HTML or PDF |
-
-#### Ingestion (1)
+#### Reading & Browsing (3)
 
 | Tool | What it does |
 |------|-------------|
-| `email_ingest` | Trigger ingestion of an `.olm` file from within Claude (supports `extract_attachments` and `embed_images`) |
+| `email_deep_context` | Full body text + thread summary + existing evidence + sender stats in one call |
+| `email_browse` | Page through emails with filters; `list_categories=True` lists Outlook categories; `is_calendar=True` browses meeting emails |
+| `email_export` | Export a single email (by `uid`) or full thread (by `conversation_id`) as HTML or PDF |
 
-#### Diagnostics (5)
-
-| Tool | What it does |
-|------|-------------|
-| `email_diagnostics` | Show embedding model, backend, device, sparse/ColBERT status, and sparse index info |
-| `email_reembed` | Rebuild ChromaDB embeddings from corrected body text in SQLite |
-| `email_reingest_bodies` | Backfill full body text for emails missing it in SQLite |
-| `email_reingest_metadata` | Backfill v7 metadata (categories, thread topics, calendar, references, attachments) |
-| `email_reingest_analytics` | Backfill language detection and sentiment analysis for emails missing analytics |
-
-#### Categories & Calendar (2)
+#### Archive Info (3)
 
 | Tool | What it does |
 |------|-------------|
-| `email_list_categories` | List all Outlook categories with email counts |
-| `email_browse_calendar` | Browse calendar/meeting emails with date filtering |
+| `email_stats` | Archive statistics: total emails, date range, top senders, folders |
+| `email_list_senders` | Top senders by frequency |
+| `email_list_folders` | All folders with email counts |
 
-#### Attachments (3)
-
-| Tool | What it does |
-|------|-------------|
-| `email_search_by_attachment` | Find emails with attachments matching criteria (filename, extension, MIME type) |
-| `email_list_attachments` | Browse all attachments with filters and pagination |
-| `email_attachment_stats` | Aggregate attachment statistics: counts, sizes, type distribution |
-
-#### Network Analysis (3)
+#### Thread Intelligence (3)
 
 | Tool | What it does |
 |------|-------------|
-| `email_top_contacts` | Find top communication partners for an email address |
-| `email_communication_between` | Get bidirectional stats between two email addresses |
-| `email_network_analysis` | Centrality, communities, and bridge nodes in your network |
+| `email_thread_summary` | Extractive summary of a conversation thread |
+| `email_action_items` | Extract action items and assignments from threads or recent emails |
+| `email_decisions` | Extract decisions made in email threads |
 
-#### Temporal Analysis (3)
-
-| Tool | What it does |
-|------|-------------|
-| `email_volume_over_time` | Email volume grouped by day, week, or month |
-| `email_activity_pattern` | Activity heatmap: hour-of-day vs day-of-week |
-| `email_response_times` | Average response times per sender (in hours) |
-
-#### Entity & NLP (5)
+#### Topics & Clusters (3)
 
 | Tool | What it does |
 |------|-------------|
-| `email_search_by_entity` | Find emails mentioning a specific entity |
-| `email_list_entities` | List most frequently mentioned entities |
-| `email_entity_network` | Find entities that co-occur in the same emails |
-| `email_find_people` | Search emails by person name mentioned in body |
-| `email_entity_timeline` | Show how often an entity appears over time |
+| `email_topics` | Discovered topic labels with email counts; set `topic_id` to list emails in a topic |
+| `email_clusters` | Email clusters with sizes; set `cluster_id` to list emails in a cluster |
+| `email_discovery` | `mode='keywords'` for top TF-IDF keywords; `mode='suggestions'` for search suggestions |
 
-#### Thread Intelligence (4)
+#### Entities (3)
 
 | Tool | What it does |
 |------|-------------|
-| `email_thread_summary` | Summarize a conversation thread (extractive) |
-| `email_action_items` | Extract action items from threads or recent emails |
-| `email_decisions` | Extract decisions from email threads |
-| `email_search_by_thread_topic` | Find all emails sharing a thread topic |
+| `email_list_entities` | Most frequently mentioned entities with counts |
+| `email_entity_network` | Entities that co-occur in the same emails |
+| `email_entity_timeline` | Track how often an entity appears over time |
 
-#### Topics & Clusters (5)
-
-| Tool | What it does |
-|------|-------------|
-| `email_topics` | List discovered topics with labels and email counts |
-| `email_search_by_topic` | Find emails assigned to a specific topic |
-| `email_keywords` | Top keywords across archive or filtered by sender/folder |
-| `email_clusters` | List email clusters with sizes and representative subjects |
-| `email_cluster_emails` | Get emails in a specific cluster |
-
-#### Data Quality (3)
+#### Attachments (1)
 
 | Tool | What it does |
 |------|-------------|
-| `email_find_duplicates` | Find near-duplicate emails using n-gram similarity |
-| `email_language_stats` | Language distribution across all indexed emails |
-| `email_sentiment_overview` | Sentiment distribution across indexed emails |
+| `email_attachments` | `mode='list'` to browse, `mode='search'` to find emails with matching attachments, `mode='stats'` for aggregate stats (counts, sizes, type distribution) |
 
-#### Reporting & Export (3)
+#### Temporal Analysis (1)
 
 | Tool | What it does |
 |------|-------------|
-| `email_generate_report` | Generate a self-contained HTML report of the archive |
-| `email_export_network` | Export communication network as GraphML |
-| `email_writing_analysis` | Analyze writing style and readability across senders |
+| `email_temporal` | `analysis='volume'` for trends (day/week/month); `analysis='activity'` for hour×day heatmap; `analysis='response_times'` for average response times per sender |
 
-#### Evidence Management (12)
+#### Data Quality (1)
 
 | Tool | What it does |
 |------|-------------|
-| `evidence_add` | Add an evidence item linked to an email (with auto-verification) |
+| `email_quality` | `check='duplicates'` for near-duplicate pairs; `check='languages'` for language distribution; `check='sentiment'` for sentiment overview |
+
+#### Network & Relationships (6)
+
+| Tool | What it does |
+|------|-------------|
+| `email_network_analysis` | Centrality metrics, communities, and bridge nodes in the communication graph |
+| `email_contacts` | Top contacts for an address; set `compare_with` for bidirectional stats between two addresses |
+| `relationship_paths` | Communication paths between two people through intermediaries |
+| `shared_recipients` | Recipients who received emails from multiple specified senders |
+| `coordinated_timing` | Time windows where multiple senders were simultaneously active |
+| `relationship_summary` | One-call profile: top contacts, community, bridge score, send/receive counts |
+
+#### Evidence (9)
+
+| Tool | What it does |
+|------|-------------|
+| `evidence_add` | Add an evidence item with auto-verification of the quote against the source email |
 | `evidence_add_batch` | Add up to 20 evidence items in one call |
-| `evidence_list` | List/filter evidence items by category, relevance, or email |
+| `evidence_query` | List or search evidence items; set `query` for text search, `sort='date'` for timeline view |
 | `evidence_get` | Get a single evidence item with full details |
 | `evidence_update` | Update category, quote, summary, relevance, or notes |
 | `evidence_remove` | Remove an evidence item |
-| `evidence_search` | Search within evidence items by text (quote, summary, notes) |
-| `evidence_verify` | Re-verify all quotes against source email body text |
-| `evidence_export` | Export evidence as HTML report or CSV for a lawyer |
-| `evidence_stats` | Get evidence collection statistics |
-| `evidence_timeline` | View evidence chronologically for narrative building |
-| `evidence_categories` | List all 10 canonical categories with counts |
+| `evidence_verify` | Re-verify all quotes against current source email body text |
+| `evidence_overview` | Combined statistics and category breakdown |
+| `evidence_export` | Export evidence as HTML report or CSV |
 
-#### Chain of Custody (3)
+#### Dossier & Chain of Custody (4)
 
 | Tool | What it does |
 |------|-------------|
-| `custody_chain` | View chain-of-custody audit trail with optional filters |
-| `email_provenance` | Full provenance: OLM source hash, ingestion run, custody events |
-| `evidence_provenance` | Full evidence chain: item details + source email provenance + history |
+| `email_dossier` | Proof dossier (HTML/PDF) combining evidence, emails, relationships, and custody chain; set `preview_only=True` to check scope first |
+| `custody_chain` | View the audit trail filtered by email UID, event type, or date range |
+| `email_provenance` | Full provenance for an email: OLM source hash, ingestion run, custody events |
+| `evidence_provenance` | Full chain for an evidence item: details + source email provenance + history |
 
-#### Relationship Analysis (4)
-
-| Tool | What it does |
-|------|-------------|
-| `relationship_paths` | Find communication paths between two people through intermediaries |
-| `shared_recipients` | Identify recipients common to multiple senders |
-| `coordinated_timing` | Detect time windows where multiple senders were active simultaneously |
-| `relationship_summary` | One-call profile: top contacts, community, bridge score, send/receive ratio |
-
-#### Proof Dossier (2)
+#### Reporting (1)
 
 | Tool | What it does |
 |------|-------------|
-| `dossier_generate` | Generate comprehensive proof dossier as HTML/PDF (evidence + emails + relationships + custody) |
-| `dossier_preview` | Preview dossier contents (counts, categories, date range) without generating |
+| `email_report` | `type='archive'` for an HTML overview report; `type='network'` for a GraphML export; `type='writing'` for writing style metrics per sender |
 
+#### Ingestion & Admin (2)
+
+| Tool | What it does |
+|------|-------------|
+| `email_ingest` | Trigger ingestion of an `.olm` file from within Claude (supports `extract_attachments`, `embed_images`) |
+| `email_admin` | Diagnostics and maintenance: `action='diagnostics'` shows model/device/backend info; `action='reembed/reingest_bodies/reingest_metadata/reingest_analytics'` backfills missing data |
 ### Registering in other Claude environments
 
 If you want to use the MCP server outside the project directory (for example, from a global Claude Code config or the Claude desktop app), you need to use **absolute paths**:
@@ -1092,7 +1047,7 @@ pip install -r requirements-dev.txt
 # or with pip install -e .[dev]
 
 ruff check .          # linting
-pytest -q             # tests (1200+ tests)
+pytest -q             # tests (1342+)
 bandit -r src -q      # security scan
 ```
 

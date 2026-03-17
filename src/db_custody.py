@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 
@@ -148,8 +149,6 @@ class CustodyMixin:
         custodian: str = "system",
     ) -> int:
         """Record the start of an ingestion run. Returns run ID."""
-        from datetime import datetime, timezone
-
         cur = self.conn.execute(
             """INSERT INTO ingestion_runs(olm_path, started_at, olm_sha256, file_size_bytes, custodian)
                VALUES(?, ?, ?, ?, ?)""",
@@ -181,8 +180,6 @@ class CustodyMixin:
 
     def record_ingestion_complete(self, run_id: int, stats: dict) -> None:
         """Record the completion of an ingestion run."""
-        from datetime import datetime, timezone
-
         self.conn.execute(
             "UPDATE ingestion_runs SET completed_at=?, emails_parsed=?, emails_inserted=?, status='completed' WHERE id=?",
             (

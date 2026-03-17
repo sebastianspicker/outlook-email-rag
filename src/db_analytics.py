@@ -27,13 +27,10 @@ class AnalyticsMixin:
 
         Each tuple: (email_uid, cluster_id, distance_to_centroid).
         """
-        cur = self.conn.cursor()
-        for uid, cluster_id, distance in assignments:
-            cur.execute(
-                """INSERT OR REPLACE INTO email_clusters(email_uid, cluster_id, distance)
-                   VALUES(?, ?, ?)""",
-                (uid, cluster_id, distance),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO email_clusters(email_uid, cluster_id, distance) VALUES(?, ?, ?)",
+            assignments,
+        )
         self.conn.commit()
 
     def insert_cluster_info(self, clusters: list[dict]) -> None:
@@ -41,13 +38,10 @@ class AnalyticsMixin:
 
         Each dict: {cluster_id, size, representative_uid, label}.
         """
-        cur = self.conn.cursor()
-        for c in clusters:
-            cur.execute(
-                """INSERT OR REPLACE INTO cluster_info(cluster_id, size, representative_uid, label)
-                   VALUES(?, ?, ?, ?)""",
-                (c["cluster_id"], c["size"], c.get("representative_uid"), c.get("label")),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO cluster_info(cluster_id, size, representative_uid, label) VALUES(?, ?, ?, ?)",
+            [(c["cluster_id"], c["size"], c.get("representative_uid"), c.get("label")) for c in clusters],
+        )
         self.conn.commit()
 
     def emails_in_cluster(self, cluster_id: int, limit: int = 50) -> list[dict]:
@@ -82,13 +76,10 @@ class AnalyticsMixin:
         self, email_uid: str, keywords: list[tuple[str, float]]
     ) -> None:
         """Insert keyword/score pairs for an email."""
-        cur = self.conn.cursor()
-        for keyword, score in keywords:
-            cur.execute(
-                """INSERT OR REPLACE INTO email_keywords(email_uid, keyword, score)
-                   VALUES(?, ?, ?)""",
-                (email_uid, keyword, score),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO email_keywords(email_uid, keyword, score) VALUES(?, ?, ?)",
+            [(email_uid, keyword, score) for keyword, score in keywords],
+        )
         self.conn.commit()
 
     def insert_topics(self, topics: list[dict]) -> None:
@@ -96,25 +87,20 @@ class AnalyticsMixin:
 
         Each dict: {id: int, label: str, top_words: list[str]}.
         """
-        cur = self.conn.cursor()
-        for topic in topics:
-            cur.execute(
-                "INSERT OR REPLACE INTO topics(id, label, top_words) VALUES(?, ?, ?)",
-                (topic["id"], topic["label"], json.dumps(topic["top_words"])),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO topics(id, label, top_words) VALUES(?, ?, ?)",
+            [(t["id"], t["label"], json.dumps(t["top_words"])) for t in topics],
+        )
         self.conn.commit()
 
     def insert_email_topics_batch(
         self, email_uid: str, topic_weights: list[tuple[int, float]]
     ) -> None:
         """Insert topic assignments for an email."""
-        cur = self.conn.cursor()
-        for topic_id, weight in topic_weights:
-            cur.execute(
-                """INSERT OR REPLACE INTO email_topics(email_uid, topic_id, weight)
-                   VALUES(?, ?, ?)""",
-                (email_uid, topic_id, weight),
-            )
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO email_topics(email_uid, topic_id, weight) VALUES(?, ?, ?)",
+            [(email_uid, topic_id, weight) for topic_id, weight in topic_weights],
+        )
         self.conn.commit()
 
     def top_keywords(

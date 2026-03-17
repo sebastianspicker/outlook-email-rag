@@ -251,6 +251,35 @@ def _exchange_entities_from_email(email: Any) -> list[tuple[str, str, str]]:
     return entities
 
 
+def _resolve_entity_extractor(extract_entities: bool, dry_run: bool) -> Any:
+    """Return the appropriate entity extractor callable, or None if not needed.
+
+    Tries spaCy (NLP + regex) first, downloading models if needed.
+    Falls back to regex-only if spaCy is unavailable.
+    Returns None when ``extract_entities`` is False or ``dry_run`` is True.
+    """
+    if not extract_entities or dry_run:
+        return None
+    try:
+        from .nlp_entity_extractor import extract_nlp_entities, is_spacy_available
+
+        if not is_spacy_available():
+            _auto_download_spacy_models()
+            from .nlp_entity_extractor import reset_model_cache
+            reset_model_cache()
+
+        if is_spacy_available():
+            logger.info("Entity extraction: spaCy NLP + regex (enhanced)")
+            return extract_nlp_entities
+        from .entity_extractor import extract_entities as _extract_entities
+        logger.info("Entity extraction: regex-only (spaCy models not available)")
+        return _extract_entities
+    except ImportError:
+        from .entity_extractor import extract_entities as _extract_entities
+        logger.info("Entity extraction: regex-only")
+        return _extract_entities
+
+
 def _hash_file_sha256(filepath: str) -> str:
     """Compute SHA-256 hash of a file using streaming reads."""
     h = hashlib.sha256()
@@ -380,31 +409,7 @@ def ingest(
         embedder.set_sparse_db(email_db)
 
     # Entity extractor — prefer NLP (spaCy) if available, fall back to regex
-    entity_extractor_fn: Any = None
-    if extract_entities and not dry_run:
-        try:
-            from .nlp_entity_extractor import extract_nlp_entities, is_spacy_available
-
-            if not is_spacy_available():
-                _auto_download_spacy_models()
-                # Re-check after download attempt
-                from .nlp_entity_extractor import reset_model_cache
-
-                reset_model_cache()
-
-            if is_spacy_available():
-                entity_extractor_fn = extract_nlp_entities
-                logger.info("Entity extraction: spaCy NLP + regex (enhanced)")
-            else:
-                from .entity_extractor import extract_entities as _extract_entities
-
-                entity_extractor_fn = _extract_entities
-                logger.info("Entity extraction: regex-only (spaCy models not available)")
-        except ImportError:
-            from .entity_extractor import extract_entities as _extract_entities
-
-            entity_extractor_fn = _extract_entities
-            logger.info("Entity extraction: regex-only")
+    entity_extractor_fn: Any = _resolve_entity_extractor(extract_entities, dry_run)
 
     attachment_extractor = None
     if extract_attachments:

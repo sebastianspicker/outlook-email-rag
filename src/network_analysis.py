@@ -97,6 +97,7 @@ class CommunicationNetwork:
             else:
                 betweenness = nx.betweenness_centrality(self._graph, weight="weight")
         except Exception:
+            logger.debug("betweenness_centrality failed", exc_info=True)
             betweenness = {}
         self._betweenness_cache[edge_count] = betweenness
         return betweenness
@@ -267,7 +268,7 @@ class CommunicationNetwork:
                 betweenness = self._get_betweenness(nx)
                 bridge_score = round(betweenness.get(email_address, 0.0), 4)
             except Exception:
-                pass
+                logger.debug("bridge_score failed for %r", email_address, exc_info=True)
 
             # Community
             try:
@@ -281,7 +282,7 @@ class CommunicationNetwork:
                         community = sorted(comm)
                         break
             except Exception:
-                pass
+                logger.debug("community detection failed for %r", email_address, exc_info=True)
 
             # Send/receive counts from graph edges
             send_count = sum(

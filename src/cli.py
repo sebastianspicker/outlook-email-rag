@@ -19,6 +19,7 @@ import json
 import logging
 import sys
 import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from dotenv import load_dotenv
@@ -1322,11 +1323,9 @@ def _render_results_table(console, table_cls, results) -> None:
 
 def _get_email_db():
     """Get EmailDatabase instance from settings, or exit with error."""
-    import os
-
     settings = get_settings()
     sqlite_path = settings.sqlite_path
-    if not sqlite_path or not os.path.exists(sqlite_path):
+    if not sqlite_path or not Path(sqlite_path).exists():
         print("SQLite database not found. Run ingestion first:")
         print("  python -m src.ingest data/your-export.olm --extract-entities")
         sys.exit(1)

@@ -173,12 +173,10 @@ def get_email_db():
     global _email_db
     with _email_db_lock:
         if _email_db is None:
-            import os
-
             from .email_db import EmailDatabase
 
             settings = get_settings()
-            if os.path.exists(settings.sqlite_path):
+            if Path(settings.sqlite_path).exists():
                 _email_db = EmailDatabase(settings.sqlite_path)
     return _email_db
 

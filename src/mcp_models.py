@@ -12,12 +12,24 @@ repeated ``model_config`` declarations:
 
 from __future__ import annotations
 
-from typing import Optional
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .validation import parse_iso_date
 from .validation import validate_date_window as ensure_valid_date_window
+
+
+def _validate_output_path(v: str | None) -> str | None:
+    """Reject null bytes and path-traversal components in output file paths."""
+    if v is None:
+        return v
+    if "\x00" in v:
+        raise ValueError("output_path must not contain null bytes")
+    if ".." in Path(v).parts:
+        raise ValueError("output_path must not traverse parent directories with '..'")
+    return v
+
 
 # ── Base Classes ─────────────────────────────────────────────
 
@@ -37,18 +49,18 @@ class PlainInput(BaseModel):
 class DateRangeInput(BaseModel):
     """Reusable date-range validation mixin for MCP inputs."""
 
-    date_from: Optional[str] = Field(
+    date_from: str | None = Field(
         default=None,
         description="Start date in YYYY-MM-DD format (inclusive). E.g., '2023-01-01'.",
     )
-    date_to: Optional[str] = Field(
+    date_to: str | None = Field(
         default=None,
         description="End date in YYYY-MM-DD format (inclusive). E.g., '2023-12-31'.",
     )
 
     @field_validator("date_from", "date_to")
     @classmethod
-    def validate_iso_date(cls, value: Optional[str]) -> Optional[str]:
+    def validate_iso_date(cls, value: str | None) -> str | None:
         if value is None:
             return value
         return parse_iso_date(value)
@@ -66,30 +78,22 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
     """Structured JSON search input for automation clients."""
 
     query: str = Field(..., min_length=1, max_length=500)
-    date_from: Optional[str] = Field(
-        default=None,
-        description="Start date in YYYY-MM-DD format (inclusive).",
-    )
-    date_to: Optional[str] = Field(
-        default=None,
-        description="End date in YYYY-MM-DD format (inclusive).",
-    )
     top_k: int = Field(default=10, ge=1, le=30)
-    sender: Optional[str] = Field(default=None)
-    subject: Optional[str] = Field(default=None)
-    folder: Optional[str] = Field(default=None)
-    cc: Optional[str] = Field(default=None, description="CC recipient filter (partial match).")
-    to: Optional[str] = Field(default=None, description="To recipient filter (partial match).")
-    bcc: Optional[str] = Field(default=None, description="BCC recipient filter (partial match).")
-    has_attachments: Optional[bool] = Field(default=None, description="Filter by attachment presence.")
-    priority: Optional[int] = Field(
+    sender: str | None = Field(default=None)
+    subject: str | None = Field(default=None)
+    folder: str | None = Field(default=None)
+    cc: str | None = Field(default=None, description="CC recipient filter (partial match).")
+    to: str | None = Field(default=None, description="To recipient filter (partial match).")
+    bcc: str | None = Field(default=None, description="BCC recipient filter (partial match).")
+    has_attachments: bool | None = Field(default=None, description="Filter by attachment presence.")
+    priority: int | None = Field(
         default=None, ge=0, description="Minimum priority level (emails with priority >= this value)."
     )
-    email_type: Optional[str] = Field(
+    email_type: str | None = Field(
         default=None,
         description="Filter by email type: 'reply', 'forward', or 'original'.",
     )
-    min_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    min_score: float | None = Field(default=None, ge=0.0, le=1.0)
     rerank: bool = Field(
         default=False,
         description="Re-rank results with cross-encoder for better precision (slower).",
@@ -98,11 +102,11 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
         default=False,
         description="Use hybrid semantic + BM25 keyword search for better recall.",
     )
-    topic_id: Optional[int] = Field(
+    topic_id: int | None = Field(
         default=None, ge=0,
         description="Filter to emails assigned to this topic (from email_topics tool).",
     )
-    cluster_id: Optional[int] = Field(
+    cluster_id: int | None = Field(
         default=None, ge=0,
         description="Filter to emails in this cluster (from email_clusters tool).",
     )
@@ -110,23 +114,23 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
         default=False,
         description="Expand query with semantically related terms for better recall.",
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         description="Filter by Outlook category name (partial match). E.g., 'Meeting'.",
     )
-    is_calendar: Optional[bool] = Field(
+    is_calendar: bool | None = Field(
         default=None,
         description="Filter by calendar/meeting messages. True = only calendar, False = exclude.",
     )
-    attachment_name: Optional[str] = Field(
+    attachment_name: str | None = Field(
         default=None,
         description="Filter by attachment filename (partial match). E.g., 'report' or 'budget.xlsx'.",
     )
-    attachment_type: Optional[str] = Field(
+    attachment_type: str | None = Field(
         default=None,
         description="Filter by attachment file extension. E.g., 'pdf', 'docx', 'xlsx'.",
     )
-    scan_id: Optional[str] = Field(
+    scan_id: str | None = Field(
         default=None, min_length=1, max_length=100,
         description="Scan session ID for progressive search. Excludes previously seen emails and tracks new ones.",
     )
@@ -135,10 +139,10 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
 class FindSimilarInput(StrictInput):
     """Input for finding similar emails."""
 
-    uid: Optional[str] = Field(default=None, description="Email UID to find similar emails for.")
-    query: Optional[str] = Field(default=None, description="Query text to find similar emails for.")
+    uid: str | None = Field(default=None, description="Email UID to find similar emails for.")
+    query: str | None = Field(default=None, description="Query text to find similar emails for.")
     top_k: int = Field(default=10, ge=1, le=50)
-    scan_id: Optional[str] = Field(
+    scan_id: str | None = Field(
         default=None, min_length=1, max_length=100,
         description="Scan session ID for progressive search. Excludes previously seen emails and tracks new ones.",
     )
@@ -159,14 +163,14 @@ class EmailTriageInput(DateRangeInput, StrictInput):
         default=200, ge=0, le=500,
         description="Body preview per result. 0=metadata only, 200=decide relevance, 500=extract quotes.",
     )
-    sender: Optional[str] = Field(default=None, description="Filter by sender (partial match).")
-    folder: Optional[str] = Field(default=None, description="Filter by folder name.")
-    has_attachments: Optional[bool] = Field(default=None)
+    sender: str | None = Field(default=None, description="Filter by sender (partial match).")
+    folder: str | None = Field(default=None, description="Filter by folder name.")
+    has_attachments: bool | None = Field(default=None)
     hybrid: bool = Field(
         default=False,
         description="Use hybrid semantic + keyword search for better recall.",
     )
-    scan_id: Optional[str] = Field(
+    scan_id: str | None = Field(
         default=None, min_length=1, max_length=100,
         description="Scan session ID for progressive search. Excludes previously seen emails and tracks new ones.",
     )
@@ -197,7 +201,7 @@ class EmailIngestInput(StrictInput):
         description="Absolute path to the .olm file to ingest.",
         min_length=1,
     )
-    max_emails: Optional[int] = Field(
+    max_emails: int | None = Field(
         default=None,
         description="Optional cap on number of emails to parse.",
         ge=1,
@@ -239,7 +243,7 @@ class EntitySearchInput(StrictInput):
     """Input for entity search."""
 
     entity: str = Field(..., description="Entity text to search for (partial match).", min_length=1)
-    entity_type: Optional[str] = Field(
+    entity_type: str | None = Field(
         default=None,
         description="Filter by entity type: 'organization', 'url', 'phone', 'email', 'person', 'event'.",
     )
@@ -249,7 +253,7 @@ class EntitySearchInput(StrictInput):
 class ListEntitiesInput(PlainInput):
     """Input for listing top entities."""
 
-    entity_type: Optional[str] = Field(
+    entity_type: str | None = Field(
         default=None, description="Filter by type: 'organization', 'url', 'phone', 'email', 'person', 'event'."
     )
     limit: int = Field(default=20, ge=1, le=100)
@@ -291,20 +295,20 @@ class ThreadSummaryInput(StrictInput):
 class ActionItemsInput(StrictInput):
     """Input for action item extraction."""
 
-    conversation_id: Optional[str] = Field(
+    conversation_id: str | None = Field(
         default=None, description="Thread ID. If omitted, scans recent emails."
     )
-    days: Optional[int] = Field(default=None, ge=1, le=365, description="Scan emails from last N days.")
+    days: int | None = Field(default=None, ge=1, le=365, description="Scan emails from last N days.")
     limit: int = Field(default=20, ge=1, le=100)
 
 
 class DecisionsInput(StrictInput):
     """Input for decision extraction."""
 
-    conversation_id: Optional[str] = Field(
+    conversation_id: str | None = Field(
         default=None, description="Thread ID to extract decisions from."
     )
-    days: Optional[int] = Field(default=None, ge=1, le=365)
+    days: int | None = Field(default=None, ge=1, le=365)
     limit: int = Field(default=30, ge=1, le=100)
 
 
@@ -317,17 +321,17 @@ class EmailExportInput(StrictInput):
     Provide exactly one of ``uid`` (single email) or ``conversation_id`` (thread).
     """
 
-    uid: Optional[str] = Field(
+    uid: str | None = Field(
         default=None,
         description="Email UID to export a single email.",
         min_length=1,
     )
-    conversation_id: Optional[str] = Field(
+    conversation_id: str | None = Field(
         default=None,
         description="Conversation thread ID to export a full thread.",
         min_length=1,
     )
-    output_path: Optional[str] = Field(
+    output_path: str | None = Field(
         default=None,
         description="File path to save export. If omitted, returns HTML string.",
     )
@@ -335,6 +339,11 @@ class EmailExportInput(StrictInput):
         default="html",
         description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
     )
+
+    @field_validator("output_path")
+    @classmethod
+    def validate_output_path(cls, v: str | None) -> str | None:
+        return _validate_output_path(v)
 
     @model_validator(mode="after")
     def exactly_one_id(self):
@@ -350,9 +359,9 @@ class BrowseInput(DateRangeInput, PlainInput):
 
     offset: int = Field(default=0, ge=0, description="Starting position.")
     limit: int = Field(default=10, ge=1, le=50, description="Emails per page.")
-    folder: Optional[str] = Field(default=None, description="Filter by folder (exact match).")
-    sender: Optional[str] = Field(default=None, description="Filter by sender (partial match).")
-    category: Optional[str] = Field(default=None, description="Filter by category (exact match).")
+    folder: str | None = Field(default=None, description="Filter by folder (exact match).")
+    sender: str | None = Field(default=None, description="Filter by sender (partial match).")
+    category: str | None = Field(default=None, description="Filter by category (exact match).")
     sort_order: str = Field(
         default="desc",
         description="Sort order: 'asc' (oldest first) or 'desc' (newest first).",
@@ -361,7 +370,7 @@ class BrowseInput(DateRangeInput, PlainInput):
         default=False,
         description="Include body text in results (default off to save context).",
     )
-    is_calendar: Optional[bool] = Field(
+    is_calendar: bool | None = Field(
         default=None,
         description="Filter by calendar/meeting messages. True = only calendar emails.",
     )
@@ -433,11 +442,11 @@ class EvidenceUpdateInput(StrictInput):
     """Input for updating an evidence item."""
 
     evidence_id: int = Field(..., ge=1, description="ID of the evidence item to update.")
-    category: Optional[str] = Field(default=None)
-    key_quote: Optional[str] = Field(default=None)
-    summary: Optional[str] = Field(default=None)
-    relevance: Optional[int] = Field(default=None, ge=1, le=5)
-    notes: Optional[str] = Field(default=None)
+    category: str | None = Field(default=None)
+    key_quote: str | None = Field(default=None)
+    summary: str | None = Field(default=None)
+    relevance: int | None = Field(default=None, ge=1, le=5)
+    notes: str | None = Field(default=None)
 
 
 class EvidenceRemoveInput(PlainInput):
@@ -457,13 +466,18 @@ class EvidenceExportInput(StrictInput):
         default="html",
         description="Output format: 'html', 'csv', or 'pdf' (pdf requires weasyprint).",
     )
-    min_relevance: Optional[int] = Field(
+    min_relevance: int | None = Field(
         default=None, ge=1, le=5,
         description="Only include items with this minimum relevance.",
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None, description="Only include items in this category."
     )
+
+    @field_validator("output_path")
+    @classmethod
+    def validate_output_path(cls, v: str) -> str:
+        return _validate_output_path(v)  # type: ignore[return-value]
 
 
 class EvidenceAddBatchInput(PlainInput):
@@ -563,15 +577,15 @@ class RelationshipSummaryInput(StrictInput):
 class CustodyChainInput(PlainInput):
     """Input for viewing chain-of-custody audit trail."""
 
-    target_type: Optional[str] = Field(
+    target_type: str | None = Field(
         default=None,
         description="Filter by target type: 'email', 'evidence', 'ingestion_run', 'export'.",
     )
-    target_id: Optional[str] = Field(
+    target_id: str | None = Field(
         default=None,
         description="Filter by target ID (e.g., email UID, evidence ID).",
     )
-    action: Optional[str] = Field(
+    action: str | None = Field(
         default=None,
         description=(
             "Filter by action type: 'ingest_start', 'evidence_add', "
@@ -614,7 +628,7 @@ class EmailClustersInput(PlainInput):
     Omit cluster_id to list all clusters; set it to list emails in that cluster.
     """
 
-    cluster_id: Optional[int] = Field(
+    cluster_id: int | None = Field(
         default=None, ge=0,
         description="Cluster ID. Omit to list all clusters; set to list emails in that cluster.",
     )
@@ -627,7 +641,7 @@ class EmailTopicsInput(PlainInput):
     Omit topic_id to list all topics; set it to list emails for that topic.
     """
 
-    topic_id: Optional[int] = Field(
+    topic_id: int | None = Field(
         default=None, ge=0,
         description="Topic ID. Omit to list all topics; set to list emails for that topic.",
     )
@@ -640,12 +654,12 @@ class EmailThreadLookupInput(StrictInput):
     Provide exactly one of conversation_id or thread_topic.
     """
 
-    conversation_id: Optional[str] = Field(
+    conversation_id: str | None = Field(
         default=None,
         description="Conversation thread ID from search results.",
         min_length=1,
     )
-    thread_topic: Optional[str] = Field(
+    thread_topic: str | None = Field(
         default=None,
         description="Thread topic string (exact match from OLM metadata).",
         min_length=1,
@@ -670,7 +684,7 @@ class EmailContactsInput(StrictInput):
     email_address: str = Field(
         ..., description="Email address to analyze.", min_length=1,
     )
-    compare_with: Optional[str] = Field(
+    compare_with: str | None = Field(
         default=None,
         description="Second email address for bidirectional stats. Omit for top contacts.",
         min_length=1,
@@ -684,7 +698,7 @@ class EvidenceQueryInput(PlainInput):
     Omit query to list; set query to search. Use sort='date' for timeline view.
     """
 
-    query: Optional[str] = Field(
+    query: str | None = Field(
         default=None,
         description="Text to search for across key_quote, summary, and notes. Omit to list all.",
         max_length=500,
@@ -693,11 +707,11 @@ class EvidenceQueryInput(PlainInput):
         default="relevance",
         description="Sort order: 'relevance' (default) or 'date' (chronological timeline).",
     )
-    category: Optional[str] = Field(default=None, description="Filter by category.")
-    min_relevance: Optional[int] = Field(
+    category: str | None = Field(default=None, description="Filter by category.")
+    min_relevance: int | None = Field(
         default=None, ge=1, le=5, description="Minimum relevance score.",
     )
-    email_uid: Optional[str] = Field(
+    email_uid: str | None = Field(
         default=None, description="Filter to evidence from a specific email.",
     )
     limit: int = Field(default=25, ge=1, le=200)
@@ -711,8 +725,8 @@ class EvidenceQueryInput(PlainInput):
 class EvidenceOverviewInput(PlainInput):
     """Input for evidence overview (stats + categories combined)."""
 
-    category: Optional[str] = Field(default=None, description="Filter stats by category.")
-    min_relevance: Optional[int] = Field(
+    category: str | None = Field(default=None, description="Filter stats by category.")
+    min_relevance: int | None = Field(
         default=None, ge=1, le=5, description="Filter stats by minimum relevance.",
     )
 
@@ -728,8 +742,8 @@ class EmailDiscoveryInput(StrictInput):
         ...,
         description="Discovery mode: 'keywords' or 'suggestions'.",
     )
-    sender: Optional[str] = Field(default=None, description="Filter keywords by sender email.")
-    folder: Optional[str] = Field(default=None, description="Filter keywords by folder name.")
+    sender: str | None = Field(default=None, description="Filter keywords by sender email.")
+    folder: str | None = Field(default=None, description="Filter keywords by folder name.")
     limit: int = Field(default=30, ge=1, le=200)
 
 
@@ -758,16 +772,21 @@ class EmailDossierInput(StrictInput):
     case_reference: str = Field(default="", description="Case reference number.")
     custodian: str = Field(default="", description="Name of the evidence custodian.")
     prepared_by: str = Field(default="", description="Name/role of preparer.")
-    min_relevance: Optional[int] = Field(
+    min_relevance: int | None = Field(
         default=None, ge=1, le=5,
         description="Only include evidence with this minimum relevance.",
     )
-    category: Optional[str] = Field(default=None, description="Only include this category.")
+    category: str | None = Field(default=None, description="Only include this category.")
     include_relationships: bool = Field(default=True, description="Include relationship analysis.")
     include_custody: bool = Field(default=True, description="Include chain-of-custody log.")
-    persons_of_interest: Optional[list[str]] = Field(
+    persons_of_interest: list[str] | None = Field(
         default=None, description="Email addresses to focus relationship analysis on.",
     )
+
+    @field_validator("output_path")
+    @classmethod
+    def validate_output_path(cls, v: str) -> str:
+        return _validate_output_path(v)  # type: ignore[return-value]
 
 
 # ── Merged Models (Phase 4) ──────────────────────────────────
@@ -789,7 +808,7 @@ class EmailTemporalInput(DateRangeInput, StrictInput):
         default="day",
         description="Aggregation period for volume: 'day', 'week', or 'month'.",
     )
-    sender: Optional[str] = Field(default=None, description="Filter by sender email.")
+    sender: str | None = Field(default=None, description="Filter by sender email.")
     limit: int = Field(default=20, ge=1, le=100, description="Max results for response_times.")
 
 
@@ -835,11 +854,16 @@ class EmailReportInput(StrictInput):
         default="Email Archive Report",
         description="Report title (for archive type).",
     )
-    sender: Optional[str] = Field(
+    sender: str | None = Field(
         default=None,
         description="Sender to analyze (for writing type). Omit to compare top senders.",
     )
     limit: int = Field(default=10, ge=1, le=50, description="Max results (for writing type).")
+
+    @field_validator("output_path")
+    @classmethod
+    def validate_output_path(cls, v: str) -> str:
+        return _validate_output_path(v)  # type: ignore[return-value]
 
 
 class EmailAttachmentsInput(StrictInput):
@@ -854,10 +878,10 @@ class EmailAttachmentsInput(StrictInput):
         ...,
         description="Attachment mode: 'list', 'search', or 'stats'.",
     )
-    filename: Optional[str] = Field(default=None, description="Filter by filename (partial match).")
-    extension: Optional[str] = Field(default=None, description="Filter by file extension, e.g. 'pdf'.")
-    mime_type: Optional[str] = Field(default=None, description="Filter by MIME type (partial match).")
-    sender: Optional[str] = Field(
+    filename: str | None = Field(default=None, description="Filter by filename (partial match).")
+    extension: str | None = Field(default=None, description="Filter by file extension, e.g. 'pdf'.")
+    mime_type: str | None = Field(default=None, description="Filter by MIME type (partial match).")
+    sender: str | None = Field(
         default=None,
         description="Filter by sender (partial match, list mode only).",
     )
@@ -882,7 +906,7 @@ class EmailAdminInput(StrictInput):
             "'reingest_metadata', or 'reingest_analytics'."
         ),
     )
-    olm_path: Optional[str] = Field(
+    olm_path: str | None = Field(
         default=None,
         description="Path to .olm file (required for reingest_bodies and reingest_metadata).",
         min_length=1,
@@ -919,20 +943,20 @@ class EmailScanInput(StrictInput):
         min_length=1,
         max_length=100,
     )
-    uids: Optional[list[str]] = Field(
+    uids: list[str] | None = Field(
         default=None,
         description="Email UIDs to flag (for action='flag'). Max 50 per call.",
         max_length=50,
     )
-    label: Optional[str] = Field(
+    label: str | None = Field(
         default=None,
         description="Label for flagging or filtering candidates (e.g., 'bossing', 'relevant', 'maybe').",
     )
-    phase: Optional[int] = Field(
+    phase: int | None = Field(
         default=None, ge=1, le=3,
         description="Phase marker: 1=scan, 2=refine, 3=deep.",
     )
-    score: Optional[float] = Field(
+    score: float | None = Field(
         default=None, ge=0.0, le=1.0,
         description="Relevance score to record with flagged candidates.",
     )

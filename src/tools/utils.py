@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def get_deps(deps: ToolDepsProto | None) -> ToolDepsProto:
     return deps
 
 
-async def run_with_db(deps, fn):
+async def run_with_db(deps: ToolDepsProto, fn: Callable) -> Any:
     """Offload ``fn(db)`` to a thread, returning DB_UNAVAILABLE if db is None."""
     def _run():
         db = deps.get_email_db()
@@ -55,7 +56,7 @@ async def run_with_db(deps, fn):
     return await deps.offload(_run)
 
 
-async def run_with_retriever(deps, fn):
+async def run_with_retriever(deps: ToolDepsProto, fn: Callable) -> Any:
     """Offload ``fn(retriever)`` to a thread."""
     return await deps.offload(lambda: fn(deps.get_retriever()))
 
@@ -79,10 +80,16 @@ def json_response(data, *, max_chars: int | None = None, **kwargs):
 
 
 def _truncate_json(data, raw: str, max_chars: int, **kwargs) -> str:
-    """Trim the largest list in *data* until the JSON fits *max_chars*."""
+    """Trim the largest list in *data* until the JSON fits *max_chars*.
+
+    Works on a shallow copy of *data* so the caller's dict is not mutated.
+    """
     if not isinstance(data, dict):
         # Can't intelligently trim non-dict responses — hard-truncate
         return raw[:max_chars] + '\n... [response truncated]'
+
+    # Work on a copy so we don't mutate the caller's dict
+    data = {**data}
 
     # Find the largest list value in the top-level dict
     largest_key = None
@@ -136,12 +143,12 @@ def _truncate_json(data, raw: str, max_chars: int, **kwargs) -> str:
     return result
 
 
-def json_error(message):
+def json_error(message: str) -> str:
     """Standardized error JSON."""
     return json.dumps({"error": message})
 
 
-async def run_with_network(deps, fn):
+async def run_with_network(deps: ToolDepsProto, fn: Callable) -> Any:
     """Offload ``fn(db, network)`` with DB guard and cached CommunicationNetwork."""
     def _run():
         db = deps.get_email_db()

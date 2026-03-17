@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from ..mcp_models import (
     ActionItemsInput,
     DecisionsInput,
@@ -103,8 +105,6 @@ def register(mcp, deps) -> None:
                 )
 
             if params.days:
-                from datetime import datetime, timedelta
-
                 retriever = deps.get_retriever()
                 cutoff = (datetime.now() - timedelta(days=params.days)).strftime("%Y-%m-%d")
                 results = retriever.search_filtered(
@@ -164,8 +164,6 @@ def register(mcp, deps) -> None:
                 )
 
             if params.days:
-                from datetime import datetime, timedelta
-
                 retriever = deps.get_retriever()
                 cutoff = (datetime.now() - timedelta(days=params.days)).strftime("%Y-%m-%d")
                 results = retriever.search_filtered(

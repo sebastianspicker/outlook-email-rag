@@ -5,10 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import TYPE_CHECKING
 
-
-def _escape_like(text: str) -> str:
-    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+from .db_schema import _escape_like
 
 
 def _attachment_filter_conditions(

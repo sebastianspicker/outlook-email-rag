@@ -13,6 +13,7 @@ Unsupported/binary formats return None.
 
 from __future__ import annotations
 
+import io
 import logging
 
 from .image_embedder import _IMAGE_EXTENSIONS
@@ -172,8 +173,6 @@ def _extract_pdf(content: bytes) -> str | None:
         logger.debug("PyPDF2 not installed; skipping PDF extraction.")
         return None
 
-    import io
-
     try:
         reader = PdfReader(io.BytesIO(content))
         pages = []
@@ -196,8 +195,6 @@ def _extract_docx(content: bytes) -> str | None:
         logger.debug("python-docx not installed; skipping DOCX extraction.")
         return None
 
-    import io
-
     try:
         doc = Document(io.BytesIO(content))
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
@@ -215,8 +212,6 @@ def _extract_xlsx(content: bytes) -> str | None:
     except ImportError:
         logger.debug("openpyxl not installed; skipping XLSX extraction.")
         return None
-
-    import io
 
     try:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
@@ -243,8 +238,6 @@ def _extract_pptx(content: bytes) -> str | None:
     except ImportError:
         logger.debug("python-pptx not installed; skipping PPTX extraction.")
         return None
-
-    import io
 
     try:
         prs = Presentation(io.BytesIO(content))

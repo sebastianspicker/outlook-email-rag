@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from pathlib import Path
 from typing import Any, cast
 
 import streamlit as st
@@ -199,8 +200,6 @@ def _get_email_db_safe():
     Cached via st.cache_resource so only one connection is created
     per Streamlit server process (avoids leaking SQLite connections).
     """
-    import os
-
     try:
         from .config import get_settings
         from .email_db import EmailDatabase
@@ -209,7 +208,7 @@ def _get_email_db_safe():
         from src.email_db import EmailDatabase
 
     settings = get_settings()
-    if settings.sqlite_path and os.path.exists(settings.sqlite_path):
+    if settings.sqlite_path and Path(settings.sqlite_path).exists():
         return EmailDatabase(settings.sqlite_path)
     return None
 

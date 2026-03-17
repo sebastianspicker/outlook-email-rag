@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 from .chunker import EmailChunk
@@ -198,10 +199,8 @@ class EmailEmbedder:
             db = self._sparse_db
             if db is None:
                 if self._sparse_db_fallback is None:
-                    import os
-
                     sqlite_path = self.settings.sqlite_path
-                    if not sqlite_path or not os.path.exists(sqlite_path):
+                    if not sqlite_path or not Path(sqlite_path).exists():
                         logger.debug("Sparse vectors available but no SQLite DB found, skipping storage.")
                         return
 

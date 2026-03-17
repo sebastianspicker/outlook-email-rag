@@ -14,7 +14,7 @@ from .db_attachments import AttachmentMixin
 from .db_custody import CustodyMixin
 from .db_entities import EntityMixin
 from .db_evidence import EvidenceMixin
-from .db_schema import init_schema
+from .db_schema import _escape_like, init_schema
 
 if TYPE_CHECKING:
     from src.parse_olm import Email
@@ -22,11 +22,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ADDR_RE = re.compile(r"^(.*?)\s*<([^>]+)>$")
-
-
-def _escape_like(text: str) -> str:
-    """Escape SQL LIKE wildcards (``%``, ``_``, ``\\``)."""
-    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _safe_json_parse(raw: str | None, default=None):
@@ -233,50 +228,48 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             return False
 
         # Categories (normalized table)
-        for cat in getattr(email, "categories", []) or []:
-            cur.execute(
+        cats = getattr(email, "categories", []) or []
+        if cats:
+            cur.executemany(
                 "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
-                (email.uid, cat),
+                [(email.uid, cat) for cat in cats],
             )
 
         # Attachments table
-        for att in getattr(email, "attachments", []) or []:
-            cur.execute(
+        atts = getattr(email, "attachments", []) or []
+        if atts:
+            cur.executemany(
                 "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) "
                 "VALUES(?,?,?,?,?,?)",
-                (
-                    email.uid,
-                    att.get("name", ""),
-                    att.get("mime_type", ""),
-                    att.get("size", 0),
-                    att.get("content_id", ""),
-                    int(att.get("is_inline", False)),
-                ),
+                [
+                    (
+                        email.uid,
+                        att.get("name", ""),
+                        att.get("mime_type", ""),
+                        att.get("size", 0),
+                        att.get("content_id", ""),
+                        int(att.get("is_inline", False)),
+                    )
+                    for att in atts
+                ],
             )
 
-        # Recipients
+        # Recipients (to + cc + bcc in one batch)
         all_recipients: list[tuple[str, str]] = []
-        for addr in email.to:
+        recipient_rows: list[tuple] = []
+        for addr, rtype in (
+            *[(a, "to") for a in email.to],
+            *[(a, "cc") for a in email.cc],
+            *[(a, "bcc") for a in email.bcc],
+        ):
             name, em = _parse_address(addr)
-            cur.execute(
-                "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                (email.uid, em or addr, name, "to"),
-            )
+            recipient_rows.append((email.uid, em or addr, name, rtype))
             all_recipients.append((name, em or addr))
-        for addr in email.cc:
-            name, em = _parse_address(addr)
-            cur.execute(
+        if recipient_rows:
+            cur.executemany(
                 "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                (email.uid, em or addr, name, "cc"),
+                recipient_rows,
             )
-            all_recipients.append((name, em or addr))
-        for addr in email.bcc:
-            name, em = _parse_address(addr)
-            cur.execute(
-                "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                (email.uid, em or addr, name, "bcc"),
-            )
-            all_recipients.append((name, em or addr))
 
         # Upsert contacts
         if email.sender_email:
@@ -710,10 +703,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         ).fetchall()
         attachments_by_uid: dict[str, list[dict]] = {}
         for a in att_rows:
-            a_uid = a["email_uid"]
-            if a_uid not in attachments_by_uid:
-                attachments_by_uid[a_uid] = []
-            attachments_by_uid[a_uid].append({
+            attachments_by_uid.setdefault(a["email_uid"], []).append({
                 "name": a["name"], "mime_type": a["mime_type"],
                 "size": a["size"], "content_id": a["content_id"],
                 "is_inline": a["is_inline"],

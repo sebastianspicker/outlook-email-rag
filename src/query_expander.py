@@ -36,6 +36,22 @@ class QueryExpander:
         self._vocabulary = vocabulary
         self._vocab_embeddings = None  # Reset cached embeddings
 
+    def _compute_similarities(self, query: str):  # type: ignore[return]
+        """Return ``(similarities, top_indices)`` for *query* against the vocabulary.
+
+        Lazily computes and caches vocabulary embeddings.  Returns ``None`` if
+        numpy/model are unavailable or if the vocabulary is empty.
+        """
+        import numpy as np
+
+        if self._vocab_embeddings is None:
+            self._vocab_embeddings = np.array(
+                self._model.encode_dense(self._vocabulary)
+            )
+        query_embedding = np.array(self._model.encode_dense([query]))
+        similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
+        return similarities, similarities.argsort()[::-1]
+
     def expand(self, query: str, n_terms: int = 3) -> str:
         """Expand a query with semantically related terms.
 
@@ -56,33 +72,15 @@ class QueryExpander:
             return query
 
         try:
-            import numpy as np
-
-            # Lazy-compute vocabulary embeddings
-            if self._vocab_embeddings is None:
-                self._vocab_embeddings = np.array(
-                    self._model.encode_dense(self._vocabulary)
-                )
-
-            query_embedding = np.array(
-                self._model.encode_dense([query])
-            )
-
-            # Cosine similarity
-            similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
-            top_indices = similarities.argsort()[::-1]
-
-            # Select top terms not already in query
+            similarities, top_indices = self._compute_similarities(query)
             query_lower = query.lower()
             added: list[str] = []
             for idx in top_indices:
                 if len(added) >= n_terms:
                     break
                 term = self._vocabulary[idx]
-                # Skip terms already present in the query
                 if re.search(r'\b' + re.escape(term.lower()) + r'\b', query_lower):
                     continue
-                # Skip very short terms
                 if len(term) < 3:
                     continue
                 added.append(term)
@@ -112,19 +110,7 @@ class QueryExpander:
             return []
 
         try:
-            import numpy as np
-
-            if self._vocab_embeddings is None:
-                self._vocab_embeddings = np.array(
-                    self._model.encode_dense(self._vocabulary)
-                )
-
-            query_embedding = np.array(
-                self._model.encode_dense([query])
-            )
-            similarities = np.dot(self._vocab_embeddings, query_embedding.T).flatten()
-            top_indices = similarities.argsort()[::-1]
-
+            similarities, top_indices = self._compute_similarities(query)
             query_lower = query.lower()
             results: list[tuple[str, float]] = []
             for idx in top_indices:
