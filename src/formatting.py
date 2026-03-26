@@ -257,7 +257,7 @@ def format_date(iso_date: str | None) -> str:
 
 def format_file_size(size_bytes: int | None) -> str:
     """Format file size in human-readable units."""
-    if not size_bytes:
+    if size_bytes is None:
         return ""
     if size_bytes < 1024:
         return f"{size_bytes} B"

@@ -191,6 +191,12 @@ class TopicModeler:
             ValueError: If the saved model was built with a different major
                 version of scikit-learn (deserialization may produce wrong results).
         """
+        p = Path(path)
+        if p.suffix not in {".pkl", ".pickle"}:
+            raise ValueError(f"Topic model file must be .pkl or .pickle, got: {p.suffix!r}")
+        if not p.is_file():
+            raise FileNotFoundError(f"Topic model file not found: {path}")
+        logger.info("Loading topic model from %s (pickle — ensure this file is trusted)", path)
         with open(path, "rb") as f:
             data = pickle.load(f)  # nosec B301 — loading user's own saved model, not untrusted data
 

@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from typing import TYPE_CHECKING, ClassVar
 
 from .db_schema import _escape_like
 
 logger = logging.getLogger(__name__)
+
+_WS_RE = re.compile(r'[\s\xa0]+')
+
+
+def _normalize_ws(text: str) -> str:
+    """Collapse all whitespace (including nbsp) to single spaces and lowercase."""
+    return _WS_RE.sub(' ', text.strip()).lower()
 
 
 class EvidenceMixin:
@@ -28,6 +36,7 @@ class EvidenceMixin:
             details: dict | None = ...,
             content_hash: str | None = ...,
             actor: str = ...,
+            commit: bool = ...,
         ) -> int: ...  # from CustodyMixin
 
     EVIDENCE_CATEGORIES: ClassVar[list[str]] = [
@@ -95,47 +104,52 @@ class EvidenceMixin:
 
         # Verify quote against body
         body_text = email_row["body_text"] or ""
-        verified = 1 if key_quote.strip() and key_quote.strip().lower() in body_text.lower() else 0
+        verified = 1 if key_quote.strip() and _normalize_ws(key_quote) in _normalize_ws(body_text) else 0
 
         content_hash = self.compute_content_hash(f"{email_uid}|{category}|{key_quote}")
 
-        cur = self.conn.execute(
-            """INSERT INTO evidence_items
-               (email_uid, category, key_quote, summary, relevance,
-                sender_name, sender_email, date, recipients, subject, notes, verified,
-                content_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                email_uid,
-                category,
-                key_quote,
-                summary,
-                relevance,
-                email_row["sender_name"],
-                email_row["sender_email"],
-                email_row["date"],
-                recipients,
-                email_row["subject"],
-                notes,
-                verified,
-                content_hash,
-            ),
-        )
-        self.conn.commit()
-        new_id = cur.lastrowid
+        try:
+            cur = self.conn.execute(
+                """INSERT INTO evidence_items
+                   (email_uid, category, key_quote, summary, relevance,
+                    sender_name, sender_email, date, recipients, subject, notes, verified,
+                    content_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    email_uid,
+                    category,
+                    key_quote,
+                    summary,
+                    relevance,
+                    email_row["sender_name"],
+                    email_row["sender_email"],
+                    email_row["date"],
+                    recipients,
+                    email_row["subject"],
+                    notes,
+                    verified,
+                    content_hash,
+                ),
+            )
+            new_id = cur.lastrowid
 
-        self.log_custody_event(
-            "evidence_add",
-            target_type="evidence",
-            target_id=str(new_id),
-            details={
-                "email_uid": email_uid,
-                "category": category,
-                "relevance": relevance,
-                "summary": summary[:200],
-            },
-            content_hash=content_hash,
-        )
+            self.log_custody_event(
+                "evidence_add",
+                target_type="evidence",
+                target_id=str(new_id),
+                details={
+                    "email_uid": email_uid,
+                    "category": category,
+                    "relevance": relevance,
+                    "summary": summary[:200],
+                },
+                content_hash=content_hash,
+                commit=False,
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
         return {
             "id": new_id,
@@ -217,7 +231,7 @@ class EvidenceMixin:
             True if the item was updated, False if not found.
         """
         allowed = {"category", "key_quote", "summary", "relevance", "notes"}
-        updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+        updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
 
@@ -238,7 +252,7 @@ class EvidenceMixin:
             ).fetchone()
             body_text = (body_row["body_text"] or "") if body_row else ""
             new_quote = updates["key_quote"].strip()
-            updates["verified"] = 1 if new_quote and new_quote.lower() in body_text.lower() else 0
+            updates["verified"] = 1 if new_quote and _normalize_ws(new_quote) in _normalize_ws(body_text) else 0
 
         # Recompute content hash
         category = updates.get("category", existing["category"])
@@ -250,20 +264,25 @@ class EvidenceMixin:
         set_clause += ", updated_at = datetime('now')"
         params = [*updates.values(), evidence_id]
 
-        cur = self.conn.execute(
-            f"UPDATE evidence_items SET {set_clause} WHERE id = ?",
-            params,
-        )
-        self.conn.commit()
-
-        if cur.rowcount > 0:
-            self.log_custody_event(
-                "evidence_update",
-                target_type="evidence",
-                target_id=str(evidence_id),
-                details={"old_values": old_values, "new_values": {k: v for k, v in updates.items() if k != "content_hash"}},
-                content_hash=new_hash,
+        try:
+            cur = self.conn.execute(
+                f"UPDATE evidence_items SET {set_clause} WHERE id = ?",
+                params,
             )
+
+            if cur.rowcount > 0:
+                self.log_custody_event(
+                    "evidence_update",
+                    target_type="evidence",
+                    target_id=str(evidence_id),
+                    details={"old_values": old_values, "new_values": {k: v for k, v in updates.items() if k != "content_hash"}},
+                    content_hash=new_hash,
+                    commit=False,
+                )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
         return cur.rowcount > 0
 
     def remove_evidence(self, evidence_id: int) -> bool:
@@ -274,27 +293,32 @@ class EvidenceMixin:
             (evidence_id,),
         ).fetchone()
 
-        cur = self.conn.execute(
-            "DELETE FROM evidence_items WHERE id = ?",
-            (evidence_id,),
-        )
-        self.conn.commit()
-
-        if cur.rowcount > 0 and existing:
-            snapshot = dict(existing)
-            self.log_custody_event(
-                "evidence_remove",
-                target_type="evidence",
-                target_id=str(evidence_id),
-                details={
-                    "email_uid": snapshot.get("email_uid"),
-                    "category": snapshot.get("category"),
-                    "key_quote": snapshot.get("key_quote", "")[:200],
-                    "relevance": snapshot.get("relevance"),
-                    "summary": snapshot.get("summary", "")[:200],
-                },
-                content_hash=snapshot.get("content_hash"),
+        try:
+            cur = self.conn.execute(
+                "DELETE FROM evidence_items WHERE id = ?",
+                (evidence_id,),
             )
+
+            if cur.rowcount > 0 and existing:
+                snapshot = dict(existing)
+                self.log_custody_event(
+                    "evidence_remove",
+                    target_type="evidence",
+                    target_id=str(evidence_id),
+                    details={
+                        "email_uid": snapshot.get("email_uid"),
+                        "category": snapshot.get("category"),
+                        "key_quote": snapshot.get("key_quote", "")[:200],
+                        "relevance": snapshot.get("relevance"),
+                        "summary": snapshot.get("summary", "")[:200],
+                    },
+                    content_hash=snapshot.get("content_hash"),
+                    commit=False,
+                )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
         return cur.rowcount > 0
 
     def verify_evidence_quotes(self) -> dict:
@@ -309,19 +333,35 @@ class EvidenceMixin:
         rows = self.conn.execute(
             """SELECT ei.id, ei.key_quote, ei.email_uid, e.body_text
                FROM evidence_items ei
-               JOIN emails e ON ei.email_uid = e.uid"""
+               LEFT JOIN emails e ON ei.email_uid = e.uid"""
         ).fetchall()
 
         verified_count = 0
         failed_count = 0
+        orphaned_count = 0
         failures: list[dict] = []
         verified_ids: list[tuple[int]] = []
         failed_ids: list[tuple[int]] = []
 
         for row in rows:
-            body_text = row["body_text"] or ""
+            body_text = row["body_text"]
             quote = (row["key_quote"] or "").strip()
-            is_verified = 1 if quote and quote.lower() in body_text.lower() else 0
+
+            if body_text is None:
+                # Orphaned evidence — source email missing
+                orphaned_count += 1
+                failed_ids.append((row["id"],))
+                failures.append(
+                    {
+                        "evidence_id": row["id"],
+                        "key_quote_preview": quote[:80] + ("..." if len(quote) > 80 else ""),
+                        "email_uid": row["email_uid"],
+                        "orphaned": True,
+                    }
+                )
+                continue
+
+            is_verified = 1 if quote and _normalize_ws(quote) in _normalize_ws(body_text) else 0
 
             if is_verified:
                 verified_count += 1
@@ -351,7 +391,8 @@ class EvidenceMixin:
         return {
             "verified": verified_count,
             "failed": failed_count,
-            "total": verified_count + failed_count,
+            "orphaned": orphaned_count,
+            "total": verified_count + failed_count + orphaned_count,
             "failures": failures,
         }
 
@@ -485,7 +526,7 @@ class EvidenceMixin:
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         sql = f"SELECT * FROM evidence_items{where} ORDER BY date ASC"
-        if limit is not None and limit > 0:
+        if limit is not None and limit >= 0:
             sql += " LIMIT ?"
             params.append(limit)
         elif offset > 0:

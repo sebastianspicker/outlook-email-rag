@@ -107,7 +107,7 @@ class TemporalAnalyzer:
                 avg = sum(times) / len(times)
                 result.append(
                     {
-                        "sender": email,
+                        "replier": email,
                         "avg_response_hours": round(avg, 1),
                         "response_count": len(times),
                     }

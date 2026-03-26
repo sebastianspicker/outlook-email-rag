@@ -133,9 +133,9 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
             # Sanitize untrusted email body content
             email["body_text"] = deps.sanitize(email.get("body_text") or "")
             max_body = params.max_body_chars
-            # When the caller didn't explicitly set max_body_chars (still at
-            # the Pydantic default of 10000), honour the model-profile setting.
-            if max_body == 10000:
+            # When the caller didn't explicitly set max_body_chars (None sentinel),
+            # honour the model-profile setting.
+            if max_body is None:
                 max_body = get_settings().mcp_max_full_body_chars
             if max_body > 0:
                 email["body_text"] = truncate_body(
@@ -161,7 +161,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                         thread["summary"] = summarize_thread(
                             [
                                 {
-                                    "clean_body": e.get("body_text") or "",
+                                    "clean_body": deps.sanitize(e.get("body_text") or ""),
                                     "sender_email": e.get("sender_email", ""),
                                     "sender_name": e.get("sender_name", ""),
                                     "date": e.get("date", ""),

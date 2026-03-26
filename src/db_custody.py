@@ -30,6 +30,7 @@ class CustodyMixin:
         details: dict | None = None,
         content_hash: str | None = None,
         actor: str = "system",
+        commit: bool = True,
     ) -> int:
         """Record a chain-of-custody event. Returns event ID."""
         cur = self.conn.execute(
@@ -45,7 +46,8 @@ class CustodyMixin:
                 content_hash,
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return cur.lastrowid  # type: ignore[return-value]
 
     def get_custody_chain(

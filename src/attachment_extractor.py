@@ -176,10 +176,7 @@ def _extract_plain_text(content: bytes) -> str | None:
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
-        try:
-            text = content.decode("latin-1")
-        except UnicodeDecodeError:
-            return None
+        text = content.decode("latin-1")  # latin-1 decodes all byte values
     text = text.strip()
     return _truncate(text) if text else None
 
@@ -189,10 +186,7 @@ def _extract_html(content: bytes) -> str | None:
     try:
         html = content.decode("utf-8")
     except UnicodeDecodeError:
-        try:
-            html = content.decode("latin-1")
-        except UnicodeDecodeError:
-            return None
+        html = content.decode("latin-1")  # latin-1 decodes all byte values
 
     from .html_converter import html_to_text as _html_to_text
 

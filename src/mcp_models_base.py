@@ -20,13 +20,24 @@ from .validation import validate_date_window as ensure_valid_date_window
 
 
 def _validate_output_path(v: str | None) -> str | None:
-    """Reject null bytes and path-traversal components in output file paths."""
+    """Reject null bytes, path-traversal, and absolute paths outside safe directories."""
     if v is None:
         return v
     if "\x00" in v:
         raise ValueError("output_path must not contain null bytes")
     if ".." in Path(v).parts:
         raise ValueError("output_path must not traverse parent directories with '..'")
+    resolved = Path(v).resolve()
+    cwd = Path.cwd().resolve()
+    if not resolved.is_relative_to(cwd):
+        import tempfile as _tmpmod
+        home = Path.home().resolve()
+        tmp = Path("/tmp").resolve()
+        systmp = Path(_tmpmod.gettempdir()).resolve()
+        if not (resolved.is_relative_to(home)
+                or resolved.is_relative_to(tmp)
+                or resolved.is_relative_to(systmp)):
+            raise ValueError(f"Output path must be under working directory, home, or /tmp: {v}")
     return v
 
 

@@ -220,7 +220,7 @@ class EmailEmbedder:
             inserted = db.insert_sparse_batch(ids, sparse_vectors)
             logger.debug("Stored %d sparse vectors in SQLite.", inserted)
         except Exception:
-            logger.debug("Failed to store sparse vectors", exc_info=True)
+            logger.warning("Failed to store sparse vectors", exc_info=True)
 
     def delete_chunks_by_uid(self, uid: str) -> int:
         """Delete all chunks for an email UID from ChromaDB. Returns count deleted."""

@@ -131,14 +131,14 @@ def flag_candidates(
     label: str,
     phase: int = 1,
     score: float = 0.0,
-) -> int:
-    """Flag UIDs as candidates. Returns count of newly flagged items.
+) -> tuple[int, int]:
+    """Flag UIDs as candidates. Returns (newly_flagged, total_candidates).
 
     Thread-safe via per-session lock.
     """
     session = get_session(scan_id)
     if session is None:  # pragma: no cover — auto_create=True guarantees this
-        return 0
+        return 0, 0
     with session.lock:
         added = 0
         for uid in uids:
@@ -156,7 +156,8 @@ def flag_candidates(
                     scan_id,
                 )
             session.seen_uids.add(uid)
-    return added
+        total = len(session.candidates)
+    return added, total
 
 
 def get_candidates(

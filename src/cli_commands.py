@@ -315,6 +315,7 @@ def _cmd_export(args: argparse.Namespace) -> None:
     else:
         print("Usage: python -m src.cli export {thread,email,report,network}")
         sys.exit(2)
+        return  # unreachable; satisfies static analysis
     sys.exit(0)
 
 
@@ -1283,7 +1284,10 @@ def _run_evidence_verify() -> None:
                 f"  [bold]{total}[/] quotes checked  |  "
                 f"[green bold]{verified}[/] verified  |  "
                 f"[{'red bold' if failed else 'dim'}]{failed}[/] failed",
-                title=f"[bold]Quote Verification [{status_style}]{'PASSED' if failed == 0 else 'ISSUES FOUND'}[/{status_style}][/]",
+                title=(
+                    f"[bold]Quote Verification [{status_style}]"
+                    f"{'PASSED' if failed == 0 else 'ISSUES FOUND'}[/{status_style}][/]"
+                ),
                 border_style=status_style,
             )
         )

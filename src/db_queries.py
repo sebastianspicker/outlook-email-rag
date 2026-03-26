@@ -52,7 +52,9 @@ class QueryMixin:
 
     def date_range(self) -> tuple[str, str]:
         """Return (earliest_date, latest_date) across all emails."""
-        row = self.conn.execute("SELECT MIN(date) AS min_d, MAX(date) AS max_d FROM emails").fetchone()
+        row = self.conn.execute(
+            "SELECT MIN(NULLIF(date, '')) AS min_d, MAX(NULLIF(date, '')) AS max_d FROM emails"
+        ).fetchone()
         return (row["min_d"] or "", row["max_d"] or "")
 
     def folder_counts(self) -> dict[str, int]:
@@ -175,7 +177,8 @@ class QueryMixin:
         ).fetchall()
         result: dict[str, list[str]] = {"to": [], "cc": [], "bcc": []}
         for r in rows:
-            result[r["type"]].append(_format_recipient(r["display_name"], r["address"]))
+            if r["type"] in result:
+                result[r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def _recipients_for_uids(self, uids: list[str]) -> dict[str, dict[str, list[str]]]:
@@ -192,7 +195,8 @@ class QueryMixin:
             uid = r["email_uid"]
             if uid not in result:
                 result[uid] = {"to": [], "cc": [], "bcc": []}
-            result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
+            if r["type"] in result[uid]:
+                result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def get_email_full(self, uid: str) -> dict | None:

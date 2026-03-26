@@ -73,7 +73,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
 
             emails = [
                 {
-                    "clean_body": r.text,
+                    "clean_body": deps.sanitize(r.text),
                     "sender_email": r.metadata.get("sender_email", ""),
                     "sender_name": r.metadata.get("sender_name", ""),
                     "date": r.metadata.get("date", ""),
@@ -122,7 +122,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_items = []
                 for r in results:
                     items = analyzer.extract_action_items(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         source_uid=r.metadata.get("uid", ""),
                     )
@@ -151,7 +151,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_items = []
                 for r in results:
                     items = analyzer.extract_action_items(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         source_uid=r.metadata.get("uid", ""),
                     )
@@ -196,7 +196,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_decisions = []
                 for r in results:
                     decisions = analyzer.extract_decisions(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         date=r.metadata.get("date", ""),
                         source_uid=r.metadata.get("uid", ""),
@@ -220,7 +220,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_decisions = []
                 for r in results:
                     decisions = analyzer.extract_decisions(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         date=r.metadata.get("date", ""),
                         source_uid=r.metadata.get("uid", ""),

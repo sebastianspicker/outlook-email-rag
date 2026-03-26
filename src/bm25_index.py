@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 def _tokenize(text: str) -> list[str]:
     """Unicode-aware whitespace + punctuation tokenizer with lowercasing."""
+    if not text:
+        return []
     return re.findall(r"\w+", text.lower(), flags=re.UNICODE)
 
 
@@ -77,7 +79,7 @@ class BM25Index:
             ids = result.get("ids", [])
             docs = result.get("documents", [])
             all_ids.extend(ids)
-            all_docs.extend(docs if docs else [""] * len(ids))
+            all_docs.extend([d or "" for d in docs] if docs else [""] * len(ids))
 
         self.build_from_documents(all_ids, all_docs)
 

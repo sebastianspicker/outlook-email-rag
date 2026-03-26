@@ -151,15 +151,19 @@ class AnalyticsMixin:
                GROUP BY t.id
                ORDER BY email_count DESC"""
         ).fetchall()
-        return [
-            {
+        result = []
+        for r in rows:
+            try:
+                words = json.loads(r["top_words"]) if r["top_words"] else []
+            except (json.JSONDecodeError, TypeError):
+                words = []
+            result.append({
                 "id": r["id"],
                 "label": r["label"],
-                "top_words": json.loads(r["top_words"]),
+                "top_words": words,
                 "email_count": r["email_count"],
-            }
-            for r in rows
-        ]
+            })
+        return result
 
     # ------------------------------------------------------------------
     # Contact / Communication queries

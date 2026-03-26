@@ -96,8 +96,8 @@ class EmailExporter:
         dates = [e.get("date", "") for e in emails if e.get("date")]
         date_range = ""
         if dates:
-            first = dates[0][:10] if dates[0] else ""
-            last = dates[-1][:10] if dates[-1] else ""
+            first = min(dates)[:10]
+            last = max(dates)[:10]
             date_range = f"{first} — {last}" if first != last else first
 
         template = self._env.get_template("thread_export.html")

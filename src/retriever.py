@@ -12,6 +12,7 @@ from .config import get_settings, resolve_runtime_settings
 
 if TYPE_CHECKING:
     from .bm25_index import BM25Index
+    from .colbert_reranker import ColBERTReranker
     from .email_db import EmailDatabase
     from .reranker import CrossEncoderReranker
     from .sparse_index import SparseIndex
@@ -102,6 +103,7 @@ class EmailRetriever:
         self._email_db: EmailDatabase | None = None
         self._email_db_checked = False
         self._reranker: CrossEncoderReranker | None = None
+        self._colbert_reranker: ColBERTReranker | None = None
         self._bm25_index: BM25Index | None = None
         self._sparse_index: SparseIndex | None = None
         # Bounded LRU cache — evicts oldest entry when len > _QUERY_CACHE_MAX (128).
@@ -339,6 +341,10 @@ class EmailRetriever:
                 raw_candidates = self._merge_hybrid(query, raw_candidates, fetch_size)
 
             if has_filters:
+                # Defer min_score filtering until after reranking, since
+                # reranking assigns new scores and pre-filtering would
+                # discard candidates the reranker might rank highly.
+                filter_min_score = None if use_rerank else min_score
                 filtered = apply_metadata_filters(
                     raw_candidates,
                     sender=sender,
@@ -352,7 +358,7 @@ class EmailRetriever:
                     date_to=date_to,
                     has_attachments=has_attachments,
                     priority=priority,
-                    min_score=min_score,
+                    min_score=filter_min_score,
                     allowed_uids=allowed_uids,
                     category=category,
                     is_calendar=is_calendar,
@@ -367,6 +373,9 @@ class EmailRetriever:
             # Apply reranking if enabled (ColBERT preferred, cross-encoder fallback)
             if use_rerank and deduped:
                 deduped = self._apply_rerank(query, deduped, top_k)
+                # Apply min_score after reranking, since reranking assigns new scores
+                if min_score is not None:
+                    deduped = [r for r in deduped if (1.0 - r.distance) >= min_score]
 
             if len(deduped) >= top_k:
                 return deduped[:top_k]
@@ -388,10 +397,11 @@ class EmailRetriever:
         settings = getattr(self, "settings", None)
         use_colbert = getattr(settings, "colbert_rerank_enabled", False)
         if use_colbert and self.embedder.has_colbert:
-            from .colbert_reranker import ColBERTReranker
+            if getattr(self, "_colbert_reranker", None) is None:
+                from .colbert_reranker import ColBERTReranker
 
-            reranker = ColBERTReranker(self.embedder)
-            return reranker.rerank(query, results, top_k=top_k)
+                self._colbert_reranker = ColBERTReranker(self.embedder)
+            return self._colbert_reranker.rerank(query, results, top_k=top_k)  # type: ignore[union-attr]
 
         # Cross-encoder fallback
         if self._reranker is None:
@@ -436,13 +446,13 @@ class EmailRetriever:
                         doc = (fetched.get("documents") or [""])[i] if fetched.get("documents") else ""
                         meta = (fetched.get("metadatas") or [{}])[i] if fetched.get("metadatas") else {}
                         # Keyword-only results have no semantic distance;
-                        # use low default so they pass min_score filters
-                        # (score = 1.0 - distance ≈ 0.9).
+                        # use neutral default (score = 1.0 - 0.5 = 0.5) so
+                        # they don't inflate above typical semantic matches.
                         result_map[cid] = SearchResult(
                             chunk_id=cid,
                             text=doc or "",
                             metadata=meta or {},
-                            distance=0.1,
+                            distance=0.5,
                         )
                 except Exception:
                     logger.debug(
@@ -479,12 +489,18 @@ class EmailRetriever:
 
                 self._sparse_index = SparseIndex()
                 self._sparse_index.build_from_db(db)
+                try:
+                    self._sparse_build_count = self.collection.count()
+                except Exception:
+                    self._sparse_build_count = None
             else:
-                # Check for staleness: rebuild if collection has grown
+                # Check for staleness: rebuild if collection count changed
                 try:
                     collection_count = self.collection.count()
-                    if self._sparse_index.doc_count < collection_count:
+                    last_count = getattr(self, "_sparse_build_count", None)
+                    if last_count != collection_count:
                         self._sparse_index.build_from_db(db)
+                        self._sparse_build_count = collection_count
                 except Exception:
                     pass  # collection not available — skip staleness check
 
@@ -513,7 +529,7 @@ class EmailRetriever:
                 # Check for staleness: rebuild if collection has grown
                 try:
                     collection_count = self.collection.count()
-                    if len(self._bm25_index._chunk_ids) < collection_count:
+                    if len(self._bm25_index._chunk_ids) != collection_count:
                         self._bm25_index.build_from_collection(self.collection)
                 except Exception:
                     pass  # collection not available — skip staleness check
@@ -789,7 +805,8 @@ class EmailRetriever:
                     _append(block)
                     result_num += 1
                     emitted += 1
-                _append("--- End Thread ---\n")
+                if not budget_exhausted:
+                    _append("--- End Thread ---\n")
             else:
                 # Single member — treat as standalone
                 standalone.extend(members)

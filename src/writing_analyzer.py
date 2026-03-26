@@ -40,7 +40,7 @@ class WritingMetrics:
         }
 
 
-_SENTENCE_SPLIT_RE = re.compile(r"[.!?]+\s+|[.!?]+$")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<!\.)\.(?!\.)\s+|[!?]+\s+|(?<!\.)\.(?!\.)$|[!?]+$")
 _WORD_RE = re.compile(r"\b[a-zA-Z]+\b")
 
 

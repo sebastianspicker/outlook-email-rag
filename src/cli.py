@@ -636,6 +636,7 @@ def _infer_subcommand(args: argparse.Namespace) -> str | None:
     if getattr(args, "evidence_export", None):
         args.evidence_action = "export"
         args.output_path = args.evidence_export
+        args.format = getattr(args, "evidence_export_format", None) or "html"
         return "evidence"
     if getattr(args, "evidence_stats", False):
         args.evidence_action = "stats"
@@ -646,6 +647,7 @@ def _infer_subcommand(args: argparse.Namespace) -> str | None:
     if getattr(args, "dossier", None):
         args.evidence_action = "dossier"
         args.output_path = args.dossier
+        args.format = getattr(args, "dossier_format", None) or "html"
         return "evidence"
     if getattr(args, "custody_chain", False):
         args.evidence_action = "custody"
@@ -661,6 +663,7 @@ def _infer_subcommand(args: argparse.Namespace) -> str | None:
         return "analytics"
     if getattr(args, "list_senders", False):
         args.analytics_action = "senders"
+        args.limit = getattr(args, "list_senders", 30) or 30
         return "analytics"
     if getattr(args, "suggest", False):
         args.analytics_action = "suggest"
@@ -672,6 +675,7 @@ def _infer_subcommand(args: argparse.Namespace) -> str | None:
         return "analytics"
     if getattr(args, "volume", False):
         args.analytics_action = "volume"
+        args.period = getattr(args, "volume", "month") or "month"
         return "analytics"
     if getattr(args, "entities", None) is not None:
         args.analytics_action = "entities"
