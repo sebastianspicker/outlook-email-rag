@@ -195,7 +195,13 @@ class _EmbedPipeline:
             )
 
         # Periodic SQLite WAL checkpoint to keep WAL file bounded
-        if self._wal_checkpoint_interval > 0 and self._email_db and self.batches_written % self._wal_checkpoint_interval == 0:
+        wal_due = (
+            self._wal_checkpoint_interval > 0
+            and self._email_db
+            and self.batches_written > 0
+            and self.batches_written % self._wal_checkpoint_interval == 0
+        )
+        if wal_due:
             self._checkpoint_wal()
 
         # Thermal cooldown: brief sleep to let Apple Silicon cool down

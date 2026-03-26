@@ -88,6 +88,12 @@ def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any
     Works on a shallow copy of *data* so the caller's dict is not mutated.
     """
     if not isinstance(data, dict):
+        if isinstance(data, list):
+            data = {"results": data}
+            raw = json.dumps(data, **kwargs)
+            if len(raw) <= max_chars:
+                return raw
+            return _truncate_json(data, raw, max_chars, **kwargs)
         # Can't intelligently trim non-dict responses — wrap in valid JSON
         truncated = raw[:max_chars]
         return json.dumps({"data": truncated, "_truncated": True})
@@ -113,8 +119,9 @@ def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any
             }
         )
     if largest_len <= 1:
-        # Single-item list — return as-is; per-tool compact mode handles item size
-        return raw
+        if len(raw) <= max_chars:
+            return raw
+        return json.dumps({"data": raw[:max_chars], "_truncated": True, "note": "Single item exceeds response budget."})
 
     # Binary search for how many items fit
     lo, hi = 1, largest_len
@@ -128,7 +135,10 @@ def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any
             "field": largest_key,
             "shown": mid,
             "original_count": largest_len,
-            "note": f"Response trimmed to fit {max_chars:,} char limit. Use limit/offset parameters to paginate through remaining results.",
+            "note": (
+                f"Response trimmed to fit {max_chars:,} char limit. "
+                "Use limit/offset parameters to paginate through remaining results."
+            ),
         }
         candidate = json.dumps(data, indent=2, **kwargs)
         if len(candidate) <= max_chars:

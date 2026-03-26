@@ -90,9 +90,9 @@ class ImageEmbedder:
 
             # Visualized-BGE requires a file path, not bytes
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                tmp_path = f.name
                 os.chmod(f.name, 0o600)  # restrict permissions before writing content
                 f.write(image_bytes)
-                tmp_path = f.name
 
             try:
                 embedding = self._model.encode(image=tmp_path)

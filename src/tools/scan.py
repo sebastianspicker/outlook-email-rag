@@ -46,18 +46,17 @@ def register(mcp_instance: Any, deps: ToolDepsProto) -> None:
                 return json_error("uids is required for action='flag'.")
             if not params.label:
                 return json_error("label is required for action='flag'.")
-            added = scan_session.flag_candidates(
+            added, total = scan_session.flag_candidates(
                 params.scan_id,
                 uids=params.uids,
                 label=params.label,
                 phase=params.phase or 1,
                 score=params.score or 0.0,
             )
-            session = scan_session.get_session(params.scan_id)
             return json_response(
                 {
                     "flagged": added,
-                    "total_candidates": len(session.candidates) if session else 0,
+                    "total_candidates": total,
                     "scan_id": params.scan_id,
                 }
             )

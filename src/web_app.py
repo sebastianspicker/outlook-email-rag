@@ -53,6 +53,8 @@ def invalidate_retriever_cache() -> None:
 
 
 def render_sidebar(retriever: EmailRetriever) -> None:
+    from html import escape as html_escape
+
     st.sidebar.markdown("#### Archive Overview")
 
     stats = retriever.stats()
@@ -73,7 +75,7 @@ def render_sidebar(retriever: EmailRetriever) -> None:
             for folder_name, count in sorted_folders:
                 st.sidebar.markdown(
                     f"<div style='display:flex;justify-content:space-between;font-size:0.82rem;padding:0.1rem 0;'>"
-                    f"<span>{folder_name}</span><span style='color:#64748b;font-weight:600;'>{count:,}</span></div>",
+                    f"<span>{html_escape(folder_name)}</span><span style='color:#64748b;font-weight:600;'>{count:,}</span></div>",
                     unsafe_allow_html=True,
                 )
 
@@ -88,7 +90,7 @@ def render_sidebar(retriever: EmailRetriever) -> None:
                 pct = sender["count"] / max_count if max_count else 0.0
                 st.sidebar.markdown(
                     f"<div style='font-size:0.8rem;margin-bottom:0.15rem;'>"
-                    f"<span style='font-weight:500;'>{display_name}</span> "
+                    f"<span style='font-weight:500;'>{html_escape(display_name)}</span> "
                     f"<span style='color:#64748b;'>({sender['count']:,})</span></div>",
                     unsafe_allow_html=True,
                 )
@@ -165,7 +167,10 @@ def render_results(results: list[Any], preview_chars: int, retriever: EmailRetri
                 st.markdown(f"<div class='email-field'><strong>Folder:</strong> {folder}</div>", unsafe_allow_html=True)
             with meta_col4:
                 formatted_date = format_date(str(metadata.get("date", "")))
-                st.markdown(f"<div class='email-field'><strong>Date:</strong> {formatted_date or date_value}</div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='email-field'><strong>Date:</strong> {formatted_date or date_value}</div>",
+                    unsafe_allow_html=True,
+                )
 
             # Attachment names
             att_names = metadata.get("attachment_names", "")
@@ -629,7 +634,7 @@ def _relevance_badge_html(relevance: int) -> str:
     return (
         f"<span style='display:inline-block;padding:0.15rem 0.5rem;border-radius:6px;"
         f"background:{bg};color:{color};font-size:0.75rem;font-weight:600;"
-        f"font-family:\"SF Mono\",\"Fira Code\",monospace;'>"
+        f'font-family:"SF Mono","Fira Code",monospace;\'>'
         f"{stars} {label}</span>"
     )
 
@@ -731,7 +736,8 @@ def render_evidence_page() -> None:
 
             with st.expander(
                 f"{category.upper()} | "
-                + "\u2605" * relevance + "\u2606" * (5 - relevance)
+                + "\u2605" * relevance
+                + "\u2606" * (5 - relevance)
                 + f" | {'VERIFIED' if verified else 'PENDING'} | "
                 f"{sender_name} | {date_short} -- {subject}",
                 expanded=False,
@@ -750,8 +756,9 @@ def render_evidence_page() -> None:
                 # Metadata fields
                 ev_col1, ev_col2, ev_col3 = st.columns(3)
                 with ev_col1:
+                    sender_display_ev = _html_escape(sender_name or item.get("sender_email", ""))
                     st.markdown(
-                        f"<div class='email-field'><strong>From:</strong> {_html_escape(sender_name or item.get('sender_email', ''))}</div>",
+                        f"<div class='email-field'><strong>From:</strong> {sender_display_ev}</div>",
                         unsafe_allow_html=True,
                     )
                 with ev_col2:
@@ -769,11 +776,11 @@ def render_evidence_page() -> None:
                 quote = item.get("key_quote", "")
                 if quote:
                     st.markdown(
-                        f"<div style='font-family:\"Inter\",sans-serif;font-size:0.88rem;line-height:1.55;"
+                        f'<div style=\'font-family:"Inter",sans-serif;font-size:0.88rem;line-height:1.55;'
                         f"padding:0.75rem 1rem;background:#fefce8;border-radius:8px;"
                         f"border-left:4px solid #eab308;color:#713f12;'>"
                         f"<strong style='font-style:normal;color:#92400e;'>Quote:</strong> "
-                        f"<em>\"{_html_escape(quote)}\"</em></div>",
+                        f'<em>"{_html_escape(quote)}"</em></div>',
                         unsafe_allow_html=True,
                     )
 
@@ -1021,7 +1028,7 @@ def main() -> None:
         last_query = st.session_state.get("web_query", "")
         if last_query:
             st.warning(
-                f"No results found for \"{last_query}\". "
+                f'No results found for "{last_query}". '
                 "Try broadening your search terms, removing filters, "
                 "or enabling hybrid search mode for better keyword coverage."
             )
@@ -1084,10 +1091,9 @@ def main() -> None:
         thread_results = retriever.search_by_thread(thread_id)
         if thread_results:
             # Thread summary bar
-            participants = list(dict.fromkeys(
-                (tr.metadata.get("sender_name") or tr.metadata.get("sender_email", "?"))
-                for tr in thread_results
-            ))
+            participants = list(
+                dict.fromkeys((tr.metadata.get("sender_name") or tr.metadata.get("sender_email", "?")) for tr in thread_results)
+            )
             dates = [str(tr.metadata.get("date", ""))[:10] for tr in thread_results if tr.metadata.get("date")]
             thread_summary = (
                 f"<div style='padding:0.6rem 1rem;background:#eef2f7;border-radius:8px;"
@@ -1100,7 +1106,7 @@ def main() -> None:
             thread_summary += (
                 f"<br/><span style='color:#94a3b8;'>Participants: "
                 f"{html_escape(', '.join(participants[:5]))}"
-                + (f' (+{len(participants) - 5})' if len(participants) > 5 else '')
+                + (f" (+{len(participants) - 5})" if len(participants) > 5 else "")
                 + "</span></div>"
             )
             st.markdown(thread_summary, unsafe_allow_html=True)
@@ -1112,10 +1118,11 @@ def main() -> None:
                 subj_val = tm.get("subject", "?")
                 email_type = tm.get("email_type", "original")
                 type_indicator = ""
+                _type_style = "font-size:0.72rem;font-weight:600;margin-left:0.4rem;"
                 if email_type == "reply":
-                    type_indicator = "<span style='color:#5b21b6;font-size:0.72rem;font-weight:600;margin-left:0.4rem;'>REPLY</span>"
+                    type_indicator = f"<span style='color:#5b21b6;{_type_style}'>REPLY</span>"
                 elif email_type == "forward":
-                    type_indicator = "<span style='color:#9d174d;font-size:0.72rem;font-weight:600;margin-left:0.4rem;'>FWD</span>"
+                    type_indicator = f"<span style='color:#9d174d;{_type_style}'>FWD</span>"
                 body_text = tr.text[:800] if len(tr.text) > 800 else tr.text
                 # Alternate border color for different senders
                 border_color = "#2563eb" if idx % 2 == 1 else "#7c3aed"

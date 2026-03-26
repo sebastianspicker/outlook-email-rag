@@ -265,22 +265,23 @@ class KeywordExtractor:
             return []
 
         vectorizer = self._get_vectorizer()
-        valid_texts = [t for t in texts if t and t.strip()]
+        results: list[list[tuple[str, float]]] = [[] for _ in texts]
+        valid_indices = [i for i, t in enumerate(texts) if t and t.strip()]
+        valid_texts = [texts[i] for i in valid_indices]
         if not valid_texts:
-            return [[] for _ in texts]
+            return results
 
         try:
             tfidf_matrix = vectorizer.fit_transform(valid_texts)
         except ValueError:
-            return [[] for _ in texts]
+            return results
 
         feature_names = vectorizer.get_feature_names_out()
-        results = []
 
-        for i in range(tfidf_matrix.shape[0]):
-            row = tfidf_matrix[i].toarray()[0]
+        for j in range(tfidf_matrix.shape[0]):
+            row = tfidf_matrix[j].toarray()[0]
             indices = row.argsort()[::-1][:top_n]
-            keywords = [(feature_names[j], round(float(row[j]), 4)) for j in indices if row[j] > 0]
-            results.append(keywords)
+            keywords = [(feature_names[k], round(float(row[k]), 4)) for k in indices if row[k] > 0]
+            results[valid_indices[j]] = keywords
 
         return results

@@ -70,19 +70,10 @@ class TestExtractPlainText:
     def test_empty_text_returns_none(self):
         assert _extract_plain_text(b"   \n  ") is None
 
-    def test_double_decode_failure_returns_none(self):
-        """When both UTF-8 and Latin-1 fail, returns None (lines 148-149).
-
-        Latin-1 can decode any byte sequence, so we wrap the content in a
-        custom bytes subclass that raises on latin-1 decode to test the branch.
-        """
-
-        class BadBytes(bytes):
-            def decode(self, encoding="utf-8", errors="strict"):
-                raise UnicodeDecodeError(encoding, b"", 0, 1, "mock failure")
-
-        result = _extract_plain_text(BadBytes(b"\xff\xfe"))
-        assert result is None
+    def test_latin1_fallback_always_succeeds(self):
+        """Latin-1 can decode any byte sequence, so non-UTF-8 bytes still produce text."""
+        result = _extract_plain_text(b"\xff\xfeHello")
+        assert result is not None
 
 
 # ── _extract_html ──────────────────────────────────────────────
@@ -107,15 +98,10 @@ class TestExtractHtml:
         # Just ensure no crash
         assert result is None or isinstance(result, str)
 
-    def test_html_double_decode_failure(self):
-        """HTML bytes that fail both UTF-8 and Latin-1 (lines 158-162)."""
-
-        class BadBytes(bytes):
-            def decode(self, encoding="utf-8", errors="strict"):
-                raise UnicodeDecodeError(encoding, b"", 0, 1, "mock failure")
-
-        result = _extract_html(BadBytes(b"\xff\xfe"))
-        assert result is None
+    def test_html_latin1_fallback_always_succeeds(self):
+        """Latin-1 fallback for HTML decodes any byte sequence."""
+        result = _extract_html(b"\xff\xfe<p>Hello</p>")
+        assert result is not None
 
 
 # ── extract_text routing ───────────────────────────────────────

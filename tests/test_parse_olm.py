@@ -842,7 +842,10 @@ def test_clean_text_collapses_blank_lines():
 
 def test_normalize_date_iso_passthrough():
     assert _normalize_date("2025-06-25T08:52:47") == "2025-06-25T08:52:47"
-    assert _normalize_date("2025-06-25T08:52:47Z") == "2025-06-25T08:52:47Z"
+    # ISO with Z timezone is now normalized to +00:00 (UTC)
+    result = _normalize_date("2025-06-25T08:52:47Z")
+    assert result.startswith("2025-06-25T08:52:47")
+    assert "+00:00" in result
 
 
 def test_normalize_date_rfc2822_to_iso():
@@ -858,7 +861,8 @@ def test_normalize_date_empty():
 
 
 def test_normalize_date_unparseable():
-    assert _normalize_date("not a date") == "not a date"
+    # Unparseable dates now return empty string to prevent MIN/MAX corruption
+    assert _normalize_date("not a date") == ""
 
 
 # ── _parse_references mixed format ────────────────────────────────

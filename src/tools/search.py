@@ -199,7 +199,7 @@ async def email_ingest(params: EmailIngestInput) -> str:
         except FileNotFoundError:
             return json_error(f"OLM file not found: {params.olm_path}")
         except Exception as exc:
-            return json_error(f"Ingestion failed: {type(exc).__name__}")
+            return json_error(f"Ingestion failed: {type(exc).__name__}: {exc}")
 
         # Invalidate cached singletons so subsequent searches pick up new data.
         # The retriever and email_db singletons may hold stale state

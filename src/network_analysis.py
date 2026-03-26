@@ -170,7 +170,7 @@ class CommunicationNetwork:
 
         # Build undirected graph with inverted weights (1/count) for
         # shortest-path computation: stronger connections = shorter paths.
-        undirected = self._graph.to_undirected()
+        undirected = self._to_undirected_summed(nx)
         for _u, _v, data in undirected.edges(data=True):
             w = data.get("weight", 1)
             data["cost"] = 1.0 / max(w, 1)

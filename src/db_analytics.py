@@ -151,15 +151,21 @@ class AnalyticsMixin:
                GROUP BY t.id
                ORDER BY email_count DESC"""
         ).fetchall()
-        return [
-            {
-                "id": r["id"],
-                "label": r["label"],
-                "top_words": json.loads(r["top_words"]),
-                "email_count": r["email_count"],
-            }
-            for r in rows
-        ]
+        result = []
+        for r in rows:
+            try:
+                words = json.loads(r["top_words"]) if r["top_words"] else []
+            except (json.JSONDecodeError, TypeError):
+                words = []
+            result.append(
+                {
+                    "id": r["id"],
+                    "label": r["label"],
+                    "top_words": words,
+                    "email_count": r["email_count"],
+                }
+            )
+        return result
 
     # ------------------------------------------------------------------
     # Contact / Communication queries
@@ -233,16 +239,16 @@ class AnalyticsMixin:
 
         placeholders = ",".join("?" for _ in sender_emails)
         rows = self.conn.execute(
-            f"""SELECT r.address AS recipient,
-                       GROUP_CONCAT(DISTINCT e.sender_email) AS senders,
-                       COUNT(*) AS total_emails
-                FROM recipients r
-                JOIN emails e ON r.email_uid = e.uid
-                WHERE e.sender_email IN ({placeholders})
-                  AND r.type IN ('to', 'cc')
-                GROUP BY r.address
-                HAVING COUNT(DISTINCT e.sender_email) >= ?
-                ORDER BY total_emails DESC""",
+            f"SELECT r.address AS recipient,"  # nosec B608
+            f" GROUP_CONCAT(DISTINCT e.sender_email) AS senders,"
+            f" COUNT(*) AS total_emails"
+            f" FROM recipients r"
+            f" JOIN emails e ON r.email_uid = e.uid"
+            f" WHERE e.sender_email IN ({placeholders})"
+            f" AND r.type IN ('to', 'cc')"
+            f" GROUP BY r.address"
+            f" HAVING COUNT(DISTINCT e.sender_email) >= ?"
+            f" ORDER BY total_emails DESC",
             [*sender_emails, min_shared],
         ).fetchall()
 
@@ -266,11 +272,11 @@ class AnalyticsMixin:
 
         placeholders = ",".join("?" for _ in sender_emails)
         rows = self.conn.execute(
-            f"""SELECT sender_email, date, uid, subject
-                FROM emails
-                WHERE sender_email IN ({placeholders})
-                  AND date IS NOT NULL
-                ORDER BY date ASC""",
+            f"SELECT sender_email, date, uid, subject"  # nosec B608
+            f" FROM emails"
+            f" WHERE sender_email IN ({placeholders})"
+            f" AND date IS NOT NULL"
+            f" ORDER BY date ASC",
             sender_emails,
         ).fetchall()
 

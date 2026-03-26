@@ -52,7 +52,7 @@ class QueryMixin:
 
     def date_range(self) -> tuple[str, str]:
         """Return (earliest_date, latest_date) across all emails."""
-        row = self.conn.execute("SELECT MIN(date) AS min_d, MAX(date) AS max_d FROM emails").fetchone()
+        row = self.conn.execute("SELECT MIN(NULLIF(date, '')) AS min_d, MAX(NULLIF(date, '')) AS max_d FROM emails").fetchone()
         return (row["min_d"] or "", row["max_d"] or "")
 
     def folder_counts(self) -> dict[str, int]:
@@ -175,7 +175,8 @@ class QueryMixin:
         ).fetchall()
         result: dict[str, list[str]] = {"to": [], "cc": [], "bcc": []}
         for r in rows:
-            result[r["type"]].append(_format_recipient(r["display_name"], r["address"]))
+            if r["type"] in result:
+                result[r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def _recipients_for_uids(self, uids: list[str]) -> dict[str, dict[str, list[str]]]:
@@ -184,7 +185,7 @@ class QueryMixin:
             return {}
         placeholders = ",".join("?" * len(uids))
         rows = self.conn.execute(
-            f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",
+            f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",  # nosec B608
             uids,
         ).fetchall()
         result: dict[str, dict[str, list[str]]] = {}
@@ -192,7 +193,8 @@ class QueryMixin:
             uid = r["email_uid"]
             if uid not in result:
                 result[uid] = {"to": [], "cc": [], "bcc": []}
-            result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
+            if r["type"] in result[uid]:
+                result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def get_email_full(self, uid: str) -> dict | None:
@@ -221,14 +223,14 @@ class QueryMixin:
         placeholders = ",".join("?" * len(uids))
         # 1) Emails
         rows = self.conn.execute(
-            f"SELECT * FROM emails WHERE uid IN ({placeholders})",
+            f"SELECT * FROM emails WHERE uid IN ({placeholders})",  # nosec B608
             uids,
         ).fetchall()
         # 2) Recipients (batch)
         all_recipients = self._recipients_for_uids(uids)
         # 3) Attachments (batch)
         att_rows = self.conn.execute(
-            "SELECT name, mime_type, size, content_id, is_inline, email_uid"
+            "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
             f" FROM attachments WHERE email_uid IN ({placeholders})",
             uids,
         ).fetchall()
@@ -273,7 +275,7 @@ class QueryMixin:
         if uids:
             placeholders = ",".join("?" * len(uids))
             att_rows = self.conn.execute(
-                "SELECT name, mime_type, size, content_id, is_inline, email_uid"
+                "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
                 f" FROM attachments WHERE email_uid IN ({placeholders})",
                 uids,
             ).fetchall()
@@ -356,16 +358,16 @@ class QueryMixin:
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        total_row = self.conn.execute(f"SELECT COUNT(*) AS c FROM emails{join}{where}", params).fetchone()
+        total_row = self.conn.execute(f"SELECT COUNT(*) AS c FROM emails{join}{where}", params).fetchone()  # nosec B608
         total = total_row["c"]
 
         rows = self.conn.execute(
-            f"""SELECT emails.uid, subject, sender_name, sender_email, date, folder,
-                       email_type, has_attachments, attachment_count, body_length,
-                       conversation_id
-                FROM emails{join}{where}
-                ORDER BY {sort_by} {sort_order}
-                LIMIT ? OFFSET ?""",
+            f"SELECT emails.uid, subject, sender_name, sender_email, date, folder,"  # nosec B608
+            f" email_type, has_attachments, attachment_count, body_length,"
+            f" conversation_id"
+            f" FROM emails{join}{where}"
+            f" ORDER BY {sort_by} {sort_order}"
+            f" LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
 

@@ -115,7 +115,7 @@ class QueryExpander:
                 if len(results) >= n_terms:
                     break
                 term = self._vocabulary[idx]
-                if term.lower() in query_lower or len(term) < 3:
+                if re.search(r"\b" + re.escape(term.lower()) + r"\b", query_lower) or len(term) < 3:
                     continue
                 results.append((term, round(float(similarities[idx]), 4)))
 

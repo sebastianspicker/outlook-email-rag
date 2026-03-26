@@ -372,7 +372,7 @@ def chunk_attachment(
 
     subject = parent_metadata.get("subject", "")
     date = parent_metadata.get("date", "")
-    filename_hash = hashlib.md5(f"{filename}_{att_index}".encode(), usedforsecurity=False).hexdigest()[:8]
+    filename_hash = hashlib.md5(f"{filename}_{att_index}".encode(), usedforsecurity=False).hexdigest()[:16]
     header = f'[Attachment: {filename} from email "{subject}" ({date})]'
 
     base_metadata = {

@@ -73,7 +73,7 @@ class TestEmailDeepContextInputDefaults:
         assert m.include_thread is True
         assert m.include_evidence is True
         assert m.include_sender_stats is True
-        assert m.max_body_chars == 10000
+        assert m.max_body_chars is None
 
     def test_all_flags_false(self):
         m = EmailDeepContextInput(

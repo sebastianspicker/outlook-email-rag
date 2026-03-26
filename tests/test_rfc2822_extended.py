@@ -392,7 +392,7 @@ class TestNormalizeDate:
 
     def test_unparseable_date(self):
         result = _normalize_date("not-a-date")
-        assert result == "not-a-date"
+        assert result == ""
 
 
 # ── _calendar_to_text ────────────────────────────────────────────

@@ -73,7 +73,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
 
             emails = [
                 {
-                    "clean_body": r.text,
+                    "clean_body": deps.sanitize(r.text),
                     "sender_email": r.metadata.get("sender_email", ""),
                     "sender_name": r.metadata.get("sender_name", ""),
                     "date": r.metadata.get("date", ""),
@@ -88,13 +88,15 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
             summary = summarize_thread(emails, max_sentences=params.max_sentences)
             participants = list(dict.fromkeys(e["sender_email"] for e in emails if e["sender_email"]))
             dates = [str(e["date"])[:10] for e in emails if e["date"]]
-            return json_response({
-                "conversation_id": params.conversation_id,
-                "email_count": len(emails),
-                "participants": participants,
-                "date_range": {"first": min(dates), "last": max(dates)} if dates else {},
-                "summary": summary,
-            })
+            return json_response(
+                {
+                    "conversation_id": params.conversation_id,
+                    "email_count": len(emails),
+                    "participants": participants,
+                    "date_range": {"first": min(dates), "last": max(dates)} if dates else {},
+                    "summary": summary,
+                }
+            )
 
         return await deps.offload(_run)
 
@@ -122,7 +124,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_items = []
                 for r in results:
                     items = analyzer.extract_action_items(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         source_uid=r.metadata.get("uid", ""),
                     )
@@ -151,7 +153,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_items = []
                 for r in results:
                     items = analyzer.extract_action_items(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         source_uid=r.metadata.get("uid", ""),
                     )
@@ -196,7 +198,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_decisions = []
                 for r in results:
                     decisions = analyzer.extract_decisions(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         date=r.metadata.get("date", ""),
                         source_uid=r.metadata.get("uid", ""),
@@ -220,7 +222,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 all_decisions = []
                 for r in results:
                     decisions = analyzer.extract_decisions(
-                        r.text,
+                        deps.sanitize(r.text),
                         sender=r.metadata.get("sender_email", ""),
                         date=r.metadata.get("date", ""),
                         source_uid=r.metadata.get("uid", ""),

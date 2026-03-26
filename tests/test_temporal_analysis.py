@@ -124,7 +124,7 @@ class TestResponseTimes:
         analyzer = TemporalAnalyzer(db)
         result = analyzer.response_times()
         assert len(result) == 1
-        assert result[0]["sender"] == "bob@example.com"
+        assert result[0]["replier"] == "bob@example.com"
         assert result[0]["avg_response_hours"] == 2.0
 
     def test_negative_times_excluded(self):

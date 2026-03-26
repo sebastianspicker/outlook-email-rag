@@ -161,7 +161,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         """Batch-update detected_language, sentiment_label, sentiment_score by uid.
 
         Each tuple: (detected_language, sentiment_label, sentiment_score, uid).
-        Returns number of rows updated.
+        Returns number of rows submitted for update.
         """
         self.conn.executemany(
             "UPDATE emails SET detected_language=?, sentiment_label=?, sentiment_score=? WHERE uid=?",
@@ -435,8 +435,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                        VALUES(?, ?, ?, ?, ?, ?)
                        ON CONFLICT(email_address) DO UPDATE SET
                          display_name = COALESCE(NULLIF(excluded.display_name, ''), contacts.display_name),
-                         first_seen = MIN(contacts.first_seen, excluded.first_seen),
-                         last_seen = MAX(contacts.last_seen, excluded.last_seen),
+                         first_seen = CASE
+                           WHEN excluded.first_seen IS NULL OR excluded.first_seen = '' THEN contacts.first_seen
+                           WHEN contacts.first_seen IS NULL OR contacts.first_seen = '' THEN excluded.first_seen
+                           ELSE MIN(contacts.first_seen, excluded.first_seen)
+                         END,
+                         last_seen = CASE
+                           WHEN excluded.last_seen IS NULL OR excluded.last_seen = '' THEN contacts.last_seen
+                           WHEN contacts.last_seen IS NULL OR contacts.last_seen = '' THEN excluded.last_seen
+                           ELSE MAX(contacts.last_seen, excluded.last_seen)
+                         END,
                          sent_count = contacts.sent_count + excluded.sent_count,
                          received_count = contacts.received_count + excluded.received_count
                     """,
@@ -449,8 +457,22 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                        VALUES(?, ?, 1, ?, ?)
                        ON CONFLICT(sender_email, recipient_email) DO UPDATE SET
                          email_count = communication_edges.email_count + 1,
-                         first_date = MIN(communication_edges.first_date, excluded.first_date),
-                         last_date = MAX(communication_edges.last_date, excluded.last_date)
+                         first_date = CASE
+                           WHEN excluded.first_date IS NULL OR excluded.first_date = ''
+                             THEN communication_edges.first_date
+                           WHEN communication_edges.first_date IS NULL
+                             OR communication_edges.first_date = ''
+                             THEN excluded.first_date
+                           ELSE MIN(communication_edges.first_date, excluded.first_date)
+                         END,
+                         last_date = CASE
+                           WHEN excluded.last_date IS NULL OR excluded.last_date = ''
+                             THEN communication_edges.last_date
+                           WHEN communication_edges.last_date IS NULL
+                             OR communication_edges.last_date = ''
+                             THEN excluded.last_date
+                           ELSE MAX(communication_edges.last_date, excluded.last_date)
+                         END
                     """,
                     edge_rows,
                 )
@@ -475,8 +497,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                VALUES(?, ?, ?, ?, ?, ?)
                ON CONFLICT(email_address) DO UPDATE SET
                  display_name = COALESCE(NULLIF(excluded.display_name, ''), contacts.display_name),
-                 first_seen = MIN(contacts.first_seen, excluded.first_seen),
-                 last_seen = MAX(contacts.last_seen, excluded.last_seen),
+                 first_seen = CASE
+                   WHEN excluded.first_seen IS NULL OR excluded.first_seen = '' THEN contacts.first_seen
+                   WHEN contacts.first_seen IS NULL OR contacts.first_seen = '' THEN excluded.first_seen
+                   ELSE MIN(contacts.first_seen, excluded.first_seen)
+                 END,
+                 last_seen = CASE
+                   WHEN excluded.last_seen IS NULL OR excluded.last_seen = '' THEN contacts.last_seen
+                   WHEN contacts.last_seen IS NULL OR contacts.last_seen = '' THEN excluded.last_seen
+                   ELSE MAX(contacts.last_seen, excluded.last_seen)
+                 END,
                  sent_count = contacts.sent_count + excluded.sent_count,
                  received_count = contacts.received_count + excluded.received_count
             """,
@@ -503,8 +533,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                VALUES(?, ?, 1, ?, ?)
                ON CONFLICT(sender_email, recipient_email) DO UPDATE SET
                  email_count = communication_edges.email_count + 1,
-                 first_date = MIN(communication_edges.first_date, excluded.first_date),
-                 last_date = MAX(communication_edges.last_date, excluded.last_date)
+                 first_date = CASE
+                   WHEN excluded.first_date IS NULL OR excluded.first_date = '' THEN communication_edges.first_date
+                   WHEN communication_edges.first_date IS NULL OR communication_edges.first_date = '' THEN excluded.first_date
+                   ELSE MIN(communication_edges.first_date, excluded.first_date)
+                 END,
+                 last_date = CASE
+                   WHEN excluded.last_date IS NULL OR excluded.last_date = '' THEN communication_edges.last_date
+                   WHEN communication_edges.last_date IS NULL OR communication_edges.last_date = '' THEN excluded.last_date
+                   ELSE MAX(communication_edges.last_date, excluded.last_date)
+                 END
             """,
             (sender, recipient, date, date),
         )

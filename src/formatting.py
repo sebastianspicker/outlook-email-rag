@@ -142,8 +142,7 @@ def truncate_body(text: str | None, max_chars: int) -> str:
         return text
     total_chars = len(text)
     return (
-        text[:max_chars]
-        + f"\n[...truncated at {max_chars:,}/{total_chars:,} chars. "
+        text[:max_chars] + f"\n[...truncated at {max_chars:,}/{total_chars:,} chars. "
         f"Use email_deep_context with the UID to read the full {total_chars:,}-character body.]"
     )
 
@@ -257,7 +256,7 @@ def format_date(iso_date: str | None) -> str:
 
 def format_file_size(size_bytes: int | None) -> str:
     """Format file size in human-readable units."""
-    if not size_bytes:
+    if size_bytes is None:
         return ""
     if size_bytes < 1024:
         return f"{size_bytes} B"

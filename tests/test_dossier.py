@@ -683,7 +683,7 @@ def test_attachment_details_shown(db, gen):
 def test_format_file_size():
     """format_file_size should produce human-readable sizes."""
     assert format_file_size(None) == ""
-    assert format_file_size(0) == ""
+    assert format_file_size(0) == "0 B"
     assert format_file_size(500) == "500 B"
     assert format_file_size(1536) == "1.5 KB"
     assert format_file_size(2097152) == "2.0 MB"

@@ -7,7 +7,7 @@ import email.policy
 import functools
 import logging
 import re
-from datetime import UTC
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 
 from .html_converter import _RE_WHITESPACE_COLLAPSE
@@ -45,9 +45,15 @@ def _normalize_date(value: str) -> str:
     if not value or not value.strip():
         return value
     value = value.strip()
-    # Already looks like ISO 8601 — keep as-is
+    # Already looks like ISO 8601 — normalize to UTC
     if re.match(r"\d{4}-\d{2}-\d{2}T", value):
-        return value
+        try:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(UTC)
+            return dt.isoformat()
+        except (ValueError, OverflowError):
+            return value
     # Try RFC 2822 (e.g. "Wed, 25 Jun 2025 10:52:47 +0200")
     try:
         dt = parsedate_to_datetime(value)
@@ -56,7 +62,8 @@ def _normalize_date(value: str) -> str:
             dt = dt.astimezone(UTC)
         return dt.isoformat()
     except Exception:
-        return value
+        logger.debug("Failed to parse date: %s", value[:80])
+        return ""
 
 
 def _parse_int(value: str, default: int = 0) -> int:
@@ -88,6 +95,7 @@ def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
 
     body_text = ""
     body_html = ""
+    calendar_text = ""
 
     if msg.is_multipart():
         for part in msg.walk():
@@ -108,14 +116,14 @@ def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
                     continue
                 if isinstance(payload, str):
                     body_html = payload
-            elif ct == "text/calendar" and not body_text:
+            elif ct == "text/calendar" and not calendar_text:
                 try:
                     payload = part.get_content()
                 except Exception:
                     logger.debug("Failed to decode text/calendar MIME part", exc_info=True)
                     continue
                 if isinstance(payload, str):
-                    body_text = _calendar_to_text(payload)
+                    calendar_text = _calendar_to_text(payload)
     else:
         ct = msg.get_content_type()
         try:
@@ -130,6 +138,13 @@ def _extract_body_from_source(raw_source: str) -> tuple[str, str]:
                 body_text = _calendar_to_text(payload)
             else:
                 body_text = payload
+
+    # Append calendar details when both text/plain and text/calendar exist
+    if calendar_text:
+        if body_text:
+            body_text = f"{body_text}\n\n{calendar_text}"
+        else:
+            body_text = calendar_text
 
     # Fallback for multipart emails with only calendar or attachment parts
     if not body_text and not body_html and msg.is_multipart():

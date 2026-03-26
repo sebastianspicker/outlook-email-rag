@@ -222,8 +222,7 @@ def _render_single_query_rich(console, query: str, results) -> None:
         preview = body[:600] + "..." if len(body) > 600 else body
 
         header = (
-            f"[{score_style}]{score_val:.0%}[/]  [bold]{subj}[/]{type_label}\n"
-            f"{sender}  |  {date_v}  |  [dim]UID: {uid_short}[/]"
+            f"[{score_style}]{score_val:.0%}[/]  [bold]{subj}[/]{type_label}\n{sender}  |  {date_v}  |  [dim]UID: {uid_short}[/]"
         )
         console.print(
             Panel(
@@ -315,6 +314,7 @@ def _cmd_export(args: argparse.Namespace) -> None:
     else:
         print("Usage: python -m src.cli export {thread,email,report,network}")
         sys.exit(2)
+        return  # unreachable; satisfies static analysis
     sys.exit(0)
 
 
@@ -1283,7 +1283,9 @@ def _run_evidence_verify() -> None:
                 f"  [bold]{total}[/] quotes checked  |  "
                 f"[green bold]{verified}[/] verified  |  "
                 f"[{'red bold' if failed else 'dim'}]{failed}[/] failed",
-                title=f"[bold]Quote Verification [{status_style}]{'PASSED' if failed == 0 else 'ISSUES FOUND'}[/{status_style}][/]",
+                title=(
+                    f"[bold]Quote Verification [{status_style}]{'PASSED' if failed == 0 else 'ISSUES FOUND'}[/{status_style}][/]"
+                ),
                 border_style=status_style,
             )
         )
@@ -1449,8 +1451,7 @@ def _run_provenance(email_uid: str) -> None:
             ingested_at = source.get("ingested_at", "")
             console.print(
                 Panel(
-                    f"  [bold]OLM Source Hash:[/] [dim]{olm_hash or 'N/A'}[/]\n"
-                    f"  [bold]Ingested At:[/] {ingested_at or 'N/A'}",
+                    f"  [bold]OLM Source Hash:[/] [dim]{olm_hash or 'N/A'}[/]\n  [bold]Ingested At:[/] {ingested_at or 'N/A'}",
                     title="[bold]Source Tracing[/]",
                     border_style="cyan",
                 )

@@ -282,15 +282,14 @@ class TestJsonResponseSizeGuard:
         assert len(parsed["items"]) == 50
         assert "_truncated" not in parsed
 
-    def test_single_item_passes_through(self):
+    def test_single_item_truncated_when_oversized(self):
         from src.tools.utils import json_response
 
         data = {"items": [{"text": "x" * 1000}]}
         result = json_response(data, max_chars=100)
-        # Single-item lists pass through without truncation (valid JSON)
+        # Single oversized item should be truncated with metadata
         parsed = json.loads(result)
-        assert len(parsed["items"]) == 1
-        assert "_truncated" not in parsed
+        assert parsed["_truncated"] is True
 
     def test_non_dict_response_returns_valid_json(self):
         from src.tools.utils import json_response

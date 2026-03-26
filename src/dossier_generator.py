@@ -167,7 +167,7 @@ class DossierGenerator:
         if evidence_uids:
             ph = ",".join("?" * len(evidence_uids))
             rows = self._db.conn.execute(
-                f"SELECT uid, thread_topic FROM emails WHERE uid IN ({ph})",
+                f"SELECT uid, thread_topic FROM emails WHERE uid IN ({ph})",  # nosec B608
                 evidence_uids,
             ).fetchall()
             thread_topics = {r["uid"]: r["thread_topic"] or "" for r in rows}

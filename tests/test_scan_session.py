@@ -129,8 +129,9 @@ class TestCandidates:
     def test_flag_candidates_basic(self):
         from src.scan_session import flag_candidates, get_session
 
-        added = flag_candidates("test", ["uid1", "uid2"], label="bossing", phase=1, score=0.9)
+        added, total = flag_candidates("test", ["uid1", "uid2"], label="bossing", phase=1, score=0.9)
         assert added == 2
+        assert total == 2
         s = get_session("test")
         assert "uid1" in s.candidates
         assert s.candidates["uid1"].label == "bossing"
@@ -148,8 +149,9 @@ class TestCandidates:
         from src.scan_session import flag_candidates, get_session
 
         flag_candidates("test", ["uid1"], label="maybe", phase=1)
-        added = flag_candidates("test", ["uid1"], label="bossing", phase=2)
+        added, total = flag_candidates("test", ["uid1"], label="bossing", phase=2)
         assert added == 0  # not newly added -- already flagged
+        assert total == 1
         s = get_session("test")
         # Original label is preserved (skip, not overwrite)
         assert s.candidates["uid1"].label == "maybe"
@@ -581,10 +583,12 @@ class TestFilterSeenThreadSafety:
         added_counts = []
 
         def run_a():
-            added_counts.append(flag_candidates(scan_id, uids_a, "label_a"))
+            added, _total = flag_candidates(scan_id, uids_a, "label_a")
+            added_counts.append(added)
 
         def run_b():
-            added_counts.append(flag_candidates(scan_id, uids_b, "label_b"))
+            added, _total = flag_candidates(scan_id, uids_b, "label_b")
+            added_counts.append(added)
 
         t1 = threading.Thread(target=run_a)
         t2 = threading.Thread(target=run_b)

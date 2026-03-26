@@ -62,7 +62,8 @@ class CrossEncoderReranker:
 
         scored = []
         for result, raw_score in zip(results, scores, strict=True):
-            sigmoid_score = 1.0 / (1.0 + math.exp(-float(raw_score)))
+            clamped = max(-500.0, min(500.0, float(raw_score)))
+            sigmoid_score = 1.0 / (1.0 + math.exp(-clamped))
             distance = 1.0 - sigmoid_score
             scored.append((result, distance))
 

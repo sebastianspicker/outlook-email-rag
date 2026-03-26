@@ -132,13 +132,13 @@ class EntityMixin:
             date_expr = "substr(e.date, 1, 7)"
 
         rows = self.conn.execute(
-            f"""SELECT {date_expr} AS period, COUNT(*) AS count
-                FROM entity_mentions em
-                JOIN entities ent ON em.entity_id = ent.id
-                JOIN emails e ON em.email_uid = e.uid
-                WHERE ent.normalized_form LIKE ? ESCAPE '\\'
-                GROUP BY period
-                ORDER BY period""",
+            f"SELECT {date_expr} AS period, COUNT(*) AS count"  # nosec B608
+            f" FROM entity_mentions em"
+            f" JOIN entities ent ON em.entity_id = ent.id"
+            f" JOIN emails e ON em.email_uid = e.uid"
+            r" WHERE ent.normalized_form LIKE ? ESCAPE '\'"
+            f" GROUP BY period"
+            f" ORDER BY period",
             (f"%{_escape_like(entity_text.lower())}%",),
         ).fetchall()
 

@@ -46,9 +46,10 @@ _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 _PHONE_RE = re.compile(
     r"(?:\+\d{1,3}[ \t.-]?)?"  # optional country code
     r"(?:\(?\d{2,5}\)?[ \t.-]?)?"  # optional area code
-    r"[\d \t.\-/]{7,}",  # at least 7 digits total (no newline matching)
+    r"\d[\d \t.\-/]{5,16}\d",  # starts/ends with digit, capped length
 )
 _DATE_LIKE_RE = re.compile(r"^\d{1,4}[/\-\.]\d{1,2}[/\-\.]\d{1,4}$")
+_IP_LIKE_RE = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
 _MENTION_RE = re.compile(r"@[a-zA-Z]\w{1,30}")
 
 
@@ -94,8 +95,8 @@ def extract_entities(text: str, sender_email: str | None = None) -> list[Extract
     # Phone numbers
     for match in _PHONE_RE.finditer(text):
         raw = match.group().strip()
-        # Skip date-like patterns (e.g. 2024-01-15, 15/01/2024)
-        if _DATE_LIKE_RE.match(raw):
+        # Skip date-like patterns (e.g. 2024-01-15, 15/01/2024) and IPs
+        if _DATE_LIKE_RE.match(raw) or _IP_LIKE_RE.match(raw):
             continue
         digits = re.sub(r"\D", "", raw)
         if len(digits) >= 7:
