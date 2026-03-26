@@ -401,7 +401,7 @@ class EmailRetriever:
                 from .colbert_reranker import ColBERTReranker
 
                 self._colbert_reranker = ColBERTReranker(self.embedder)
-            return self._colbert_reranker.rerank(query, results, top_k=top_k)  # type: ignore[union-attr]
+            return self._colbert_reranker.rerank(query, results, top_k=top_k)
 
         # Cross-encoder fallback
         if self._reranker is None:
