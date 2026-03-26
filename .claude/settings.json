@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "email_search": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "."
+    }
+  }
+}

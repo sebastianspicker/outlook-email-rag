@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #222;
+    background: #fff;
+    padding: 20px 30px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* Print styles */
+  @media print {
+    body { padding: 0; font-size: 11px; }
+    .page-break { page-break-before: always; }
+    .no-print { display: none; }
+    .evidence-item, .email-card, .relationship-card { break-inside: avoid; }
+    .email-card-body { max-height: none !important; overflow: visible !important; }
+    @page {
+      margin: 20mm 15mm;
+      @top-center { content: "CONFIDENTIAL"; font-size: 8px; color: #999; }
+      @bottom-right { content: "Page " counter(page); font-size: 8px; color: #999; }
+    }
+  }
+
+  /* Cover page */
+  .cover {
+    text-align: center;
+    padding: 60px 20px 40px;
+    border-bottom: 3px solid #1a237e;
+    margin-bottom: 30px;
+  }
+  .cover h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1a237e;
+    margin-bottom: 12px;
+  }
+  .cover .case-ref {
+    font-size: 16px;
+    color: #555;
+    margin-bottom: 8px;
+  }
+  .cover .meta-line {
+    font-size: 12px;
+    color: #888;
+    margin-top: 4px;
+  }
+  .cover .hash {
+    font-family: monospace;
+    font-size: 10px;
+    color: #999;
+    word-break: break-all;
+    margin-top: 16px;
+  }
+
+  /* Section headers */
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a237e;
+    border-bottom: 2px solid #e8eaf6;
+    padding-bottom: 6px;
+    margin: 24px 0 12px;
+  }
+  h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin: 16px 0 8px;
+  }
+
+  /* Summary stats */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat-box {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 12px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a237e;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* TOC */
+  .toc { margin-bottom: 24px; }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin-bottom: 4px; }
+  .toc a { color: #1a237e; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  /* Evidence timeline */
+  .evidence-item {
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    background: #fafafa;
+  }
+  .evidence-item.relevance-5 { border-left: 4px solid #c62828; }
+  .evidence-item.relevance-4 { border-left: 4px solid #e65100; }
+  .evidence-item.relevance-3 { border-left: 4px solid #f9a825; }
+  .evidence-item.relevance-2 { border-left: 4px solid #2e7d32; }
+  .evidence-item.relevance-1 { border-left: 4px solid #90a4ae; }
+
+  .evidence-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .evidence-date { font-weight: 600; color: #333; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .badge-category {
+    background: #e8eaf6;
+    color: #1a237e;
+  }
+  .badge-relevance {
+    background: #fce4ec;
+    color: #c62828;
+  }
+  .badge-verified {
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+  .badge-unverified {
+    background: #fff3e0;
+    color: #e65100;
+  }
+
+  /* Category-specific badge colors */
+  .badge-discrimination { background: #ffcdd2; color: #b71c1c; }
+  .badge-harassment { background: #f8bbd0; color: #880e4f; }
+  .badge-sexual_harassment { background: #e1bee7; color: #6a1b9a; }
+  .badge-bossing { background: #ffccbc; color: #bf360c; }
+  .badge-retaliation { background: #d1c4e9; color: #4527a0; }
+  .badge-exclusion { background: #bbdefb; color: #0d47a1; }
+  .badge-micromanagement { background: #b2dfdb; color: #004d40; }
+  .badge-gaslighting { background: #f3e5f5; color: #4a148c; }
+  .badge-workload { background: #e3f2fd; color: #0d47a1; }
+  .badge-hostile_environment { background: #fff9c4; color: #f57f17; }
+  .badge-general { background: #f5f5f5; color: #616161; }
+  .evidence-quote {
+    font-style: italic;
+    background: #fff;
+    border-left: 3px solid #ccc;
+    padding: 8px 12px;
+    margin: 8px 0;
+    color: #333;
+  }
+  .evidence-meta {
+    font-size: 11px;
+    color: #666;
+  }
+
+  /* Source email appendix */
+  .email-card {
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    background: #fff;
+  }
+  .email-card-header {
+    background: #f5f5f5;
+    padding: 10px 14px;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 12px;
+  }
+  .email-card-header strong { color: #333; }
+  .email-card-body {
+    padding: 14px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  /* Custody log */
+  .custody-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-bottom: 20px;
+  }
+  .custody-table th, .custody-table td {
+    border: 1px solid #e0e0e0;
+    padding: 6px 10px;
+    text-align: left;
+  }
+  .custody-table th {
+    background: #f5f5f5;
+    font-weight: 600;
+    color: #333;
+  }
+  .custody-table td.hash {
+    font-family: monospace;
+    font-size: 9px;
+    word-break: break-all;
+  }
+
+  /* Relationship section */
+  .relationship-card {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  /* Evidence quote banners in source emails */
+  .evidence-quote-banner {
+    background: #fff8e1;
+    border-left: 3px solid #f9a825;
+    padding: 6px 10px;
+    margin: 0 14px;
+    font-size: 11px;
+  }
+  .evidence-quote-banner .quote-text {
+    font-style: italic;
+    color: #333;
+  }
+  .evidence-quote-banner .quote-ref {
+    font-weight: 600;
+    color: #1a237e;
+  }
+
+  /* Attachment bar */
+  .attachment-bar {
+    background: #f5f5f5;
+    border-top: 1px solid #e0e0e0;
+    padding: 6px 14px;
+    font-size: 11px;
+    color: #555;
+  }
+  .attachment-bar strong { color: #333; }
+
+  /* Verification banner */
+  .verification-banner {
+    padding: 10px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  .banner-ok {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    color: #2e7d32;
+  }
+  .banner-warn {
+    background: #fff3e0;
+    border: 1px solid #ffcc80;
+    color: #e65100;
+  }
+
+  /* Evidence index table */
+  .evidence-index-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-bottom: 20px;
+  }
+  .evidence-index-table th, .evidence-index-table td {
+    border: 1px solid #e0e0e0;
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .evidence-index-table th {
+    background: #f5f5f5;
+    font-weight: 600;
+    color: #333;
+  }
+  .evidence-index-table td:first-child { text-align: center; }
+
+  /* Relevance stars */
+  .relevance-stars {
+    color: #f9a825;
+    letter-spacing: 1px;
+    font-size: 12px;
+  }
+  @media print {
+    .relevance-stars { color: #333; }
+    .badge-category, .badge-discrimination, .badge-harassment,
+    .badge-sexual_harassment, .badge-bossing, .badge-retaliation,
+    .badge-exclusion, .badge-micromanagement, .badge-gaslighting,
+    .badge-workload, .badge-hostile_environment, .badge-general {
+      border: 1px solid #666;
+      background: #fff;
+      color: #000;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Cover Page -->
+<div class="cover">
+  <h1>{{ title }}</h1>
+  {% if case_reference %}<div class="case-ref">{{ case_reference }}</div>{% endif %}
+  <div class="meta-line">Generated: {{ generated_at }}</div>
+  {% if custodian %}<div class="meta-line">Custodian: {{ custodian }}</div>{% endif %}
+  {% if prepared_by %}<div class="meta-line">Prepared by: {{ prepared_by }}</div>{% endif %}
+  <div class="meta-line">Evidence Items: {{ evidence_count }} | Source Emails: {{ email_count }}</div>
+  {% if dossier_hash %}<div class="hash">Dossier Integrity Hash (SHA-256): {{ dossier_hash }}</div>{% endif %}
+</div>
+
+<!-- Summary Stats -->
+<div class="stats-grid">
+  <div class="stat-box">
+    <div class="stat-value">{{ evidence_count }}</div>
+    <div class="stat-label">Evidence Items</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value">{{ email_count }}</div>
+    <div class="stat-label">Source Emails</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value">{{ verified_count }}</div>
+    <div class="stat-label">Verified Quotes</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value">{{ category_count }}</div>
+    <div class="stat-label">Categories</div>
+  </div>
+</div>
+
+{% if has_evidence %}
+<!-- Executive Summary -->
+<div id="executive-summary" style="margin-bottom: 24px;">
+  <h2>Executive Summary</h2>
+  <p>This dossier contains <strong>{{ evidence_count }}</strong> evidence items from
+  <strong>{{ email_count }}</strong> source emails, spanning <strong>{{ date_earliest }}</strong>
+  to <strong>{{ date_latest }}</strong>. Evidence from <strong>{{ unique_sender_count }}</strong>
+  sender(s). Most prevalent category: <strong>{{ dominant_category }}</strong>
+  ({{ dominant_count }} items). <strong>{{ verified_count }}</strong> of {{ evidence_count }}
+  quotes verified against source emails.</p>
+
+  {% if category_breakdown %}
+  <h3>Category Breakdown</h3>
+  <table class="custody-table" style="max-width: 400px;">
+    <thead><tr><th>Category</th><th style="text-align:right">Count</th></tr></thead>
+    <tbody>
+    {% for cb in category_breakdown %}
+    <tr><td><span class="badge badge-{{ cb.category }}">{{ cb.category }}</span></td><td style="text-align:right">{{ cb.count }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if has_glossary %}
+  <h3>Category Definitions</h3>
+  <table class="custody-table">
+    <thead><tr><th>Category</th><th>Definition</th></tr></thead>
+    <tbody>
+    {% for g in glossary_items %}
+    <tr><td><span class="badge badge-{{ g.category }}">{{ g.category }}</span></td><td>{{ g.definition }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<!-- Verification Banner -->
+{% if all_verified %}
+<div class="verification-banner banner-ok">&#10003; All {{ evidence_count }} evidence quotes verified against source emails.</div>
+{% else %}
+<div class="verification-banner banner-warn">&#9888; {{ verified_count }} of {{ evidence_count }} quotes verified — {{ unverified_count }} unverified.</div>
+{% endif %}
+
+<!-- Scope Statement -->
+<div style="background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px 16px; margin-bottom: 20px; font-size: 12px;">
+  <strong>Scope:</strong> This dossier draws from an archive of <strong>{{ archive_total }}</strong> emails
+  ({{ archive_earliest }} to {{ archive_latest }}).
+  {{ scope_filter_text }}
+</div>
+{% endif %}
+
+<!-- Table of Contents -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ol>
+    {% if has_evidence %}<li><a href="#executive-summary">Executive Summary</a></li>{% endif %}
+    {% if has_evidence_index %}<li><a href="#evidence-index">Index of Evidence</a></li>{% endif %}
+    <li><a href="#evidence-timeline">Evidence Timeline</a></li>
+    <li><a href="#source-emails">Source Email Appendix</a></li>
+    {% if include_relationships %}<li><a href="#relationships">Relationship Analysis</a></li>{% endif %}
+    {% if include_custody %}<li><a href="#custody-log">Chain-of-Custody Log</a></li>{% endif %}
+  </ol>
+</div>
+
+{% if has_evidence_index %}
+<!-- Index of Evidence -->
+<h2 id="evidence-index">Index of Evidence</h2>
+<table class="evidence-index-table">
+  <thead>
+    <tr><th>No.</th><th>Category</th><th>Date</th><th>Sender</th><th>Summary</th><th>Rel.</th></tr>
+  </thead>
+  <tbody>
+  {% for ei in evidence_index %}
+  <tr>
+    <td><a href="#evidence-{{ ei.evidence_number }}">{{ ei.evidence_number }}</a></td>
+    <td><span class="badge badge-{{ ei.category }}">{{ ei.category }}</span></td>
+    <td>{{ ei.date_short }}</td>
+    <td>{{ ei.sender_short }}</td>
+    <td>{{ ei.summary_short }}</td>
+    <td class="relevance-stars">{{ ei.relevance_stars }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- Evidence Timeline -->
+<div class="page-break"></div>
+<h2 id="evidence-timeline">Evidence Timeline</h2>
+{% if evidence_items %}
+{% for item in evidence_items %}
+<div class="evidence-item relevance-{{ item.relevance }}" id="evidence-{{ item.evidence_number }}">
+  <div class="evidence-header">
+    <span class="evidence-date"><strong>{{ item.evidence_number }}</strong> &mdash; {{ item.date_formatted }}</span>
+    <span>
+      <span class="badge badge-{{ item.category }}">{{ item.category }}</span>
+      <span class="relevance-stars" title="Relevance: {{ item.relevance }}/5">{{ item.relevance_stars }}</span>
+      <span class="badge {{ item.verified_class }}">{{ item.verified_text }}</span>
+    </span>
+  </div>
+  <div class="evidence-quote">&ldquo;{{ item.key_quote }}&rdquo;</div>
+  <div class="evidence-meta">
+    <strong>Summary:</strong> {{ item.summary }}<br>
+    <strong>From:</strong> {{ item.sender_name }} &lt;{{ item.sender_email }}&gt;<br>
+    {% if item.recipients %}<strong>To:</strong> {{ item.recipients }}<br>{% endif %}
+    <strong>Subject:</strong> {{ item.subject }}<br>
+    {% if item.appendix_ref %}<strong>Source:</strong> Appendix <a href="#appendix-{{ item.appendix_ref }}">{{ item.appendix_ref }}</a><br>{% endif %}
+    {% if item.thread_topic %}<strong>Thread:</strong> {{ item.thread_topic }}<br>{% endif %}
+    {% if item.created_at_formatted %}<strong>Collected:</strong> {{ item.created_at_formatted }}<br>{% endif %}
+    {% if item.has_updated %}<strong>Updated:</strong> {{ item.updated_at_formatted }}<br>{% endif %}
+    <strong>Email UID:</strong> <span style="font-family: monospace; font-size: 10px;">{{ item.email_uid }}</span>
+    {% if item.has_notes %}<br><strong>Notes:</strong> {{ item.notes }}{% endif %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<p>No evidence items match the specified filters.</p>
+{% endif %}
+
+<!-- Source Email Appendix -->
+<div class="page-break"></div>
+<h2 id="source-emails">Source Email Appendix</h2>
+{% if source_emails %}
+{% for email in source_emails %}
+<div class="email-card" id="appendix-{{ email.appendix_number }}">
+  <div class="email-card-header">
+    <strong>{{ email.appendix_number }}</strong> &mdash;
+    <strong>From:</strong> {{ email.sender_name }} &lt;{{ email.sender_email }}&gt; &middot;
+    <strong>Date:</strong> {{ email.date_formatted }}<br>
+    <strong>Subject:</strong> {{ email.subject }}
+    {% if email.to %}<br><strong>To:</strong> {{ email.to }}{% endif %}
+    {% if email.cc %}<br><strong>CC:</strong> {{ email.cc }}{% endif %}
+    {% if email.bcc %}<br><strong>BCC:</strong> {{ email.bcc }}{% endif %}
+    {% if email.folder %}<br><strong>Folder:</strong> {{ email.folder }}{% endif %}
+    {% if email.evidence_refs_str %}<br><strong>Evidence:</strong> {{ email.evidence_refs_str }}{% endif %}
+    <br><strong>UID:</strong> <span style="font-family:monospace;font-size:10px">{{ email.uid }}</span> &middot;
+    <strong>SHA-256:</strong> <span style="font-family:monospace;font-size:9px">{{ email.content_sha256_display }}</span>
+  </div>
+  {% for q in email.evidence_quotes %}
+  <div class="evidence-quote-banner">
+    <span class="quote-ref">{{ q.evidence_number }}</span>
+    <span class="badge badge-{{ q.category }}">{{ q.category }}</span>
+    &ldquo;<span class="quote-text">{{ q.quote }}</span>&rdquo;
+  </div>
+  {% endfor %}
+  <div class="email-card-body">{{ email.body_text }}</div>
+  {% if email.has_attachments %}
+  <div class="attachment-bar">
+    <strong>Attachments ({{ email.attachment_count }}):</strong>
+    {% for att in email.attachment_list %}
+      {{ att.name }}{% if att.mime_type %} ({{ att.mime_type }}){% endif %}{% if att.size_display %} — {{ att.size_display }}{% endif %}{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p>No source emails found.</p>
+{% endif %}
+
+{% if include_relationships %}
+<!-- Relationship Analysis -->
+<div class="page-break"></div>
+<h2 id="relationships">Relationship Analysis</h2>
+{% if relationship_data %}
+{% for person in relationship_data %}
+<div class="relationship-card">
+  <h3>{{ person.email }}</h3>
+  <p><strong>Sent:</strong> {{ person.send_count }} | <strong>Received:</strong> {{ person.receive_count }} | <strong>Bridge Score:</strong> {{ person.bridge_score }}</p>
+  {% if person.top_contacts %}
+  <p><strong>Top Contacts:</strong>
+    {% for c in person.top_contacts[:5] %}
+      {{ c.partner }} ({{ c.total }}{% if not loop.last %}), {% else %}){% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p>No relationship data available for persons of interest.</p>
+{% endif %}
+{% endif %}
+
+{% if include_custody %}
+<!-- Chain-of-Custody Log -->
+<div class="page-break"></div>
+<h2 id="custody-log">Chain-of-Custody Log</h2>
+{% if custody_events %}
+<table class="custody-table">
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>Action</th>
+      <th>Actor</th>
+      <th>Target</th>
+      <th>Content Hash</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for event in custody_events %}
+    <tr>
+      <td>{{ event.timestamp }}</td>
+      <td>{{ event.action }}</td>
+      <td>{{ event.actor }}</td>
+      <td>{{ event.target_type }}:{{ event.target_id }}</td>
+      <td class="hash">{{ event.content_hash }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No custody events recorded.</p>
+{% endif %}
+{% endif %}
+
+<!-- Legal Disclaimer & Footer -->
+<div style="margin-top: 40px; padding-top: 12px; border-top: 2px solid #1a237e; font-size: 10px; color: #666;">
+  <div style="font-weight: 600; color: #c62828; margin-bottom: 8px; text-align: center;">CONFIDENTIAL &mdash; FOR AUTHORIZED USE ONLY</div>
+  <p style="margin-bottom: 6px;">This document contains electronically stored information (ESI) extracted
+  from an email archive. All evidence quotes have been verified against source email body text where
+  possible. Each source email is identified by its SHA-256 content hash for integrity verification.
+  The complete chain of custody for all evidence items is recorded in the audit log above.</p>
+  <p style="margin-bottom: 6px;">This dossier was generated by an automated system and does not constitute
+  legal advice. The contents should be reviewed by qualified legal counsel before use in any
+  proceeding.</p>
+  <p style="text-align: center;">
+    {% if dossier_hash %}Dossier SHA-256: <span style="font-family: monospace;">{{ dossier_hash }}</span><br>{% endif %}
+    Generated {{ generated_at }} by Outlook Email RAG
+  </p>
+</div>
+
+
+</body>
+</html>
