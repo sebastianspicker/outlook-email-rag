@@ -492,7 +492,7 @@ class EmailRetriever:
                 try:
                     self._sparse_build_count = self.collection.count()
                 except Exception:
-                    self._sparse_build_count = None
+                    self._sparse_build_count = -1  # sentinel: count unknown
             else:
                 # Check for staleness: rebuild if collection count changed
                 try:

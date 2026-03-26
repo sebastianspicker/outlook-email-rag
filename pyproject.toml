@@ -101,6 +101,11 @@ module = [
     "src.web_app",
     "src.image_embedder",
     "src.rfc2822",
+    "src.embedder",
+    "src.retriever",
+    "src.parse_olm",
+    "src.olm_xml_helpers",
+    "src.fine_tuner",
 ]
 disallow_untyped_defs = false
 disable_error_code = ["index", "assignment", "return-value", "arg-type", "type-var", "call-overload", "operator", "union-attr", "attr-defined", "misc", "no-redef", "var-annotated", "dict-item"]
