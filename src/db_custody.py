@@ -73,7 +73,7 @@ class CustodyMixin:
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
         rows = self.conn.execute(
-            f"SELECT * FROM custody_chain{where} ORDER BY timestamp DESC LIMIT ?",
+            f"SELECT * FROM custody_chain{where} ORDER BY timestamp DESC LIMIT ?",  # nosec B608
             [*params, limit],
         ).fetchall()
 

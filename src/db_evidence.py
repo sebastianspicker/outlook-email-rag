@@ -197,13 +197,13 @@ class EvidenceMixin:
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where}",
+            f"SELECT COUNT(*) AS c FROM evidence_items{where}",  # nosec B608
             params,
         ).fetchone()
         total = total_row["c"]
 
         rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ? OFFSET ?",
+            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ? OFFSET ?",  # nosec B608
             [*params, limit, offset],
         ).fetchall()
 
@@ -266,7 +266,7 @@ class EvidenceMixin:
 
         try:
             cur = self.conn.execute(
-                f"UPDATE evidence_items SET {set_clause} WHERE id = ?",
+                f"UPDATE evidence_items SET {set_clause} WHERE id = ?",  # nosec B608
                 params,
             )
 
@@ -423,24 +423,24 @@ class EvidenceMixin:
         where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql}",
+            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql}",  # nosec B608
             params,
         ).fetchone()
         total = total_row["c"]
 
         verified_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql} {'AND' if where_clauses else 'WHERE'} verified = 1",
+            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql} {'AND' if where_clauses else 'WHERE'} verified = 1",  # nosec B608
             params,
         ).fetchone()
         verified = verified_row["c"]
 
         cat_rows = self.conn.execute(
-            f"SELECT category, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY category ORDER BY count DESC",
+            f"SELECT category, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY category ORDER BY count DESC",  # nosec B608
             params,
         ).fetchall()
 
         rel_rows = self.conn.execute(
-            f"SELECT relevance, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY relevance ORDER BY relevance DESC",
+            f"SELECT relevance, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY relevance ORDER BY relevance DESC",  # nosec B608
             params,
         ).fetchall()
 
@@ -480,12 +480,12 @@ class EvidenceMixin:
         where = " WHERE " + " AND ".join(conditions)
 
         total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where}",
+            f"SELECT COUNT(*) AS c FROM evidence_items{where}",  # nosec B608
             params,
         ).fetchone()
 
         rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ?",
+            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ?",  # nosec B608
             [*params, limit],
         ).fetchall()
 

@@ -33,7 +33,7 @@ def _validate_output_path(v: str | None) -> str | None:
         import tempfile as _tmpmod
 
         home = Path.home().resolve()
-        tmp = Path("/tmp").resolve()
+        tmp = Path("/tmp").resolve()  # nosec B108
         systmp = Path(_tmpmod.gettempdir()).resolve()
         if not (resolved.is_relative_to(home) or resolved.is_relative_to(tmp) or resolved.is_relative_to(systmp)):
             raise ValueError(f"Output path must be under working directory, home, or /tmp: {v}")

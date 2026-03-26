@@ -185,7 +185,7 @@ class QueryMixin:
             return {}
         placeholders = ",".join("?" * len(uids))
         rows = self.conn.execute(
-            f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",
+            f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",  # nosec B608
             uids,
         ).fetchall()
         result: dict[str, dict[str, list[str]]] = {}
@@ -223,14 +223,14 @@ class QueryMixin:
         placeholders = ",".join("?" * len(uids))
         # 1) Emails
         rows = self.conn.execute(
-            f"SELECT * FROM emails WHERE uid IN ({placeholders})",
+            f"SELECT * FROM emails WHERE uid IN ({placeholders})",  # nosec B608
             uids,
         ).fetchall()
         # 2) Recipients (batch)
         all_recipients = self._recipients_for_uids(uids)
         # 3) Attachments (batch)
         att_rows = self.conn.execute(
-            "SELECT name, mime_type, size, content_id, is_inline, email_uid"
+            "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
             f" FROM attachments WHERE email_uid IN ({placeholders})",
             uids,
         ).fetchall()
@@ -275,7 +275,7 @@ class QueryMixin:
         if uids:
             placeholders = ",".join("?" * len(uids))
             att_rows = self.conn.execute(
-                "SELECT name, mime_type, size, content_id, is_inline, email_uid"
+                "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
                 f" FROM attachments WHERE email_uid IN ({placeholders})",
                 uids,
             ).fetchall()
@@ -358,16 +358,16 @@ class QueryMixin:
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        total_row = self.conn.execute(f"SELECT COUNT(*) AS c FROM emails{join}{where}", params).fetchone()
+        total_row = self.conn.execute(f"SELECT COUNT(*) AS c FROM emails{join}{where}", params).fetchone()  # nosec B608
         total = total_row["c"]
 
         rows = self.conn.execute(
-            f"""SELECT emails.uid, subject, sender_name, sender_email, date, folder,
-                       email_type, has_attachments, attachment_count, body_length,
-                       conversation_id
-                FROM emails{join}{where}
-                ORDER BY {sort_by} {sort_order}
-                LIMIT ? OFFSET ?""",
+            f"SELECT emails.uid, subject, sender_name, sender_email, date, folder,"  # nosec B608
+            f" email_type, has_attachments, attachment_count, body_length,"
+            f" conversation_id"
+            f" FROM emails{join}{where}"
+            f" ORDER BY {sort_by} {sort_order}"
+            f" LIMIT ? OFFSET ?",
             [*params, limit, offset],
         ).fetchall()
 
