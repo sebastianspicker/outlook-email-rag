@@ -39,4 +39,4 @@ jobs:
       - name: Security Scan
         run: bandit -r src -q -ll -ii
       - name: Dependency Audit
-        run: python -m pip_audit -r requirements.txt
+        run: python -m pip_audit -r requirements.txt --ignore-vuln CVE-2026-4539  # pygments 2.19.2, no fix available yet
