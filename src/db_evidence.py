@@ -11,12 +11,12 @@ from .db_schema import _escape_like
 
 logger = logging.getLogger(__name__)
 
-_WS_RE = re.compile(r'[\s\xa0]+')
+_WS_RE = re.compile(r"[\s\xa0]+")
 
 
 def _normalize_ws(text: str) -> str:
     """Collapse all whitespace (including nbsp) to single spaces and lowercase."""
-    return _WS_RE.sub(' ', text.strip()).lower()
+    return _WS_RE.sub(" ", text.strip()).lower()
 
 
 class EvidenceMixin:

@@ -157,12 +157,14 @@ class AnalyticsMixin:
                 words = json.loads(r["top_words"]) if r["top_words"] else []
             except (json.JSONDecodeError, TypeError):
                 words = []
-            result.append({
-                "id": r["id"],
-                "label": r["label"],
-                "top_words": words,
-                "email_count": r["email_count"],
-            })
+            result.append(
+                {
+                    "id": r["id"],
+                    "label": r["label"],
+                    "top_words": words,
+                    "email_count": r["email_count"],
+                }
+            )
         return result
 
     # ------------------------------------------------------------------

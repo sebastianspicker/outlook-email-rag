@@ -25,6 +25,7 @@ def validate_date_window(date_from: str | None, date_to: str | None) -> None:
     """Ensure the date range is non-inverted when both bounds exist."""
     if date_from and date_to:
         from datetime import date
+
         if date.fromisoformat(date_from) > date.fromisoformat(date_to):
             raise ValueError("date_from cannot be later than date_to")
 

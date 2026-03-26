@@ -52,9 +52,7 @@ class QueryMixin:
 
     def date_range(self) -> tuple[str, str]:
         """Return (earliest_date, latest_date) across all emails."""
-        row = self.conn.execute(
-            "SELECT MIN(NULLIF(date, '')) AS min_d, MAX(NULLIF(date, '')) AS max_d FROM emails"
-        ).fetchone()
+        row = self.conn.execute("SELECT MIN(NULLIF(date, '')) AS min_d, MAX(NULLIF(date, '')) AS max_d FROM emails").fetchone()
         return (row["min_d"] or "", row["max_d"] or "")
 
     def folder_counts(self) -> dict[str, int]:

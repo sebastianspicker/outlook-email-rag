@@ -88,13 +88,15 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
             summary = summarize_thread(emails, max_sentences=params.max_sentences)
             participants = list(dict.fromkeys(e["sender_email"] for e in emails if e["sender_email"]))
             dates = [str(e["date"])[:10] for e in emails if e["date"]]
-            return json_response({
-                "conversation_id": params.conversation_id,
-                "email_count": len(emails),
-                "participants": participants,
-                "date_range": {"first": min(dates), "last": max(dates)} if dates else {},
-                "summary": summary,
-            })
+            return json_response(
+                {
+                    "conversation_id": params.conversation_id,
+                    "email_count": len(emails),
+                    "participants": participants,
+                    "date_range": {"first": min(dates), "last": max(dates)} if dates else {},
+                    "summary": summary,
+                }
+            )
 
         return await deps.offload(_run)
 

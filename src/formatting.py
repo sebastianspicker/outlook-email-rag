@@ -142,8 +142,7 @@ def truncate_body(text: str | None, max_chars: int) -> str:
         return text
     total_chars = len(text)
     return (
-        text[:max_chars]
-        + f"\n[...truncated at {max_chars:,}/{total_chars:,} chars. "
+        text[:max_chars] + f"\n[...truncated at {max_chars:,}/{total_chars:,} chars. "
         f"Use email_deep_context with the UID to read the full {total_chars:,}-character body.]"
     )
 

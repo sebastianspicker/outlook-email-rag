@@ -270,7 +270,8 @@ class EmailDeepContextInput(StrictInput):
     include_evidence: bool = Field(default=True, description="Include existing evidence from this email.")
     include_sender_stats: bool = Field(default=True, description="Include sender communication profile.")
     max_body_chars: int | None = Field(
-        default=None, ge=0,
+        default=None,
+        ge=0,
         description="Max body text chars (0=unlimited, None=use profile default).",
     )
 

@@ -118,8 +118,7 @@ class TestP0ContactUpsertNullDates:
         db.insert_email(_make_email(message_id="<m2@ex>", date="2024-05-15T12:00:00"))
 
         edge = db.conn.execute(
-            "SELECT first_date, last_date FROM communication_edges "
-            "WHERE sender_email = 'alice@example.com'"
+            "SELECT first_date, last_date FROM communication_edges WHERE sender_email = 'alice@example.com'"
         ).fetchone()
         assert edge["first_date"] == "2024-05-15T12:00:00"
         assert edge["last_date"] == "2024-05-15T12:00:00"
@@ -144,7 +143,7 @@ class TestP0SidebarHtmlEscape:
 
     def test_html_escape_in_sender_name(self):
         """Sender names containing HTML must be escaped."""
-        malicious_sender = '<img src=x onerror=alert(1)>'
+        malicious_sender = "<img src=x onerror=alert(1)>"
         escaped = html_escape(malicious_sender)
         assert "<img" not in escaped
         assert "&lt;img" in escaped
@@ -773,8 +772,7 @@ class TestP2CalendarContentPreserved:
         plain_part.set_content("Please see the meeting invite.", subtype="plain")
         cal_part = EmailMessage()
         cal_part.set_content(
-            "BEGIN:VCALENDAR\nBEGIN:VEVENT\n"
-            "SUMMARY:Team Standup\nEND:VEVENT\nEND:VCALENDAR",
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Team Standup\nEND:VEVENT\nEND:VCALENDAR",
             subtype="calendar",
         )
         msg.attach(plain_part)
@@ -810,25 +808,13 @@ class TestP3DateRangeExcludesEmptyStrings:
         db_path = tmp_path / "test.db"
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        conn.execute(
-            "CREATE TABLE emails (date TEXT, sender_email TEXT, "
-            "sender_name TEXT, folder TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO emails VALUES ('', 'a@b.com', 'A', 'Inbox')"
-        )
-        conn.execute(
-            "INSERT INTO emails VALUES ('2024-03-15', 'b@b.com', 'B', 'Inbox')"
-        )
-        conn.execute(
-            "INSERT INTO emails VALUES ('2024-06-20', 'c@b.com', 'C', 'Inbox')"
-        )
+        conn.execute("CREATE TABLE emails (date TEXT, sender_email TEXT, sender_name TEXT, folder TEXT)")
+        conn.execute("INSERT INTO emails VALUES ('', 'a@b.com', 'A', 'Inbox')")
+        conn.execute("INSERT INTO emails VALUES ('2024-03-15', 'b@b.com', 'B', 'Inbox')")
+        conn.execute("INSERT INTO emails VALUES ('2024-06-20', 'c@b.com', 'C', 'Inbox')")
         conn.commit()
 
-        row = conn.execute(
-            "SELECT MIN(NULLIF(date, '')) AS min_d, "
-            "MAX(NULLIF(date, '')) AS max_d FROM emails"
-        ).fetchone()
+        row = conn.execute("SELECT MIN(NULLIF(date, '')) AS min_d, MAX(NULLIF(date, '')) AS max_d FROM emails").fetchone()
         assert row["min_d"] == "2024-03-15"
         assert row["max_d"] == "2024-06-20"
         conn.close()
