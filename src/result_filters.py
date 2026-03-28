@@ -77,8 +77,9 @@ def _matches_date_to(result: SearchResult, date_to: str | None) -> bool:
 def _matches_has_attachments(result: SearchResult, has_attachments: bool | None) -> bool:
     if has_attachments is None:
         return True
-    value = str(result.metadata.get("has_attachments", "False"))
-    return (value == "True") == has_attachments
+    raw = result.metadata.get("has_attachments", False)
+    value = str(raw).lower() in ("true", "1", "yes") if not isinstance(raw, bool) else raw
+    return value == has_attachments
 
 
 def _matches_priority(result: SearchResult, priority: int | None) -> bool:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, field_validator, model_validator
 
 from .mcp_models_base import (
@@ -37,7 +39,7 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
     bcc: str | None = Field(default=None, description="BCC recipient filter (partial match).")
     has_attachments: bool | None = Field(default=None, description="Filter by attachment presence.")
     priority: int | None = Field(default=None, ge=0, description="Minimum priority level (emails with priority >= this value).")
-    email_type: str | None = Field(
+    email_type: Literal["reply", "forward", "original"] | None = Field(
         default=None,
         description="Filter by email type: 'reply', 'forward', or 'original'.",
     )
@@ -105,6 +107,12 @@ class FindSimilarInput(StrictInput):
         max_length=100,
         description="Scan session ID for progressive search. Excludes previously seen emails and tracks new ones.",
     )
+
+    @model_validator(mode="after")
+    def at_least_one_input(self):
+        if not self.uid and not self.query:
+            raise ValueError("Provide at least one of uid or query.")
+        return self
 
 
 class EmailTriageInput(DateRangeInput, StrictInput):
@@ -217,7 +225,7 @@ class EmailExportInput(StrictInput):
         default=None,
         description="File path to save export. If omitted, returns HTML string.",
     )
-    format: str = Field(
+    format: Literal["html", "pdf"] = Field(
         default="html",
         description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
     )
@@ -244,7 +252,7 @@ class BrowseInput(DateRangeInput, PlainInput):
     folder: str | None = Field(default=None, description="Filter by folder (exact match).")
     sender: str | None = Field(default=None, description="Filter by sender (partial match).")
     category: str | None = Field(default=None, description="Filter by category (exact match).")
-    sort_order: str = Field(
+    sort_order: Literal["asc", "desc"] = Field(
         default="desc",
         description="Sort order: 'asc' (oldest first) or 'desc' (newest first).",
     )
@@ -286,7 +294,7 @@ class EmailDiscoveryInput(StrictInput):
     mode='suggestions': categorized search suggestions.
     """
 
-    mode: str = Field(
+    mode: Literal["keywords", "suggestions"] = Field(
         ...,
         description="Discovery mode: 'keywords' or 'suggestions'.",
     )
@@ -304,7 +312,7 @@ class EmailScanInput(StrictInput):
     action='reset': clear a session (or all if scan_id='__all__').
     """
 
-    action: str = Field(
+    action: Literal["status", "flag", "candidates", "reset"] = Field(
         ...,
         description="Scan action: 'status', 'flag', 'candidates', or 'reset'.",
     )

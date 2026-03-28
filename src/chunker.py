@@ -202,7 +202,7 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
         List of EmailChunk objects ready for embedding.
     """
     uid = email_dict["uid"]
-    body = email_dict.get("body", "")
+    body = email_dict.get("body") or ""
     email_type = email_dict.get("email_type", "original")
     header = build_email_header(email_dict)
     subject = email_dict.get("subject", "")
@@ -308,6 +308,10 @@ def chunk_email(email_dict: dict) -> list[EmailChunk]:
 
 def _split_text(text: str, max_len: int, overlap: int) -> list[str]:
     """Split text into overlapping segments, preferring to break at paragraph/sentence boundaries."""
+    if not text:
+        return [text] if text is not None else []
+    if max_len <= 0:
+        return [text]
     if len(text) <= max_len:
         return [text]
 

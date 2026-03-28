@@ -477,7 +477,7 @@ class TestExtractImageEmbedding:
         try:
             result = extract_image_embedding("photo.jpg", b"\xff\xd8\xff\xe0")
             assert result == [0.1, 0.2, 0.3]
-            mock_embedder.encode_image.assert_called_once_with(b"\xff\xd8\xff\xe0")
+            mock_embedder.encode_image.assert_called_once_with(b"\xff\xd8\xff\xe0", filename="photo.jpg")
         finally:
             mod._image_embedder = old
 

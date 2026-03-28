@@ -10,7 +10,7 @@ Start broad, then narrow down:
 
 - `email_search_structured` — the main search tool: semantic query + filters (sender, date, folder, to, cc, bcc, attachments, priority, topic, cluster, reranking, hybrid search, query expansion)
 - `email_triage` — fast triage scan: ultra-compact results (uid, sender, date, subject, score, preview), up to 100 results. Issue 3-5 calls with different queries for pseudo-parallel scanning
-- `email_find_similar` — find emails similar to a known one (great for pattern discovery)
+- `email_find_similar` — find emails similar to a known one (pattern discovery)
 - `email_search_by_entity` — find emails mentioning an organization, URL, phone, or person name
 - `email_thread_lookup` — retrieve all emails in a thread by conversation_id or thread_topic
 

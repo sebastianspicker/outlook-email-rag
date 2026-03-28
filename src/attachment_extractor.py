@@ -111,7 +111,7 @@ def extract_image_embedding(filename: str, content: bytes) -> list[float] | None
         embedder = _get_image_embedder()
         if not embedder.is_available:
             return None
-        return embedder.encode_image(content)
+        return embedder.encode_image(content, filename=filename)
     except Exception:
         logger.debug("Failed to encode image attachment: %s", filename, exc_info=True)
         return None

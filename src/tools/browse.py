@@ -196,9 +196,9 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                             "relevance": i.get("relevance"),
                             "summary": i.get("summary", ""),
                             "quote_preview": (
-                                (i.get("key_quote", "")[:80] + "...")
-                                if len(i.get("key_quote", "")) > 80
-                                else i.get("key_quote", "")
+                                ((i.get("key_quote") or "")[:80] + "...")
+                                if len(i.get("key_quote") or "") > 80
+                                else (i.get("key_quote") or "")
                             ),
                         }
                         for i in items

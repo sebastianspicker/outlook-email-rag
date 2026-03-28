@@ -40,7 +40,11 @@ def positive_int(value: str) -> int:
 
 def score_float(value: str) -> float:
     """Parse and return a float bounded to [0.0, 1.0]."""
+    import math
+
     parsed = float(value)
+    if math.isnan(parsed) or math.isinf(parsed):
+        raise ValueError("Value must be a finite number between 0.0 and 1.0.")
     if not (0.0 <= parsed <= 1.0):
         raise ValueError("Value must be between 0.0 and 1.0.")
     return parsed

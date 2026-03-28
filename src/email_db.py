@@ -178,12 +178,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         """Insert a single email and update contacts/edges.
 
         Returns False if uid already exists (duplicate).
+        All writes happen in a single transaction — either the email and all
+        its related rows (recipients, contacts, edges) are committed together,
+        or nothing is written.
         """
         cur = self.conn.cursor()
         content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
         categories_json = json.dumps(getattr(email, "categories", []) or [])
         references_json = json.dumps(getattr(email, "references", []) or [])
         try:
+            cur.execute("BEGIN IMMEDIATE")
             cur.execute(
                 """INSERT INTO emails (uid, message_id, subject, sender_name,
                    sender_email, date, folder, email_type, has_attachments,
@@ -220,10 +224,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                     ingestion_run_id,
                 ),
             )
-        except sqlite3.IntegrityError:
-            return False
 
-        try:
             # Categories (normalized table)
             cats = getattr(email, "categories", []) or []
             if cats:
@@ -263,7 +264,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                 all_recipients.append((name, em or addr))
             if recipient_rows:
                 cur.executemany(
-                    "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
+                    "INSERT OR IGNORE INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
                     recipient_rows,
                 )
 
@@ -281,6 +282,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                         self._upsert_communication_edge(cur, email.sender_email, em, email.date)
 
             self.conn.commit()
+        except sqlite3.IntegrityError:
+            self.conn.rollback()
+            return False
         except Exception:
             self.conn.rollback()
             raise
@@ -415,7 +419,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             # Batch insert collected rows
             if recipient_rows:
                 cur.executemany(
-                    "INSERT INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
+                    "INSERT OR IGNORE INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
                     recipient_rows,
                 )
             if category_rows:

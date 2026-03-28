@@ -89,12 +89,18 @@ class ColBERTReranker:
         if uncached_results:
             uncached_texts = [r.text for r in uncached_results]
             new_vecs = self._embedder.encode_colbert(uncached_texts)
-            if new_vecs:
-                for r, d_vecs in zip(uncached_results, new_vecs, strict=True):
+            if new_vecs and len(new_vecs) == len(uncached_results):
+                for r, d_vecs in zip(uncached_results, new_vecs):
                     doc_vecs_by_id[r.chunk_id] = d_vecs
                     self._doc_vec_cache[r.chunk_id] = d_vecs
                     if len(self._doc_vec_cache) > _DOC_VEC_CACHE_MAX:
                         self._doc_vec_cache.popitem(last=False)
+            elif new_vecs:
+                logger.warning(
+                    "ColBERT encode returned %d vectors for %d texts — skipping cache",
+                    len(new_vecs),
+                    len(uncached_results),
+                )
 
         if not doc_vecs_by_id:
             return results[:top_k] if top_k else results
@@ -110,7 +116,7 @@ class ColBERTReranker:
 
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        limit = top_k if top_k else len(scored)
+        limit = top_k if top_k is not None else len(scored)
 
         from .retriever import SearchResult as SR
 

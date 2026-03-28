@@ -56,7 +56,16 @@ _lock = threading.Lock()
 
 
 def _get_ttl() -> float:
-    return float(os.environ.get("SCAN_SESSION_TTL", _DEFAULT_SESSION_TTL))
+    raw = os.environ.get("SCAN_SESSION_TTL")
+    if raw is None:
+        return float(_DEFAULT_SESSION_TTL)
+    try:
+        val = float(raw)
+        if val <= 0 or val != val:  # reject <= 0 and NaN
+            return float(_DEFAULT_SESSION_TTL)
+        return val
+    except (ValueError, TypeError):
+        return float(_DEFAULT_SESSION_TTL)
 
 
 def _cleanup_expired() -> None:

@@ -227,14 +227,12 @@ class TestEmailFindSimilar:
 
     @pytest.mark.asyncio
     async def test_find_similar_no_params_error(self):
-        fake_mcp = _register()
-        fn = fake_mcp._tools["email_find_similar"]
+        from pydantic import ValidationError
+
         from src.mcp_models import FindSimilarInput
 
-        params = FindSimilarInput(top_k=5)
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
+        with pytest.raises(ValidationError):
+            FindSimilarInput(top_k=5)
 
     @pytest.mark.asyncio
     async def test_find_similar_uid_not_found(self):
@@ -399,11 +397,9 @@ class TestEmailDiscovery:
 
     @pytest.mark.asyncio
     async def test_invalid_mode(self):
-        fake_mcp = _register()
-        fn = fake_mcp._tools["email_discovery"]
+        from pydantic import ValidationError
+
         from src.mcp_models import EmailDiscoveryInput
 
-        params = EmailDiscoveryInput(mode="nonexistent", limit=10)
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
+        with pytest.raises(ValidationError, match="mode"):
+            EmailDiscoveryInput(mode="nonexistent", limit=10)

@@ -139,6 +139,9 @@ def _score_sentences(sentences: list[str]) -> list[float]:
 
     Falls back to simple word count scoring if sklearn is unavailable.
     """
+    if not sentences:
+        return []
+
     try:
         from sklearn.feature_extraction.text import TfidfVectorizer
 

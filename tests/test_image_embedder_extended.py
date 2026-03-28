@@ -399,36 +399,13 @@ class TestAttachmentsToolRegistration:
 
     @pytest.mark.asyncio
     async def test_email_attachments_invalid_mode(self):
-        """Invalid mode returns error JSON."""
+        """Invalid mode is rejected by Pydantic Literal validation."""
+        from pydantic import ValidationError
+
         from src.mcp_models import EmailAttachmentsInput
-        from src.tools.attachments import register
 
-        mock_mcp = MagicMock()
-        captured_fn = None
-
-        def mock_tool(**kwargs):
-            def decorator(fn):
-                nonlocal captured_fn
-                captured_fn = fn
-                return fn
-
-            return decorator
-
-        mock_mcp.tool = mock_tool
-
-        mock_db = MagicMock()
-
-        mock_deps = MagicMock()
-        mock_deps.tool_annotations.return_value = {}
-        mock_deps.get_email_db.return_value = mock_db
-        mock_deps.offload = AsyncMock(side_effect=lambda fn: fn())
-
-        register(mock_mcp, mock_deps)
-
-        params = EmailAttachmentsInput(mode="invalid")
-        result = await captured_fn(params)
-        parsed = json.loads(result)
-        assert "error" in parsed
+        with pytest.raises(ValidationError, match="mode"):
+            EmailAttachmentsInput(mode="invalid")
 
     @pytest.mark.asyncio
     async def test_email_attachments_db_unavailable(self):

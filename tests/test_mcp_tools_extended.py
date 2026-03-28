@@ -430,17 +430,12 @@ class TestReportingTools:
 
     @pytest.mark.asyncio
     async def test_invalid_report_type(self):
-        from src.tools import reporting
-
-        fake_mcp = _register_module(reporting)
-        fn = fake_mcp._tools["email_report"]
+        from pydantic import ValidationError
 
         from src.mcp_models import EmailReportInput
 
-        params = EmailReportInput(type="invalid_type")
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
+        with pytest.raises(ValidationError, match="type"):
+            EmailReportInput(type="invalid_type")
 
 
 # ── temporal.py tests ────────────────────────────────────────
@@ -521,17 +516,12 @@ class TestTemporalTools:
 
     @pytest.mark.asyncio
     async def test_invalid_analysis_type(self):
-        from src.tools import temporal
-
-        fake_mcp = _register_module(temporal)
-        fn = fake_mcp._tools["email_temporal"]
+        from pydantic import ValidationError
 
         from src.mcp_models import EmailTemporalInput
 
-        params = EmailTemporalInput(analysis="invalid")
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
+        with pytest.raises(ValidationError, match="analysis"):
+            EmailTemporalInput(analysis="invalid")
 
 
 # ── data_quality.py tests ────────────────────────────────────
@@ -595,17 +585,12 @@ class TestDataQualityTools:
 
     @pytest.mark.asyncio
     async def test_invalid_check_type(self):
-        from src.tools import data_quality
-
-        fake_mcp = _register_module(data_quality)
-        fn = fake_mcp._tools["email_quality"]
+        from pydantic import ValidationError
 
         from src.mcp_models import EmailQualityInput
 
-        params = EmailQualityInput(check="nonexistent")
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
+        with pytest.raises(ValidationError, match="check"):
+            EmailQualityInput(check="nonexistent")
 
     @pytest.mark.asyncio
     async def test_languages_missing_column_graceful(self):
@@ -1024,17 +1009,11 @@ class TestScanTools:
         data = json.loads(result)
         assert "error" in data
 
-    @pytest.mark.asyncio
-    async def test_scan_invalid_action(self):
-        from src.tools import scan
-
-        fake_mcp = FakeMCP()
-        scan.register(fake_mcp, MockDeps)
-        fn = fake_mcp._tools["email_scan"]
+    def test_scan_invalid_action(self):
+        from pydantic import ValidationError
 
         from src.mcp_models import EmailScanInput
 
-        params = EmailScanInput(action="destroy", scan_id="test")
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
+        # Literal validation rejects invalid actions at parse time
+        with pytest.raises(ValidationError, match="action"):
+            EmailScanInput(action="destroy", scan_id="test")

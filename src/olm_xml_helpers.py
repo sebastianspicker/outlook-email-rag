@@ -54,6 +54,8 @@ def _new_xml_parser() -> etree.XMLParser:
 
 def _read_limited_bytes(stream: IO[bytes], byte_limit: int, chunk_size: int = 64 * 1024) -> bytes:
     """Read bytes from stream while enforcing a hard byte limit."""
+    if byte_limit <= 0:
+        raise ValueError(f"byte_limit must be positive, got {byte_limit}")
     chunks: list[bytes] = []
     total = 0
 

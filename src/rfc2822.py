@@ -43,7 +43,7 @@ def _normalize_date(value: str) -> str:
     Returns the original value if parsing fails.
     """
     if not value or not value.strip():
-        return value
+        return ""
     value = value.strip()
     # Already looks like ISO 8601 — normalize to UTC
     if re.match(r"\d{4}-\d{2}-\d{2}T", value):
@@ -53,7 +53,8 @@ def _normalize_date(value: str) -> str:
                 dt = dt.astimezone(UTC)
             return dt.isoformat()
         except (ValueError, OverflowError):
-            return value
+            logger.debug("Failed to parse ISO date: %s", value[:80])
+            return ""
     # Try RFC 2822 (e.g. "Wed, 25 Jun 2025 10:52:47 +0200")
     try:
         dt = parsedate_to_datetime(value)

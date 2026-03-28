@@ -63,6 +63,21 @@ async def run_with_retriever(deps: ToolDepsProto, fn: Callable[..., str]) -> str
     return await deps.offload(lambda: fn(deps.get_retriever()))
 
 
+def _sanitize_floats(obj: Any) -> Any:
+    """Replace NaN/Inf float values with None to produce valid JSON."""
+    import math
+
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_floats(v) for v in obj]
+    return obj
+
+
 def json_response(data: Any, *, max_chars: int | None = None, **kwargs: Any) -> str:
     """Standardized JSON serialization with optional size guard.
 
@@ -70,6 +85,7 @@ def json_response(data: Any, *, max_chars: int | None = None, **kwargs: Any) -> 
     ``mcp_max_json_response_chars`` setting), the largest top-level list
     is trimmed to fit and a ``_truncated`` metadata key is added.
     """
+    data = _sanitize_floats(data)
     raw = json.dumps(data, indent=2, **kwargs)
 
     if max_chars is None:

@@ -295,6 +295,8 @@ class EmailRetriever:
             raise ValueError(f"top_k must be <= {MAX_TOP_K}.")
         if min_score is not None and not (0.0 <= min_score <= 1.0):
             raise ValueError("min_score must be between 0.0 and 1.0.")
+        if date_from and date_to and date_from > date_to:
+            raise ValueError(f"date_from ({date_from}) must be <= date_to ({date_to}).")
 
         has_filters = bool(
             sender
@@ -442,9 +444,11 @@ class EmailRetriever:
                         ids=missing_ids,
                         include=["documents", "metadatas"],
                     )
+                    fetched_docs = fetched.get("documents") or []
+                    fetched_metas = fetched.get("metadatas") or []
                     for i, cid in enumerate(fetched.get("ids", [])):
-                        doc = (fetched.get("documents") or [""])[i] if fetched.get("documents") else ""
-                        meta = (fetched.get("metadatas") or [{}])[i] if fetched.get("metadatas") else {}
+                        doc = fetched_docs[i] if i < len(fetched_docs) else ""
+                        meta = fetched_metas[i] if i < len(fetched_metas) else {}
                         # Keyword-only results have no semantic distance;
                         # use neutral default (score = 1.0 - 0.5 = 0.5) so
                         # they don't inflate above typical semantic matches.
@@ -471,7 +475,7 @@ class EmailRetriever:
             logger.warning("rank_bm25 not installed; hybrid search disabled")
             return semantic_results
         except Exception:
-            logger.debug("Hybrid merge failed", exc_info=True)
+            logger.warning("Hybrid merge failed, returning semantic-only results", exc_info=True)
             return semantic_results
 
     def _get_sparse_results(self, query: str, top_k: int) -> list[str] | None:

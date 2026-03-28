@@ -27,7 +27,7 @@ class CommunicationNetwork:
         self._graph = None
         # Bounded LRU caches — evict oldest entry when full.
         self._analysis_cache: collections.OrderedDict[tuple, dict[str, Any]] = collections.OrderedDict()
-        self._betweenness_cache: collections.OrderedDict[int, dict[str, float]] = collections.OrderedDict()
+        self._betweenness_cache: collections.OrderedDict[tuple, dict[str, float]] = collections.OrderedDict()
 
     def top_contacts(self, email_address: str, limit: int = 20) -> list[dict[str, Any]]:
         """Top communication partners (bidirectional frequency)."""
@@ -96,10 +96,10 @@ class CommunicationNetwork:
         Uses inverse weights (1/count) for shortest-path cost: a stronger
         connection (more emails) should be a *shorter* path, not longer.
         """
-        edge_count = self._graph.number_of_edges()
-        if edge_count in self._betweenness_cache:
-            self._betweenness_cache.move_to_end(edge_count)
-            return self._betweenness_cache[edge_count]
+        cache_key = (self._graph.number_of_nodes(), self._graph.number_of_edges())
+        if cache_key in self._betweenness_cache:
+            self._betweenness_cache.move_to_end(cache_key)
+            return self._betweenness_cache[cache_key]
 
         # Build a copy of the graph with inverted weights for path cost
         cost_graph = self._graph.copy()
@@ -116,7 +116,7 @@ class CommunicationNetwork:
         except Exception:
             logger.debug("betweenness_centrality failed", exc_info=True)
             betweenness = {}
-        self._betweenness_cache[edge_count] = betweenness
+        self._betweenness_cache[cache_key] = betweenness
         if len(self._betweenness_cache) > _BETWEENNESS_CACHE_MAX:
             self._betweenness_cache.popitem(last=False)  # evict oldest
         return betweenness
@@ -161,6 +161,11 @@ class CommunicationNetwork:
         Returns:
             List of {"nodes": [str], "edges": [{"from": str, "to": str, "weight": int}], "hops": int}
         """
+        if max_hops < 1:
+            max_hops = 1
+        if top_k < 1:
+            top_k = 1
+
         nx = self._ensure_graph()
         if nx is None:
             return [{"error": "networkx not installed"}]
@@ -233,6 +238,9 @@ class CommunicationNetwork:
         """
         if len(email_addresses) < 2:
             return []
+
+        if window_hours < 1:
+            window_hours = 1
 
         timeline = self._db.sender_activity_timeline(email_addresses)
         if not timeline:

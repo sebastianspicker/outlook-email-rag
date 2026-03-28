@@ -69,7 +69,7 @@ class CrossEncoderReranker:
 
         scored.sort(key=lambda x: x[1])  # Lower distance = more relevant
 
-        limit = top_k if top_k else len(scored)
+        limit = top_k if top_k is not None else len(scored)
         reranked = []
         for result, distance in scored[:limit]:
             from .retriever import SearchResult

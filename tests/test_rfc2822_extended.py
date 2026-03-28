@@ -385,10 +385,10 @@ class TestNormalizeDate:
         assert _normalize_date("") == ""
 
     def test_whitespace_only(self):
-        assert _normalize_date("   ") == "   "
+        assert _normalize_date("   ") == ""
 
     def test_none_value(self):
-        assert _normalize_date(None) is None  # type: ignore[arg-type]
+        assert _normalize_date(None) == ""  # type: ignore[arg-type]
 
     def test_unparseable_date(self):
         result = _normalize_date("not-a-date")

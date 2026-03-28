@@ -82,6 +82,14 @@ def test_get_collection_idempotent(tmp_path):
     assert coll1 is coll2
 
 
+def test_get_collection_applies_search_ef(tmp_path):
+    """search_ef should be propagated to existing collections via modify()."""
+    client = get_chroma_client(str(tmp_path / "db"))
+    collection = get_collection(client, "test_emails")
+    metadata = collection.metadata or {}
+    assert metadata.get("hnsw:search_ef") == 128
+
+
 # ── iter_collection_ids ──────────────────────────────────────────────
 
 
