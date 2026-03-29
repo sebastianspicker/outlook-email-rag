@@ -29,7 +29,7 @@ def _compact_evidence_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]
     compacted: list[dict[str, Any]] = []
     for item in items:
         new_item = {k: v for k, v in item.items() if k not in ("key_quote", "notes", "content_hash")}
-        quote = item.get("key_quote", "")
+        quote = item.get("key_quote") or ""
         new_item["quote_preview"] = (quote[:80] + "...") if len(quote) > 80 else quote
         compacted.append(new_item)
     return compacted

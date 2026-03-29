@@ -325,12 +325,9 @@ class TestReingestAnalytics:
 class TestInvalidAction:
     @pytest.mark.asyncio
     async def test_invalid_action(self):
-        fake_mcp = _register()
-        fn = fake_mcp._tools["email_admin"]
+        from pydantic import ValidationError
+
         from src.mcp_models import EmailAdminInput
 
-        params = EmailAdminInput(action="destroy_everything")
-        result = await fn(params)
-        data = json.loads(result)
-        assert "error" in data
-        assert "Invalid action" in data["error"]
+        with pytest.raises(ValidationError, match="action"):
+            EmailAdminInput(action="destroy_everything")

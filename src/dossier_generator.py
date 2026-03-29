@@ -278,9 +278,11 @@ class DossierGenerator:
         """Build relationship profiles for persons of interest (max 10)."""
         if not include or not self._network:
             return []
-        targets = persons_of_interest or []
+        targets = [p for p in (persons_of_interest or []) if p]
         if not targets:
             targets = list({item.get("sender_email") for item in enriched_items if item.get("sender_email")})
+        if not targets:
+            return []
         return [self._network.relationship_summary(addr) for addr in sorted(targets)[:10]]
 
     def _compute_summary_stats(
@@ -294,7 +296,7 @@ class DossierGenerator:
 
         category_counts = Counter(item.get("category") for item in enriched_items if item.get("category"))
         category_breakdown = [{"category": c, "count": str(n)} for c, n in sorted(category_counts.items(), key=lambda x: -x[1])]
-        dates = [item.get("date") for item in enriched_items if item.get("date")]
+        dates = [item.get("date") for item in enriched_items if item.get("date") and isinstance(item.get("date"), str)]
 
         glossary_items = [
             {"category": cat, "definition": CATEGORY_GLOSSARY[cat]} for cat in sorted(categories) if cat in CATEGORY_GLOSSARY
@@ -328,8 +330,8 @@ class DossierGenerator:
         return {
             "verified_count": verified_count,
             "category_count": len(categories),
-            "date_earliest": min(dates)[:10] if dates else "",
-            "date_latest": max(dates)[:10] if dates else "",
+            "date_earliest": (min(dates) or "")[:10] if dates else "",
+            "date_latest": (max(dates) or "")[:10] if dates else "",
             "unique_sender_count": len({item.get("sender_email") for item in enriched_items if item.get("sender_email")}),
             "dominant_category": category_breakdown[0]["category"] if category_breakdown else "",
             "dominant_count": category_breakdown[0]["count"] if category_breakdown else "0",

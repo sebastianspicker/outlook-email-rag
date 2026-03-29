@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,6 +22,10 @@ class SparseIndex:
 
     Designed for < 100k chunks (~50 MB memory).  Supports dot-product
     scoring against query sparse vectors from BGE-M3.
+
+    Thread-safe: concurrent MCP calls may trigger searches while a rebuild
+    is in progress.  A read-write lock ensures that ``build_from_*`` swaps
+    the index atomically and searches never see a half-built index.
     """
 
     def __init__(self) -> None:
@@ -28,6 +33,7 @@ class SparseIndex:
         self._doc_norms: dict[str, float] = {}
         self._built = False
         self._doc_count = 0
+        self._lock = threading.Lock()
 
     @property
     def is_built(self) -> bool:
@@ -48,24 +54,30 @@ class SparseIndex:
         Args:
             vectors: Mapping from chunk ID to sparse vector.
         """
-        self._inverted.clear()
-        self._doc_norms.clear()
+        # Build into temporaries, then swap atomically under the lock so
+        # concurrent searches never see a half-built index.
+        new_inverted: dict[int, list[tuple[str, float]]] = {}
+        new_norms: dict[str, float] = {}
 
         for chunk_id, sv in vectors.items():
             norm = 0.0
             for token_id, weight in sv.items():
                 if weight <= 0:
                     continue
-                self._inverted.setdefault(token_id, []).append((chunk_id, weight))
+                new_inverted.setdefault(token_id, []).append((chunk_id, weight))
                 norm += weight * weight
-            self._doc_norms[chunk_id] = math.sqrt(norm) if norm > 0 else 0.0
+            new_norms[chunk_id] = math.sqrt(norm) if norm > 0 else 0.0
 
-        self._doc_count = len(vectors)
-        self._built = True
+        with self._lock:
+            self._inverted = new_inverted
+            self._doc_norms = new_norms
+            self._doc_count = len(vectors)
+            self._built = True
+
         logger.info(
             "Sparse index built: %d documents, %d unique tokens",
             self._doc_count,
-            len(self._inverted),
+            len(new_inverted),
         )
 
     def search(
@@ -87,15 +99,22 @@ class SparseIndex:
         Returns:
             List of (chunk_id, score) tuples, highest score first.
         """
-        if not self._built or not query_sparse:
+        if not self._built or not query_sparse or top_k <= 0:
             return []
+
+        # Snapshot references under the lock — the actual scoring runs
+        # lock-free since the data structures are swapped atomically
+        # during build and never mutated in-place.
+        with self._lock:
+            inverted = self._inverted
+            doc_norms = self._doc_norms
 
         scores: dict[str, float] = {}
 
         for token_id, q_weight in query_sparse.items():
             if q_weight <= 0:
                 continue
-            postings = self._inverted.get(token_id)
+            postings = inverted.get(token_id)
             if not postings:
                 continue
             for chunk_id, d_weight in postings:
@@ -106,7 +125,7 @@ class SparseIndex:
 
         if normalize:
             for chunk_id in scores:
-                norm = self._doc_norms.get(chunk_id, 0.0)
+                norm = doc_norms.get(chunk_id, 0.0)
                 if norm > 0:
                     scores[chunk_id] /= norm
 

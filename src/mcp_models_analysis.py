@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, field_validator, model_validator
 
 from .mcp_models_base import (
@@ -27,7 +29,7 @@ class EntitySearchInput(StrictInput):
     """Input for entity search."""
 
     entity: str = Field(..., description="Entity text to search for (partial match).", min_length=1)
-    entity_type: str | None = Field(
+    entity_type: Literal["organization", "url", "phone", "email", "person", "event"] | None = Field(
         default=None,
         description="Filter by entity type: 'organization', 'url', 'phone', 'email', 'person', 'event'.",
     )
@@ -37,7 +39,7 @@ class EntitySearchInput(StrictInput):
 class ListEntitiesInput(PlainInput):
     """Input for listing top entities."""
 
-    entity_type: str | None = Field(
+    entity_type: Literal["organization", "url", "phone", "email", "person", "event"] | None = Field(
         default=None, description="Filter by type: 'organization', 'url', 'phone', 'email', 'person', 'event'."
     )
     limit: int = Field(default=20, ge=1, le=100, description="Max entities to return.")
@@ -58,7 +60,7 @@ class EntityTimelineInput(StrictInput):
         description="Entity text to track over time (partial match).",
         min_length=1,
     )
-    period: str = Field(
+    period: Literal["day", "week", "month"] = Field(
         default="month",
         description="Aggregation period: 'day', 'week', or 'month'.",
     )
@@ -272,11 +274,11 @@ class EmailTemporalInput(DateRangeInput, StrictInput):
     analysis='response_times': average response times per sender.
     """
 
-    analysis: str = Field(
+    analysis: Literal["volume", "activity", "response_times"] = Field(
         ...,
         description="Analysis type: 'volume', 'activity', or 'response_times'.",
     )
-    period: str = Field(
+    period: Literal["day", "week", "month"] = Field(
         default="day",
         description="Aggregation period for volume: 'day', 'week', or 'month'.",
     )
@@ -292,7 +294,7 @@ class EmailQualityInput(PlainInput):
     check='sentiment': sentiment distribution.
     """
 
-    check: str = Field(
+    check: Literal["duplicates", "languages", "sentiment"] = Field(
         ...,
         description="Quality check: 'duplicates', 'languages', or 'sentiment'.",
     )
@@ -321,7 +323,7 @@ class EmailReportInput(StrictInput):
     type='writing': writing style analysis per sender.
     """
 
-    type: str = Field(
+    type: Literal["archive", "network", "writing"] = Field(
         ...,
         description="Report type: 'archive', 'network', or 'writing'.",
     )
@@ -353,7 +355,7 @@ class EmailAttachmentsInput(StrictInput):
     mode='stats': aggregate attachment statistics.
     """
 
-    mode: str = Field(
+    mode: Literal["list", "search", "stats"] = Field(
         ...,
         description="Attachment mode: 'list', 'search', or 'stats'.",
     )
@@ -378,7 +380,7 @@ class EmailAdminInput(StrictInput):
     action='reingest_analytics': backfill language/sentiment (no extra params).
     """
 
-    action: str = Field(
+    action: Literal["diagnostics", "reingest_bodies", "reembed", "reingest_metadata", "reingest_analytics"] = Field(
         ...,
         description=("Admin action: 'diagnostics', 'reingest_bodies', 'reembed', 'reingest_metadata', or 'reingest_analytics'."),
     )

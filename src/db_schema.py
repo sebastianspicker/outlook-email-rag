@@ -368,3 +368,6 @@ def _migrate_to_v9(cur: sqlite3.Cursor) -> None:
         cur.execute("ALTER TABLE emails ADD COLUMN ingestion_run_id INTEGER")
         logger.info("Schema migration v9: added emails.ingestion_run_id")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_ingestion_run ON emails(ingestion_run_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_category_relevance ON evidence_items(category, relevance)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_type_date ON emails(email_type, date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_recipients_uid_type ON recipients(email_uid, type)")

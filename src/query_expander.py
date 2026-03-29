@@ -44,6 +44,9 @@ class QueryExpander:
         """
         import numpy as np
 
+        if not self._vocabulary:
+            return None
+
         if self._vocab_embeddings is None:
             self._vocab_embeddings = np.array(self._model.encode_dense(self._vocabulary))
         query_embedding = np.array(self._model.encode_dense([query]))
@@ -66,11 +69,17 @@ class QueryExpander:
         if not query or not query.strip():
             return query
 
+        if n_terms <= 0:
+            return query
+
         if not self._vocabulary or not self._model:
             return query
 
         try:
-            _similarities, top_indices = self._compute_similarities(query)
+            sim_result = self._compute_similarities(query)
+            if sim_result is None:
+                return query
+            _similarities, top_indices = sim_result
             query_lower = query.lower()
             added: list[str] = []
             for idx in top_indices:
@@ -104,11 +113,14 @@ class QueryExpander:
         Returns:
             List of (term, similarity_score) tuples.
         """
-        if not query or not self._vocabulary or not self._model:
+        if not query or not self._vocabulary or not self._model or n_terms <= 0:
             return []
 
         try:
-            similarities, top_indices = self._compute_similarities(query)
+            sim_result = self._compute_similarities(query)
+            if sim_result is None:
+                return []
+            similarities, top_indices = sim_result
             query_lower = query.lower()
             results: list[tuple[str, float]] = []
             for idx in top_indices:

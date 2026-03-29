@@ -23,6 +23,7 @@ HNSW_DEFAULTS: dict[str, object] = {
     "hnsw:num_threads": os.cpu_count() or 4,
     "hnsw:M": 16,
     "hnsw:construction_ef": 128,
+    "hnsw:search_ef": 128,  # match construction_ef for maximum recall at query time
 }
 
 
@@ -51,16 +52,33 @@ def get_collection(
     """Return the canonical email collection.
 
     ``hnsw_overrides`` can customise HNSW parameters for bulk-import vs. search
-    workloads.  They are only applied when the collection is **created**; an
-    existing collection keeps its original settings.
+    workloads.  Build-time parameters (``M``, ``construction_ef``) are only
+    applied when the collection is **created**.  Query-time parameters
+    (``search_ef``) are applied to existing collections via ``modify()``.
     """
     metadata = dict(HNSW_DEFAULTS)
     if hnsw_overrides:
         metadata.update(hnsw_overrides)
-    return client.get_or_create_collection(
+    collection = client.get_or_create_collection(
         name=collection_name,
         metadata=metadata,
     )
+    # search_ef is a query-time parameter that can be updated on existing
+    # collections (unlike M and construction_ef which are locked at creation).
+    search_ef = metadata.get("hnsw:search_ef")
+    if search_ef is not None:
+        try:
+            collection.modify(metadata={"hnsw:search_ef": search_ef})
+        except Exception:
+            import logging as _logging
+
+            _logging.getLogger(__name__).debug(
+                "Could not set search_ef=%s on collection %r (older ChromaDB?)",
+                search_ef,
+                collection_name,
+                exc_info=True,
+            )
+    return collection
 
 
 def iter_collection_ids(collection, page_size: int = DEFAULT_PAGE_SIZE) -> Generator[str, None, None]:

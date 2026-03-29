@@ -80,6 +80,8 @@ class EvidenceMixin:
         Raises:
             ValueError: If email_uid does not exist in the database.
         """
+        relevance = max(1, min(5, int(relevance)))
+
         if category not in self.EVIDENCE_CATEGORIES:
             logger.warning(
                 "Non-standard evidence category: %s (expected one of %s)",
@@ -234,6 +236,9 @@ class EvidenceMixin:
         updates = {k: v for k, v in fields.items() if k in allowed}
         if not updates:
             return False
+
+        if "relevance" in updates and updates["relevance"] is not None:
+            updates["relevance"] = max(1, min(5, int(updates["relevance"])))
 
         # Check item exists and snapshot old values
         existing = self.conn.execute(

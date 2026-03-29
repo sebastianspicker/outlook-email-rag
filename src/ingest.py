@@ -1093,10 +1093,17 @@ def reembed(
             skipped_no_body += 1
             continue
 
-        # Delete old chunks (ChromaDB + sparse)
-        deleted = embedder.delete_chunks_by_uid(uid)
+        # Delete only body chunks (preserve attachment/image chunks that
+        # require original binary data from the OLM file to recreate).
+        existing_ids = embedder.get_existing_ids(refresh=False)
+        body_chunk_ids = [
+            cid for cid in existing_ids if cid.startswith(f"{uid}__") and "__att_" not in cid and "__img_" not in cid
+        ]
+        if body_chunk_ids:
+            embedder.collection.delete(ids=body_chunk_ids)
+            existing_ids.difference_update(body_chunk_ids)
+            chunks_deleted += len(body_chunk_ids)
         email_db.delete_sparse_by_uid(uid)
-        chunks_deleted += deleted
 
         # Re-chunk and upsert
         chunks = chunk_email(email_dict)

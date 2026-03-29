@@ -857,7 +857,7 @@ def test_normalize_date_rfc2822_to_iso():
 
 def test_normalize_date_empty():
     assert _normalize_date("") == ""
-    assert _normalize_date("   ") == "   "
+    assert _normalize_date("   ") == ""
 
 
 def test_normalize_date_unparseable():

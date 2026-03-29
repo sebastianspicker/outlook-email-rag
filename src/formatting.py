@@ -160,8 +160,10 @@ def format_context_block(
     return f"---\n{header}\nRelevance: {score:.2f}\n---\n{body}\n"
 
 
-def estimate_tokens(text: str) -> int:
+def estimate_tokens(text: str | None) -> int:
     """Rough token estimate for Claude context budgeting (~4 chars per token)."""
+    if not text:
+        return 1
     return max(1, len(text) // 4)
 
 
@@ -256,7 +258,7 @@ def format_date(iso_date: str | None) -> str:
 
 def format_file_size(size_bytes: int | None) -> str:
     """Format file size in human-readable units."""
-    if size_bytes is None:
+    if size_bytes is None or size_bytes < 0:
         return ""
     if size_bytes < 1024:
         return f"{size_bytes} B"

@@ -11,6 +11,11 @@ if str(ROOT) not in sys.path:
 class _DummyCollection:
     def __init__(self) -> None:
         self._items: list[dict[str, Any]] = []
+        self.metadata: dict[str, Any] = {}
+
+    def modify(self, metadata: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        if metadata:
+            self.metadata.update(metadata)
 
     def add(self, ids, embeddings, documents, metadatas):
         for idx, chunk_id in enumerate(ids):
@@ -121,7 +126,15 @@ def _ensure_sentence_transformers_stub() -> None:
         def encode(self, texts, show_progress_bar=False, batch_size=32):
             return [[0.1, 0.2, 0.3] for _ in texts]
 
+    class CrossEncoder:
+        def __init__(self, model_name=None):
+            self.model_name = model_name
+
+        def predict(self, pairs, show_progress_bar=False):
+            return [0.5] * len(pairs)
+
     sentence_transformers.SentenceTransformer = SentenceTransformer
+    sentence_transformers.CrossEncoder = CrossEncoder
     sys.modules["sentence_transformers"] = sentence_transformers
 
 

@@ -73,6 +73,9 @@ class _MockEmbedder:
     def close(self):
         pass
 
+    def get_existing_ids(self, refresh=False):
+        return set()
+
     def delete_chunks_by_uid(self, uid):
         return 0
 

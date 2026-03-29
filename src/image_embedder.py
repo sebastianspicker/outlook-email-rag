@@ -73,11 +73,13 @@ class ImageEmbedder:
         """Whether the image embedder is ready to encode images."""
         return self._available
 
-    def encode_image(self, image_bytes: bytes) -> list[float] | None:
+    def encode_image(self, image_bytes: bytes, filename: str = "") -> list[float] | None:
         """Encode an image into a 1024-d embedding vector.
 
         Args:
             image_bytes: Raw image file bytes (PNG, JPG, etc.).
+            filename: Original filename, used to infer the correct image
+                format extension for the temp file.
 
         Returns:
             1024-d embedding list, or None if unavailable or encoding fails.
@@ -88,8 +90,13 @@ class ImageEmbedder:
         try:
             import tempfile
 
-            # Visualized-BGE requires a file path, not bytes
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            # Visualized-BGE requires a file path, not bytes.
+            # Preserve the original extension so the image decoder uses the
+            # correct format (JPG, BMP, TIFF, etc.) instead of always assuming PNG.
+            ext = Path(filename).suffix.lower() if filename else ".png"
+            if ext not in _IMAGE_EXTENSIONS:
+                ext = ".png"
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
                 tmp_path = f.name
                 os.chmod(f.name, 0o600)  # restrict permissions before writing content
                 f.write(image_bytes)

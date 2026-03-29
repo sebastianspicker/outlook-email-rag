@@ -91,9 +91,10 @@ class EmailClusterer:
         else:
             sample = embeddings
 
-        best_k = 5
+        best_k = min(5, sample_size - 1)
         best_score = -1
-        k_range = range(5, min(31, sample_size - 1), 5)
+        max_k = min(31, sample_size - 1)
+        k_range = range(5, max_k, 5) if max_k > 5 else range(2, max_k + 1)
 
         for k in k_range:
             model = MiniBatchKMeans(n_clusters=k, random_state=42, n_init=2)
@@ -285,8 +286,11 @@ class EmailClusterer:
         Returns:
             List of (uid, similarity_score) tuples.
         """
-        if not self._is_fitted:
+        if not self._is_fitted or len(self._embeddings) == 0:
             return []
+
+        if top_k < 1:
+            top_k = 1
 
         # Cosine similarity
         query_norm = embedding / (np.linalg.norm(embedding) + 1e-10)

@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import Field, field_validator
 
 from .mcp_models_base import PlainInput, StrictInput, _validate_output_path
+
+EVIDENCE_CATEGORIES = Literal[
+    "bossing",
+    "harassment",
+    "discrimination",
+    "retaliation",
+    "hostile_environment",
+    "micromanagement",
+    "exclusion",
+    "gaslighting",
+    "workload",
+    "general",
+]
 
 # ── Evidence Management Inputs ──────────────────────────────
 
@@ -13,14 +28,13 @@ class EvidenceAddInput(StrictInput):
     """Input for adding an evidence item."""
 
     email_uid: str = Field(..., description="UID of the source email (from search results).", min_length=1)
-    category: str = Field(
+    category: EVIDENCE_CATEGORIES = Field(
         ...,
         description=(
             "Evidence category: bossing, harassment, discrimination, retaliation, "
             "hostile_environment, micromanagement, exclusion, gaslighting, "
             "workload, or general."
         ),
-        min_length=1,
     )
     key_quote: str = Field(
         ...,
@@ -74,7 +88,7 @@ class EvidenceExportInput(StrictInput):
         default="evidence_report.html",
         description="Output file path for the evidence report.",
     )
-    format: str = Field(
+    format: Literal["html", "csv", "pdf"] = Field(
         default="html",
         description="Output format: 'html', 'csv', or 'pdf' (pdf requires weasyprint).",
     )
@@ -114,7 +128,7 @@ class EvidenceQueryInput(PlainInput):
         description="Text to search for across key_quote, summary, and notes. Omit to list all.",
         max_length=500,
     )
-    sort: str = Field(
+    sort: Literal["relevance", "date"] = Field(
         default="relevance",
         description="Sort order: 'relevance' (default) or 'date' (chronological timeline).",
     )
@@ -155,7 +169,7 @@ class EvidenceOverviewInput(PlainInput):
 class CustodyChainInput(PlainInput):
     """Input for viewing chain-of-custody audit trail."""
 
-    target_type: str | None = Field(
+    target_type: Literal["email", "evidence", "ingestion_run", "export"] | None = Field(
         default=None,
         description="Filter by target type: 'email', 'evidence', 'ingestion_run', 'export'.",
     )
@@ -163,7 +177,7 @@ class CustodyChainInput(PlainInput):
         default=None,
         description="Filter by target ID (e.g., email UID, evidence ID).",
     )
-    action: str | None = Field(
+    action: Literal["ingest_start", "evidence_add", "evidence_update", "evidence_remove", "export", "verify"] | None = Field(
         default=None,
         description=(
             "Filter by action type: 'ingest_start', 'evidence_add', 'evidence_update', 'evidence_remove', 'export', 'verify'."
@@ -213,7 +227,7 @@ class EmailDossierInput(StrictInput):
         default="dossier.html",
         description="File path for the generated dossier.",
     )
-    format: str = Field(
+    format: Literal["html", "pdf"] = Field(
         default="html",
         description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
     )

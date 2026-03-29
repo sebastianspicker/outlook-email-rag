@@ -87,7 +87,7 @@ class TopicModeler:
         Returns:
             List of {id, label, top_words: [str]} dicts.
         """
-        if not self._is_fitted:
+        if not self._is_fitted or self._nmf_model is None or self._feature_names is None:
             return []
 
         topics = []
@@ -116,6 +116,9 @@ class TopicModeler:
         if not self._is_fitted or not text or not text.strip():
             return []
 
+        if self._vectorizer is None or self._nmf_model is None:
+            return []
+
         tfidf_vec = self._vectorizer.transform([text])
         topic_weights = self._nmf_model.transform(tfidf_vec)[0]
 
@@ -137,6 +140,9 @@ class TopicModeler:
             List of topic distribution lists, one per document.
         """
         if not self._is_fitted or not texts:
+            return []
+
+        if self._vectorizer is None or self._nmf_model is None:
             return []
 
         valid_texts = [t if t and t.strip() else " " for t in texts]

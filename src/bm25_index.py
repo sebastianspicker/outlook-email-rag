@@ -96,6 +96,9 @@ class BM25Index:
         if not self._built or self._index is None or not self._chunk_ids:
             return []
 
+        if top_k <= 0:
+            return []
+
         tokens = _tokenize(query)
         if not tokens:
             return []
@@ -131,6 +134,9 @@ def reciprocal_rank_fusion(
     Returns:
         Merged list of chunk IDs sorted by fused score (best first).
     """
+    if k < 1:
+        k = 60
+
     scores: dict[str, float] = {}
 
     for rank, chunk_id in enumerate(semantic_ids):

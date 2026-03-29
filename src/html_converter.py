@@ -63,6 +63,8 @@ def looks_like_html(text: str) -> bool:
 
 def html_to_text(html: str) -> str:
     """Convert HTML to readable plain text, preserving semantic structure."""
+    if not html:
+        return ""
     # Remove style and script blocks
     text = _RE_STYLE.sub("", html)
     text = _RE_SCRIPT.sub("", text)
@@ -119,6 +121,8 @@ def clean_text(text: str) -> str:
     Preserves leading indentation (important for code blocks and lists)
     while stripping trailing whitespace from each line.
     """
+    if not text:
+        return ""
     lines = text.splitlines()
     cleaned: list[str] = []
     blank_count = 0

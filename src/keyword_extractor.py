@@ -253,6 +253,8 @@ class KeywordExtractor:
         """Extract top keywords for each document in a pre-fitted corpus.
 
         Call extract_corpus_keywords() first to fit the vectorizer.
+        If the vectorizer has already been fitted, uses ``transform()`` to
+        reuse the existing vocabulary; otherwise falls back to ``fit_transform()``.
 
         Args:
             texts: List of document texts (same corpus used for fitting).
@@ -272,7 +274,10 @@ class KeywordExtractor:
             return results
 
         try:
-            tfidf_matrix = vectorizer.fit_transform(valid_texts)
+            if hasattr(vectorizer, "vocabulary_") and vectorizer.vocabulary_:
+                tfidf_matrix = vectorizer.transform(valid_texts)
+            else:
+                tfidf_matrix = vectorizer.fit_transform(valid_texts)
         except ValueError:
             return results
 

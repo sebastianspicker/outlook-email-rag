@@ -108,6 +108,11 @@ class MultiVectorEmbedder:
         try:
             from FlagEmbedding import BGEM3FlagModel
         except ImportError:
+            logger.warning(
+                "FlagEmbedding not installed — falling back to SentenceTransformer (dense only). "
+                "Sparse retrieval and ColBERT reranking will be unavailable. "
+                "Install with: pip install 'FlagEmbedding>=1.3.0'"
+            )
             return False
 
         if self.device == "mps":
@@ -172,6 +177,8 @@ class MultiVectorEmbedder:
 
     def encode_dense(self, texts: list[str]) -> list[list[float]]:
         """Encode texts to dense embeddings (always available)."""
+        if not texts:
+            return []
         self._ensure_loaded()
 
         if self.backend.name == "flag":
@@ -197,6 +204,8 @@ class MultiVectorEmbedder:
         """
         if not self.has_sparse:
             return None
+        if not texts:
+            return []
 
         self._ensure_loaded()
         output = self._model.encode(
@@ -216,6 +225,8 @@ class MultiVectorEmbedder:
         """
         if not self.has_colbert:
             return None
+        if not texts:
+            return []
 
         self._ensure_loaded()
         output = self._model.encode(
@@ -235,6 +246,8 @@ class MultiVectorEmbedder:
         clearing between them to prevent memory accumulation that tanks
         throughput on sustained workloads.
         """
+        if not texts:
+            return MultiVectorResult(dense=[])
         self._ensure_loaded()
         use_sub_batching = self.device == "mps" and len(texts) > self.batch_size
 

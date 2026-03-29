@@ -620,6 +620,7 @@ def render_network_page() -> None:
 
 def _relevance_badge_html(relevance: int) -> str:
     """Render a relevance score as a styled badge."""
+    relevance = max(1, min(5, relevance))
     _REL_COLORS = {
         5: ("#065f46", "#d1fae5"),  # green
         4: ("#065f46", "#d1fae5"),
@@ -1230,8 +1231,13 @@ def _as_optional_str(value: Any) -> str | None:
 
 
 def _as_optional_float(value: Any) -> float | None:
+    import math
+
     if isinstance(value, (int, float)):
-        return float(value)
+        f = float(value)
+        if math.isnan(f) or math.isinf(f):
+            return None
+        return f
     return None
 
 

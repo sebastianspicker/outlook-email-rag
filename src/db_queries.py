@@ -183,18 +183,22 @@ class QueryMixin:
         """Return {uid: {to: [...], cc: [...], bcc: [...]}} for multiple emails in one query."""
         if not uids:
             return {}
-        placeholders = ",".join("?" * len(uids))
-        rows = self.conn.execute(
-            f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",  # nosec B608
-            uids,
-        ).fetchall()
         result: dict[str, dict[str, list[str]]] = {}
-        for r in rows:
-            uid = r["email_uid"]
-            if uid not in result:
-                result[uid] = {"to": [], "cc": [], "bcc": []}
-            if r["type"] in result[uid]:
-                result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
+        # Batch to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER (default 999)
+        batch_size = 900
+        for start in range(0, len(uids), batch_size):
+            batch = uids[start : start + batch_size]
+            placeholders = ",".join("?" * len(batch))
+            rows = self.conn.execute(
+                f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",  # nosec B608
+                batch,
+            ).fetchall()
+            for r in rows:
+                uid = r["email_uid"]
+                if uid not in result:
+                    result[uid] = {"to": [], "cc": [], "bcc": []}
+                if r["type"] in result[uid]:
+                    result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
         return result
 
     def get_email_full(self, uid: str) -> dict | None:
@@ -216,35 +220,47 @@ class QueryMixin:
     def get_emails_full_batch(self, uids: list[str]) -> dict[str, dict]:
         """Get multiple emails with full body, recipients, and attachments.
 
-        Returns {uid: email_dict} -- 3 queries regardless of N.
+        Returns {uid: email_dict} -- batched queries to stay under SQLite variable limits.
         """
         if not uids:
             return {}
-        placeholders = ",".join("?" * len(uids))
-        # 1) Emails
-        rows = self.conn.execute(
-            f"SELECT * FROM emails WHERE uid IN ({placeholders})",  # nosec B608
-            uids,
-        ).fetchall()
-        # 2) Recipients (batch)
-        all_recipients = self._recipients_for_uids(uids)
-        # 3) Attachments (batch)
-        att_rows = self.conn.execute(
-            "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
-            f" FROM attachments WHERE email_uid IN ({placeholders})",
-            uids,
-        ).fetchall()
-        attachments_by_uid: dict[str, list[dict]] = {}
-        for a in att_rows:
-            attachments_by_uid.setdefault(a["email_uid"], []).append(
-                {
-                    "name": a["name"],
-                    "mime_type": a["mime_type"],
-                    "size": a["size"],
-                    "content_id": a["content_id"],
-                    "is_inline": a["is_inline"],
-                }
+
+        # 1) Emails (batched)
+        rows = []
+        batch_size = 900
+        for start in range(0, len(uids), batch_size):
+            batch = uids[start : start + batch_size]
+            placeholders = ",".join("?" * len(batch))
+            rows.extend(
+                self.conn.execute(
+                    f"SELECT * FROM emails WHERE uid IN ({placeholders})",  # nosec B608
+                    batch,
+                ).fetchall()
             )
+
+        # 2) Recipients (batch — already handles batching internally)
+        all_recipients = self._recipients_for_uids(uids)
+
+        # 3) Attachments (batched)
+        attachments_by_uid: dict[str, list[dict]] = {}
+        for start in range(0, len(uids), batch_size):
+            batch = uids[start : start + batch_size]
+            placeholders = ",".join("?" * len(batch))
+            att_rows = self.conn.execute(
+                "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
+                f" FROM attachments WHERE email_uid IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for a in att_rows:
+                attachments_by_uid.setdefault(a["email_uid"], []).append(
+                    {
+                        "name": a["name"],
+                        "mime_type": a["mime_type"],
+                        "size": a["size"],
+                        "content_id": a["content_id"],
+                        "is_inline": a["is_inline"],
+                    }
+                )
 
         result: dict[str, dict] = {}
         for row in rows:
@@ -273,22 +289,25 @@ class QueryMixin:
         # Batch-fetch attachments (same pattern as get_emails_full_batch)
         attachments_by_uid: dict[str, list[dict]] = {}
         if uids:
-            placeholders = ",".join("?" * len(uids))
-            att_rows = self.conn.execute(
-                "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
-                f" FROM attachments WHERE email_uid IN ({placeholders})",
-                uids,
-            ).fetchall()
-            for a in att_rows:
-                attachments_by_uid.setdefault(a["email_uid"], []).append(
-                    {
-                        "name": a["name"],
-                        "mime_type": a["mime_type"],
-                        "size": a["size"],
-                        "content_id": a["content_id"],
-                        "is_inline": a["is_inline"],
-                    }
-                )
+            batch_size = 900
+            for start in range(0, len(uids), batch_size):
+                batch = uids[start : start + batch_size]
+                placeholders = ",".join("?" * len(batch))
+                att_rows = self.conn.execute(
+                    "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
+                    f" FROM attachments WHERE email_uid IN ({placeholders})",
+                    batch,
+                ).fetchall()
+                for a in att_rows:
+                    attachments_by_uid.setdefault(a["email_uid"], []).append(
+                        {
+                            "name": a["name"],
+                            "mime_type": a["mime_type"],
+                            "size": a["size"],
+                            "content_id": a["content_id"],
+                            "is_inline": a["is_inline"],
+                        }
+                    )
         result = []
         for row in rows:
             email = dict(row)
@@ -335,6 +354,10 @@ class QueryMixin:
         if sort_by not in allowed_sort:
             sort_by = "date"
         sort_order = "ASC" if sort_order.upper() == "ASC" else "DESC"
+        if offset < 0:
+            offset = 0
+        if limit < 1:
+            limit = 1
 
         join = ""
         conditions = []

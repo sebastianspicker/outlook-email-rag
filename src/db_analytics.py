@@ -237,6 +237,9 @@ class AnalyticsMixin:
         if len(sender_emails) < 2:
             return []
 
+        if min_shared < 1:
+            min_shared = 1
+
         placeholders = ",".join("?" for _ in sender_emails)
         rows = self.conn.execute(
             f"SELECT r.address AS recipient,"  # nosec B608
