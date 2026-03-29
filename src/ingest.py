@@ -1097,9 +1097,7 @@ def reembed(
         # require original binary data from the OLM file to recreate).
         existing_ids = embedder.get_existing_ids(refresh=False)
         body_chunk_ids = [
-            cid
-            for cid in existing_ids
-            if cid.startswith(f"{uid}__") and "__att_" not in cid and "__img_" not in cid
+            cid for cid in existing_ids if cid.startswith(f"{uid}__") and "__att_" not in cid and "__img_" not in cid
         ]
         if body_chunk_ids:
             embedder.collection.delete(ids=body_chunk_ids)
