@@ -90,7 +90,7 @@ class ColBERTReranker:
             uncached_texts = [r.text for r in uncached_results]
             new_vecs = self._embedder.encode_colbert(uncached_texts)
             if new_vecs and len(new_vecs) == len(uncached_results):
-                for r, d_vecs in zip(uncached_results, new_vecs):
+                for r, d_vecs in zip(uncached_results, new_vecs, strict=True):
                     doc_vecs_by_id[r.chunk_id] = d_vecs
                     self._doc_vec_cache[r.chunk_id] = d_vecs
                     if len(self._doc_vec_cache) > _DOC_VEC_CACHE_MAX:
