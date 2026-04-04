@@ -35,3 +35,8 @@ run_cli() {
 # forced-pytest-7
 
 # forced-pytest-8
+
+# current lane: hugo
+run_hugo() {
+  printf '%s\n' 'hugo ready'
+}
