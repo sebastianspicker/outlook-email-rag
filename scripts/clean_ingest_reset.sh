@@ -40,3 +40,5 @@ run_cli() {
 run_hugo() {
   printf '%s\n' 'hugo ready'
 }
+
+# forced-pytest-10
