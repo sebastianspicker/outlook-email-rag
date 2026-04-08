@@ -1,5 +1,7 @@
 """Tests for temporal email analysis."""
 
+from zoneinfo import ZoneInfo
+
 from src.email_db import EmailDatabase
 from src.parse_olm import Email
 from src.temporal_analysis import TemporalAnalyzer
@@ -81,6 +83,46 @@ class TestVolumeOverTime:
         analyzer = TemporalAnalyzer(db)
         assert analyzer.volume_over_time() == []
 
+    def test_volume_buckets_in_display_timezone_for_positive_offset(self):
+        db = EmailDatabase(":memory:")
+        db.insert_email(
+            _make_email(
+                message_id="<tz-pos@ex.com>",
+                date="2024-01-01T00:30:00+02:00",
+            )
+        )
+
+        analyzer = TemporalAnalyzer(db, display_timezone="Europe/Helsinki")
+
+        assert analyzer.volume_over_time(period="day") == [{"period": "2024-01-01", "count": 1}]
+
+    def test_volume_buckets_in_display_timezone_for_negative_offset(self):
+        db = EmailDatabase(":memory:")
+        db.insert_email(
+            _make_email(
+                message_id="<tz-neg@ex.com>",
+                date="2024-01-01T23:30:00-05:00",
+            )
+        )
+
+        analyzer = TemporalAnalyzer(db, display_timezone="America/New_York")
+
+        assert analyzer.volume_over_time(period="day") == [{"period": "2024-01-01", "count": 1}]
+
+    def test_volume_date_filters_use_display_timezone(self):
+        db = EmailDatabase(":memory:")
+        db.insert_email(
+            _make_email(
+                message_id="<tz-filter@ex.com>",
+                date="2024-01-01T23:30:00-05:00",
+            )
+        )
+
+        analyzer = TemporalAnalyzer(db, display_timezone="Europe/Berlin")
+
+        assert analyzer.volume_over_time(period="day", date_from="2024-01-02") == [{"period": "2024-01-02", "count": 1}]
+        assert analyzer.volume_over_time(period="day", date_to="2024-01-01") == []
+
 
 class TestActivityHeatmap:
     def test_heatmap_structure(self):
@@ -97,6 +139,51 @@ class TestActivityHeatmap:
         db = EmailDatabase(":memory:")
         analyzer = TemporalAnalyzer(db)
         assert analyzer.activity_heatmap() == []
+
+    def test_heatmap_uses_display_timezone_hour(self):
+        db = EmailDatabase(":memory:")
+        db.insert_email(
+            _make_email(
+                message_id="<heatmap@ex.com>",
+                date="2024-01-01T00:30:00-05:00",
+            )
+        )
+
+        analyzer = TemporalAnalyzer(db, display_timezone="America/New_York")
+
+        assert analyzer.activity_heatmap() == [{"day_of_week": 0, "hour": 0, "count": 1}]
+
+    def test_heatmap_respects_named_zone_across_dst_boundary(self):
+        db = EmailDatabase(":memory:")
+        db.insert_email(
+            _make_email(
+                message_id="<dst-1@ex.com>",
+                date="2024-03-10T01:30:00-05:00",
+            )
+        )
+        db.insert_email(
+            _make_email(
+                message_id="<dst-2@ex.com>",
+                date="2024-03-10T03:30:00-04:00",
+            )
+        )
+
+        analyzer = TemporalAnalyzer(db, display_timezone="America/New_York")
+
+        assert analyzer.activity_heatmap() == [
+            {"day_of_week": 6, "hour": 1, "count": 1},
+            {"day_of_week": 6, "hour": 3, "count": 1},
+        ]
+
+    def test_local_timezone_uses_named_zone_rules(self, monkeypatch):
+        from src.temporal_analysis import _local_display_timezone
+
+        monkeypatch.setenv("TZ", "Europe/Berlin")
+
+        tz = _local_display_timezone()
+
+        assert isinstance(tz, ZoneInfo)
+        assert tz.key == "Europe/Berlin"
 
 
 class TestResponseTimes:

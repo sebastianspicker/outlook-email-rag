@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import pickle
+import pickle  # nosec B403 - persists only local trusted scikit-learn artifacts
 from pathlib import Path
 from typing import Any
 

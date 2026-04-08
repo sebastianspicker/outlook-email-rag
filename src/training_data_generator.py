@@ -27,7 +27,7 @@ class TrainingDataGenerator:
 
     def __init__(self, db: EmailDatabase, seed: int = 42) -> None:
         self._db = db
-        self._rng = random.Random(seed)
+        self._rng = random.Random(seed)  # nosec B311 - deterministic sampling, not security-sensitive
 
     def generate_triplets(
         self,

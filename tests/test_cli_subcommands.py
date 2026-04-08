@@ -103,6 +103,12 @@ class TestSearchSubcommand:
         assert args.cluster_id == 4
         assert args.expand_query is True
 
+    def test_search_accepts_root_flags_before_subcommand(self):
+        args = parse_args(["--log-level", "INFO", "search", "budget review"])
+        assert args.subcommand == "search"
+        assert args.log_level == "INFO"
+        assert args.query == "budget review"
+
 
 # ── Browse subcommand ────────────────────────────────────────────
 
@@ -453,11 +459,8 @@ class TestSubcommandDetection:
     def test_has_subcommand_with_global_flags_before(self):
         from src.cli import _has_subcommand
 
-        # --chromadb-path is a flag, "search" should still be found
-        # but --chromadb-path has an argument, so "search" is position 3
-        # The function skips flags starting with "-"
-        assert _has_subcommand(["--log-level", "DEBUG", "browse"]) is False
-        # In practice, the first non-flag is "DEBUG" which is not a subcommand
+        assert _has_subcommand(["--log-level", "DEBUG", "browse"]) is True
+        assert _has_subcommand(["--chromadb-path", "/tmp/db", "analytics"]) is True
 
     def test_has_subcommand_all_valid_names(self):
         from src.cli import _has_subcommand
@@ -472,6 +475,11 @@ class TestSubcommandDetection:
         assert _has_subcommand(["--db-path", "analytics"]) is False
         assert _has_subcommand(["--chromadb-path", "/tmp/admin"]) is False
         assert _has_subcommand(["--log-level", "search"]) is False
+
+    def test_has_subcommand_with_equals_style_root_flag(self):
+        from src.cli import _has_subcommand
+
+        assert _has_subcommand(["--log-level=INFO", "search"]) is True
 
 
 # ── Legacy dispatch sets action attributes ────────────────────────

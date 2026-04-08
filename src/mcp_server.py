@@ -32,6 +32,7 @@ that launch the server from a different working directory.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import atexit
 import json
@@ -137,7 +138,7 @@ def _release_lock() -> None:
         try:
             _lock_fd.close()
         except Exception:
-            pass  # best-effort lock release during interpreter shutdown
+            logger.debug("Failed to close MCP server lock during shutdown", exc_info=True)
         _lock_fd = None
 
 
@@ -205,7 +206,8 @@ def get_retriever() -> EmailRetriever:
             from .retriever import EmailRetriever
 
             _retriever = EmailRetriever()
-    assert _retriever is not None
+    if _retriever is None:
+        raise RuntimeError("Retriever initialization failed")
     return _retriever
 
 
@@ -305,8 +307,19 @@ register_all(mcp, ToolDeps())
 # ── Entry Point ────────────────────────────────────────────────
 
 
-def main() -> None:
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Build the minimal MCP server CLI parser."""
+    parser = argparse.ArgumentParser(
+        prog="python -m src.mcp_server",
+        description="Run the Email RAG MCP server over stdio.",
+    )
+    parser.add_argument("--version", action="version", version="0.1.0")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
     """Startup routine: acquire lock, log diagnostics, then run the server."""
+    _build_arg_parser().parse_args(argv)
     _acquire_instance_lock()
     _log_startup_info()
     mcp.run()

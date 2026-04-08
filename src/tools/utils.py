@@ -17,6 +17,62 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _serialize_json(data: Any, *, pretty: bool, **kwargs: Any) -> str:
+    """Serialize JSON in pretty or compact form."""
+    dump_kwargs = dict(kwargs)
+    if pretty:
+        dump_kwargs.setdefault("indent", 2)
+    else:
+        dump_kwargs.setdefault("separators", (",", ":"))
+    return json.dumps(data, **dump_kwargs)
+
+
+def _fit_json_candidates(candidates: list[Any], max_chars: int, **kwargs: Any) -> str:
+    """Return the first candidate whose compact JSON fits within *max_chars*."""
+    for candidate in candidates:
+        rendered = _serialize_json(candidate, pretty=False, **kwargs)
+        if len(rendered) <= max_chars:
+            return rendered
+    return "0"
+
+
+def _fallback_truncated_json(
+    max_chars: int,
+    *,
+    snippet: str | None = None,
+    field: str | None = None,
+    original_count: int | None = None,
+    **kwargs: Any,
+) -> str:
+    """Return the smallest valid truncated JSON payload that fits the hard cap."""
+    candidates: list[Any] = []
+    if field is not None and original_count is not None:
+        candidates.extend(
+            [
+                {
+                    "results": [],
+                    "_truncated": {
+                        "field": field,
+                        "shown": 0,
+                        "original_count": original_count,
+                        "note": "No items fit.",
+                    },
+                },
+                {"results": [], "_truncated": {"field": field, "shown": 0, "original_count": original_count}},
+            ]
+        )
+    if snippet is not None:
+        candidates.extend(
+            [
+                {"data": snippet, "_truncated": True, "note": "Response too large; truncated to fit limit."},
+                {"data": snippet, "_truncated": True},
+                {"data": "", "_truncated": True},
+            ]
+        )
+    candidates.extend([{"_truncated": True}, [], 0])
+    return _fit_json_candidates(candidates, max_chars, **kwargs)
+
+
 class ToolDepsProto(Protocol):
     """Protocol describing the ToolDeps interface injected by mcp_server.
 
@@ -42,7 +98,8 @@ class ToolDepsProto(Protocol):
 
 def get_deps(deps: ToolDepsProto | None) -> ToolDepsProto:
     """Return *deps* after asserting it has been initialized by ``register()``."""
-    assert deps is not None, "Tool module not registered — call register() first"
+    if deps is None:
+        raise RuntimeError("Tool module not registered — call register() first")
     return deps
 
 
@@ -86,7 +143,7 @@ def json_response(data: Any, *, max_chars: int | None = None, **kwargs: Any) -> 
     is trimmed to fit and a ``_truncated`` metadata key is added.
     """
     data = _sanitize_floats(data)
-    raw = json.dumps(data, indent=2, **kwargs)
+    raw = _serialize_json(data, pretty=True, **kwargs)
 
     if max_chars is None:
         from ..config import get_settings
@@ -98,7 +155,7 @@ def json_response(data: Any, *, max_chars: int | None = None, **kwargs: Any) -> 
     return raw
 
 
-def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any) -> str:
+def _truncate_json(data: Any, raw: str, max_chars: int, **kwargs: Any) -> str:
     """Trim the largest list in *data* until the JSON fits *max_chars*.
 
     Works on a shallow copy of *data* so the caller's dict is not mutated.
@@ -106,16 +163,18 @@ def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any
     if not isinstance(data, dict):
         if isinstance(data, list):
             data = {"results": data}
-            raw = json.dumps(data, **kwargs)
+            raw = _serialize_json(data, pretty=False, **kwargs)
             if len(raw) <= max_chars:
                 return raw
             return _truncate_json(data, raw, max_chars, **kwargs)
         # Can't intelligently trim non-dict responses — wrap in valid JSON
-        truncated = raw[:max_chars]
-        return json.dumps({"data": truncated, "_truncated": True})
+        return _fallback_truncated_json(max_chars, snippet=raw[:max_chars], **kwargs)
 
     # Work on a copy so we don't mutate the caller's dict
     data = {**data}
+    compact_raw = _serialize_json(data, pretty=False, **kwargs)
+    if len(compact_raw) <= max_chars:
+        return compact_raw
 
     # Find the largest list value in the top-level dict
     largest_key = None
@@ -127,22 +186,17 @@ def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any
 
     if largest_key is None:
         # No list to trim — wrap in valid JSON structure
-        return json.dumps(
-            {
-                "data": raw[:max_chars],
-                "_truncated": True,
-                "note": "Response too large; truncated to fit limit.",
-            }
-        )
+        return _fallback_truncated_json(max_chars, snippet=raw[:max_chars], **kwargs)
     if largest_len <= 1:
-        if len(raw) <= max_chars:
-            return raw
-        return json.dumps({"data": raw[:max_chars], "_truncated": True, "note": "Single item exceeds response budget."})
+        if len(compact_raw) <= max_chars:
+            return compact_raw
+        return _fallback_truncated_json(max_chars, snippet=raw[:max_chars], **kwargs)
 
     # Binary search for how many items fit
-    lo, hi = 1, largest_len
+    lo, hi = 0, largest_len
     original_list = data[largest_key]
-    best = 1
+    best = 0
+    best_result: str | None = None
 
     while lo <= hi:
         mid = (lo + hi) // 2
@@ -151,35 +205,33 @@ def _truncate_json(data: dict[str, Any], raw: str, max_chars: int, **kwargs: Any
             "field": largest_key,
             "shown": mid,
             "original_count": largest_len,
-            "note": (
-                f"Response trimmed to fit {max_chars:,} char limit. "
-                "Use limit/offset parameters to paginate through remaining results."
-            ),
+            "note": "No items fit." if mid == 0 else "Response trimmed; use pagination for more.",
         }
-        candidate = json.dumps(data, indent=2, **kwargs)
+        candidate = _serialize_json(data, pretty=False, **kwargs)
         if len(candidate) <= max_chars:
             best = mid
+            best_result = candidate
             lo = mid + 1
         else:
             hi = mid - 1
 
-    # Apply best fit
-    data[largest_key] = original_list[:best]
-    data["_truncated"] = {
-        "field": largest_key,
-        "shown": best,
-        "original_count": largest_len,
-        "note": f"Response trimmed to fit {max_chars} char limit. Use limit/offset to paginate.",
-    }
-    result = json.dumps(data, indent=2, **kwargs)
+    if best_result is None:
+        return _fallback_truncated_json(
+            max_chars,
+            snippet=raw[:max_chars],
+            field=largest_key,
+            original_count=largest_len,
+            **kwargs,
+        )
+
     logger.debug(
         "json_response truncated %s from %d to %d items (%d chars)",
         largest_key,
         largest_len,
         best,
-        len(result),
+        len(best_result),
     )
-    return result
+    return best_result
 
 
 def json_error(message: str) -> str:

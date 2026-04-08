@@ -214,6 +214,11 @@ class Settings:
     # Env: MCP_MODEL_PROFILE  |  Valid: "auto", "haiku", "sonnet", "opus"  |  Default: "auto"
     mcp_model_profile: str = "auto"
 
+    # Display timezone used for temporal analytics bucketing.
+    # Use "local" for the system timezone or an IANA name like "Europe/Berlin".
+    # Env: ANALYTICS_TIMEZONE  |  Default: "local"
+    analytics_timezone: str = "local"
+
     # Max results returned per email_triage call (clamped server-side).
     # Env: MCP_MAX_TRIAGE_RESULTS  |  Default: profile-dependent (sonnet: 50)
     mcp_max_triage_results: int = 50
@@ -257,6 +262,7 @@ class Settings:
                 min_value=0,
             ),
             mcp_model_profile=profile_name,
+            analytics_timezone=os.getenv("ANALYTICS_TIMEZONE", cls.analytics_timezone) or cls.analytics_timezone,
             mcp_max_triage_results=_int_from_env("MCP_MAX_TRIAGE_RESULTS", profile["mcp_max_triage_results"], min_value=1),
             mcp_max_search_results=_int_from_env("MCP_MAX_SEARCH_RESULTS", profile["mcp_max_search_results"], min_value=1),
         )

@@ -334,7 +334,7 @@ def _auto_download_spacy_models() -> None:
         logger.debug("spaCy not installed, skipping model download")
         return
 
-    import subprocess
+    import subprocess  # nosec B404 - local spaCy bootstrap via sys.executable
     import sys
 
     for model_name in _SPACY_MODELS:
@@ -344,7 +344,7 @@ def _auto_download_spacy_models() -> None:
         except OSError:
             logger.info("Downloading spaCy model: %s ...", model_name)
             try:
-                subprocess.check_call(
+                subprocess.check_call(  # nosec B603 - model_name comes from fixed internal allowlist
                     [sys.executable, "-m", "spacy", "download", model_name],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,

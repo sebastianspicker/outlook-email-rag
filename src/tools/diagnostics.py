@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..mcp_models import EmailAdminInput
 from .utils import ToolDepsProto, get_deps, json_error, json_response
+
+logger = logging.getLogger(__name__)
 
 # Thread-safety note: _deps is written once during single-threaded module
 # registration at import time, then only read by tool handlers.
@@ -58,7 +61,7 @@ async def email_diagnostics(deps: ToolDepsProto) -> str:
             if sparse_idx:
                 info["sparse_index_built"] = getattr(sparse_idx, "_built", False)
         except Exception:
-            pass  # sparse index may not be initialised — omit from diagnostics
+            logger.debug("Sparse index diagnostics unavailable", exc_info=True)
         return json_response(info)
 
     return await deps.offload(_run)

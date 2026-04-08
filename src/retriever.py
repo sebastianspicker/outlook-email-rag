@@ -506,7 +506,7 @@ class EmailRetriever:
                         self._sparse_index.build_from_db(db)
                         self._sparse_build_count = collection_count
                 except Exception:
-                    pass  # collection not available — skip staleness check
+                    logger.debug("Skipping sparse index staleness check", exc_info=True)
 
             if not self._sparse_index.is_built or self._sparse_index.doc_count == 0:
                 return None
@@ -536,7 +536,7 @@ class EmailRetriever:
                     if len(self._bm25_index._chunk_ids) != collection_count:
                         self._bm25_index.build_from_collection(self.collection)
                 except Exception:
-                    pass  # collection not available — skip staleness check
+                    logger.debug("Skipping BM25 staleness check", exc_info=True)
 
             if not self._bm25_index.is_built:
                 return None

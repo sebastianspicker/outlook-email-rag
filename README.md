@@ -555,9 +555,13 @@ python -m src.cli search "Q3 budget" --sender finance --rerank
 
 # Analytics
 python -m src.cli analytics volume month
+
+# Root-level flags can come before the subcommand
+python -m src.cli --log-level INFO analytics heatmap
 ```
 
 Supports 7 subcommand groups (`search`, `browse`, `export`, `evidence`, `analytics`, `training`, `admin`) with 58+ flags. See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the full reference.
+Temporal analytics bucket timestamps in `ANALYTICS_TIMEZONE` (default: local system timezone). Set an IANA zone such as `Europe/Berlin` to make charts and heatmaps use one explicit display timezone.
 
 ---
 

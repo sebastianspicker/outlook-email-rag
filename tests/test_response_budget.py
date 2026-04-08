@@ -272,6 +272,27 @@ class TestJsonResponseSizeGuard:
         assert len(parsed["items"]) == parsed["_truncated"]["shown"]
         assert len(result) <= 5000
 
+    def test_multi_item_list_can_truncate_to_zero_results(self):
+        from src.tools.utils import json_response
+
+        data = {"results": ["x" * 1000, "x" * 1000]}
+        result = json_response(data, max_chars=100)
+        parsed = json.loads(result)
+
+        assert parsed["results"] == []
+        assert parsed["_truncated"]["field"] == "results"
+        assert parsed["_truncated"]["shown"] == 0
+        assert parsed["_truncated"]["original_count"] == 2
+        assert len(result) <= 100
+
+    def test_tiny_positive_budgets_still_respect_hard_cap(self):
+        from src.tools.utils import json_response
+
+        for max_chars in [1, 2, 10, 20]:
+            result = json_response({"results": ["x" * 1000, "x" * 1000]}, max_chars=max_chars)
+            assert len(result) <= max_chars
+            json.loads(result)
+
     def test_unlimited_passes_through(self):
         from src.tools.utils import json_response
 

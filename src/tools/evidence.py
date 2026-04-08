@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..mcp_models import (
@@ -19,6 +20,8 @@ from ..mcp_models import (
     EvidenceUpdateInput,
 )
 from .utils import ToolDepsProto, json_error, json_response, run_with_db
+
+logger = logging.getLogger(__name__)
 
 
 def _compact_evidence_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -137,7 +140,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
 
                 network = CommunicationNetwork(db)
             except Exception:
-                pass  # network analysis is optional — dossier works without it
+                logger.debug("Network analysis unavailable for dossier generation", exc_info=True)
 
             from ..dossier_generator import DossierGenerator
 

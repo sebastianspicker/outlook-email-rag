@@ -710,19 +710,50 @@ def _infer_subcommand(args: argparse.Namespace) -> str | None:
 # ── Subcommand detection ──────────────────────────────────────────
 
 _SUBCOMMANDS = frozenset({"search", "browse", "export", "evidence", "analytics", "training", "admin"})
+_ROOT_FLAGS_WITH_VALUES = frozenset({"--chromadb-path", "--log-level"})
+_ROOT_FLAGS_NO_VALUES = frozenset({"--help", "-h", "--version"})
+_ROOT_FLAG_DESTS = {"--chromadb-path": "chromadb_path", "--log-level": "log_level"}
 
 
 def _has_subcommand(argv: list[str] | None) -> bool:
-    """Check whether argv starts with a known subcommand name.
-
-    Only checks argv[0] — subcommands must come first.  Previous logic
-    skipped flags and tested the first non-flag token, which broke when
-    a flag value (e.g. ``--db-path /tmp/analytics``) happened to collide
-    with a subcommand name.
-    """
+    """Detect a subcommand after skipping only supported root-level flags."""
     if argv is None:
         argv = sys.argv[1:]
-    return bool(argv) and argv[0] in _SUBCOMMANDS
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token in _SUBCOMMANDS:
+            return True
+        if token in _ROOT_FLAGS_NO_VALUES:
+            index += 1
+            continue
+        matched_flag = next((flag for flag in _ROOT_FLAGS_WITH_VALUES if token == flag or token.startswith(f"{flag}=")), None)
+        if matched_flag is not None:
+            index += 1 if "=" in token else 2
+            continue
+        return False
+    return False
+
+
+def _extract_root_flag_values(argv: list[str]) -> dict[str, str]:
+    """Capture root-level flag values that argparse drops during subparser parsing."""
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        matched_flag = next((flag for flag in _ROOT_FLAGS_WITH_VALUES if token == flag or token.startswith(f"{flag}=")), None)
+        if matched_flag is None:
+            index += 1
+            continue
+        if token == matched_flag:
+            if index + 1 >= len(argv):
+                break
+            values[_ROOT_FLAG_DESTS[matched_flag]] = argv[index + 1]
+            index += 2
+            continue
+        values[_ROOT_FLAG_DESTS[matched_flag]] = token.split("=", 1)[1]
+        index += 1
+    return values
 
 
 # ── Unified parse_args ────────────────────────────────────────────
@@ -730,10 +761,15 @@ def _has_subcommand(argv: list[str] | None) -> bool:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments — try subcommands first, fall back to legacy flags."""
+    if argv is None:
+        argv = sys.argv[1:]
     if _has_subcommand(argv):
         # Modern subcommand path
         new_parser = _build_subcommand_parser()
         args = new_parser.parse_args(argv)
+        for dest, value in _extract_root_flag_values(argv).items():
+            if getattr(args, dest, None) is None:
+                setattr(args, dest, value)
 
         # Normalize search query: positional or --query
         if args.subcommand == "search":

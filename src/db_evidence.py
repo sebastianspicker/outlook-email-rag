@@ -530,7 +530,7 @@ class EvidenceMixin:
 
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
-        sql = f"SELECT * FROM evidence_items{where} ORDER BY date ASC"
+        sql = f"SELECT * FROM evidence_items{where} ORDER BY date ASC"  # nosec B608
         if limit is not None and limit >= 0:
             sql += " LIMIT ?"
             params.append(limit)

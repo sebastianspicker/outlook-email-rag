@@ -314,11 +314,13 @@ python -m src.cli --reset-index --yes
 ## Subcommands (recommended)
 
 The CLI also supports a modern subcommand syntax with better discoverability. Legacy flat-flag syntax continues to work but emits a deprecation warning.
+Root-level flags such as `--log-level` and `--chromadb-path` can appear before or after the subcommand.
 
 ```bash
 # Search
 python -m src.cli search "Q3 budget" --sender finance
 python -m src.cli search --query "contract renewal" --date-from 2024-01-01 --rerank
+python -m src.cli --log-level INFO search "Q3 budget"
 
 # Browse
 python -m src.cli browse --folder Inbox --page 2 --page-size 30
@@ -354,6 +356,8 @@ python -m src.cli training fine-tune triplets.jsonl --epochs 5
 # Admin
 python -m src.cli admin reset-index --yes
 ```
+
+Temporal analytics (`volume`, `heatmap`, `response-times`) use `ANALYTICS_TIMEZONE` for display bucketing. The default is the local system timezone; set an IANA zone like `Europe/Berlin` when you want reproducible charts across machines.
 
 Run `python -m src.cli <subcommand> --help` for subcommand-specific help.
 

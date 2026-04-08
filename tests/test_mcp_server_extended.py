@@ -208,6 +208,39 @@ class TestLogStartupInfo:
         _log_startup_info()
 
 
+class TestMain:
+    def test_main_help_exits_before_startup(self, capsys):
+        from src import mcp_server
+
+        with (
+            patch.object(mcp_server, "_acquire_instance_lock") as mock_lock,
+            patch.object(mcp_server, "_log_startup_info") as mock_log,
+            patch.object(mcp_server.mcp, "run") as mock_run,
+            pytest.raises(SystemExit) as exc,
+        ):
+            mcp_server.main(["--help"])
+
+        assert exc.value.code == 0
+        mock_lock.assert_not_called()
+        mock_log.assert_not_called()
+        mock_run.assert_not_called()
+        assert "Run the Email RAG MCP server over stdio." in capsys.readouterr().out
+
+    def test_main_runs_server_without_args(self):
+        from src import mcp_server
+
+        with (
+            patch.object(mcp_server, "_acquire_instance_lock") as mock_lock,
+            patch.object(mcp_server, "_log_startup_info") as mock_log,
+            patch.object(mcp_server.mcp, "run") as mock_run,
+        ):
+            mcp_server.main([])
+
+        mock_lock.assert_called_once()
+        mock_log.assert_called_once()
+        mock_run.assert_called_once()
+
+
 # ── _acquire_instance_lock (fcntl unavailable / Windows path) ────
 
 
