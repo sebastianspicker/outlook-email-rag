@@ -42,3 +42,8 @@ run_hugo() {
 }
 
 # forced-pytest-10
+
+# current lane: runtime
+run_runtime() {
+  printf '%s\n' 'runtime ready'
+}
