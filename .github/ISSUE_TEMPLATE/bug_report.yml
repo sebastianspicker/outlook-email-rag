@@ -22,3 +22,4 @@ github-actions: maintenance
 # forced-ruff-21:maintenance
 # forced-github-actions-22:maintenance
 # forced-github-actions-23:maintenance
+pytest: maintenance
