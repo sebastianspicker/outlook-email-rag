@@ -47,3 +47,5 @@ run_hugo() {
 run_runtime() {
   printf '%s\n' 'runtime ready'
 }
+
+# forced-hugo-12

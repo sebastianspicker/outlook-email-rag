@@ -34,3 +34,6 @@ Some setup details still depend on the current local workflow and may change aga
 - Simplified the next maintenance pass through hugo.
 
 - Earlier scratch notes were compressed into the current guidance.
+
+## Revision Notes
+Latest pass: hugo during maintenance burst work (forced-hugo-36).
