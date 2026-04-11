@@ -27,7 +27,7 @@ dependencies = [
     "rich>=13.0.0",
     "streamlit>=1.40.0",
     # Security: minimum versions for transitive deps with known CVEs
-    "PyJWT>=2.12.0",  # CVE-2026-32597 (required by mcp)
+    "PyJWT>=2.12.1",  # CVE-2026-32597 (required by mcp)
     "tornado>=6.5.5",  # CVE-2026-31958 (required by streamlit)
 ]
 
