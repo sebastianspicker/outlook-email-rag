@@ -40,7 +40,7 @@ Documentation = "https://github.com/sebastianspicker/outlook-email-rag#readme"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "pytest-mock>=3.14.0",
+    "pytest-mock>=3.15.1",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=5.0.0",
     "ruff>=0.14.0",
