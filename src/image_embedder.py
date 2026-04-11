@@ -17,6 +17,8 @@ import logging
 import os
 from pathlib import Path
 
+from .transformers_compat import ensure_flagembedding_transformers_compat
+
 logger = logging.getLogger(__name__)
 
 _IMAGE_EXTENSIONS = frozenset(
@@ -197,6 +199,7 @@ class ImageEmbedder:
     def _try_load(self, model_name: str) -> None:
         """Attempt to load the Visualized-BGE model."""
         try:
+            ensure_flagembedding_transformers_compat()
             from FlagEmbedding.visual.modeling import Visualized_BGE
 
             self._model = Visualized_BGE(

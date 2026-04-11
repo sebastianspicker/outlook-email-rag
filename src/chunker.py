@@ -92,6 +92,7 @@ _SENT_FROM = re.compile(
     r"^Sent from my (iPhone|iPad|Samsung|Outlook|Galaxy|Pixel|Android|Huawei|BlackBerry)\b",
     re.IGNORECASE | re.MULTILINE,
 )
+_GET_OUTLOOK = re.compile(r"^Get Outlook for (iOS|Android)\b", re.IGNORECASE | re.MULTILINE)
 _CLOSING_PHRASES = re.compile(
     r"^(Best regards|Kind regards|Regards|Mit freundlichen Gr[uü][ßs]en|"
     r"Cheers|Thanks|Thank you|Viele Gr[uü][ßs]e|Liebe Gr[uü][ßs]e|Sincerely|"
@@ -125,6 +126,13 @@ def strip_signature(body: str) -> tuple[str, bool]:
 
     # Try "Sent from my ..."
     match = _SENT_FROM.search(body)
+    if match:
+        before = body[: match.start()].rstrip()
+        if before:
+            return before, True
+
+    # Try exact Outlook mobile footer
+    match = _GET_OUTLOOK.search(body)
     if match:
         before = body[: match.start()].rstrip()
         if before:
@@ -182,8 +190,11 @@ def strip_quoted_content(body: str, email_type: str = "original") -> tuple[str, 
             last_non_quoted = i
             break
 
-    quoted_count = len(lines) - 1 - last_non_quoted
-    if quoted_count >= 3:  # Only strip if there's a meaningful quoted block
+    tail_lines = lines[last_non_quoted + 1 :]
+    quoted_count = sum(1 for line in tail_lines if line.strip())
+    tail_start = len(lines) - quoted_count
+    tail_has_separator = tail_start > 0 and not lines[tail_start - 1].strip()
+    if quoted_count >= 3 or (quoted_count >= 1 and tail_has_separator):
         original = "\n".join(lines[: last_non_quoted + 1]).rstrip()
         if original:
             return original, quoted_count
@@ -358,6 +369,10 @@ def chunk_attachment(
     text: str,
     parent_metadata: dict,
     att_index: int = 0,
+    extraction_state: str = "text_extracted",
+    evidence_strength: str = "strong_text",
+    ocr_used: bool = False,
+    failure_reason: str | None = None,
 ) -> list[EmailChunk]:
     """Chunk extracted attachment text for embedding.
 
@@ -367,6 +382,10 @@ def chunk_attachment(
         text: Extracted text content from the attachment.
         parent_metadata: Metadata from the parent email (subject, date, sender, etc.).
         att_index: Attachment index within the parent email (disambiguates same-name files).
+        extraction_state: Normalized extraction outcome for the attachment text.
+        evidence_strength: Answer-facing evidence quality label for the attachment text.
+        ocr_used: Whether OCR was used to recover the attachment text.
+        failure_reason: Optional extraction failure reason for weak attachment references.
 
     Returns:
         List of EmailChunk objects for the attachment content.
@@ -384,6 +403,10 @@ def chunk_attachment(
         "is_attachment": "True",
         "parent_uid": email_uid,
         "attachment_filename": filename,
+        "extraction_state": extraction_state,
+        "evidence_strength": evidence_strength,
+        "ocr_used": str(ocr_used),
+        "failure_reason": failure_reason or "",
     }
 
     if len(text) <= MAX_CHUNK_CHARS:

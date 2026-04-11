@@ -10,14 +10,17 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
-from .config import resolve_device, resolve_embedding_batch_size
+from .config import resolve_device, resolve_embedding_batch_size, resolve_embedding_load_mode
+from .transformers_compat import ensure_flagembedding_transformers_compat
 
 _MPS_CLEAR_INTERVAL = int(os.environ.get("MPS_CACHE_CLEAR_INTERVAL", "1"))
+_MPS_CACHE_CLEAR_ENABLED = os.environ.get("MPS_CACHE_CLEAR_ENABLED", "0") == "1"
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,10 @@ class _BackendInfo:
     has_colbert: bool = False
 
 
+class EmbeddingModelUnavailableError(RuntimeError):
+    """Raised when the configured load mode forbids downloading a missing model."""
+
+
 class MultiVectorEmbedder:
     """Unified interface: BGEM3FlagModel (preferred) or SentenceTransformer fallback.
 
@@ -58,6 +65,7 @@ class MultiVectorEmbedder:
         colbert_enabled: bool = False,
         batch_size: int = 0,
         mps_float16: bool = False,
+        load_mode: str = "auto",
     ) -> None:
         self.model_name = model_name
         self._device_spec = device
@@ -65,6 +73,7 @@ class MultiVectorEmbedder:
         self._sparse_enabled = sparse_enabled
         self._colbert_enabled = colbert_enabled
         self._mps_float16 = mps_float16
+        self.load_mode = resolve_embedding_load_mode(load_mode)
         self.batch_size = batch_size or resolve_embedding_batch_size(self.device)
 
         self._model: Any = None
@@ -106,6 +115,7 @@ class MultiVectorEmbedder:
         Returns True on success, False if FlagEmbedding is not installed.
         """
         try:
+            ensure_flagembedding_transformers_compat()
             from FlagEmbedding import BGEM3FlagModel
         except ImportError:
             logger.warning(
@@ -123,19 +133,28 @@ class MultiVectorEmbedder:
         else:
             use_fp16 = self.device not in ("cpu",)
         logger.info(
-            "Loading BGEM3FlagModel: %s (device=%s, fp16=%s, sparse=%s, colbert=%s)",
+            "Loading BGEM3FlagModel: %s (device=%s, fp16=%s, sparse=%s, colbert=%s, load_mode=%s)",
             self.model_name,
             self.device,
             use_fp16,
             self._sparse_enabled,
             self._colbert_enabled,
+            self.load_mode,
         )
-
-        self._model = BGEM3FlagModel(
-            self.model_name,
-            device=self.device,
-            use_fp16=use_fp16,
-        )
+        try:
+            with _offline_model_load(self.load_mode == "local_only"):
+                self._model = BGEM3FlagModel(
+                    self.model_name,
+                    device=self.device,
+                    use_fp16=use_fp16,
+                )
+        except Exception as exc:
+            if self.load_mode == "local_only":
+                raise EmbeddingModelUnavailableError(
+                    f"FlagEmbedding model '{self.model_name}' is not available locally and "
+                    "EMBEDDING_LOAD_MODE=local_only forbids downloading it."
+                ) from exc
+            raise
         self._backend = _BackendInfo(
             name="flag",
             has_sparse=self._sparse_enabled,
@@ -147,21 +166,38 @@ class MultiVectorEmbedder:
         """Load SentenceTransformer as dense-only fallback."""
         from sentence_transformers import SentenceTransformer
 
-        # Try local cache first to skip ~30 HTTP HEAD requests to HF Hub.
-        try:
-            self._model = SentenceTransformer(
-                self.model_name,
-                device=self.device,
-                local_files_only=True,
-            )
+        if self.load_mode == "download":
             logger.info(
-                "Loaded SentenceTransformer from cache: %s (device=%s)",
+                "Loading SentenceTransformer with downloads enabled: %s (device=%s)",
                 self.model_name,
                 self.device,
             )
-        except (OSError, TypeError):
+            self._model = SentenceTransformer(self.model_name, device=self.device)
+            self._backend = _BackendInfo(name="sentence_transformer")
+            return
+
+        # Try local cache first to skip unnecessary HF Hub requests.
+        try:
+            with _offline_model_load(self.load_mode == "local_only"):
+                self._model = SentenceTransformer(
+                    self.model_name,
+                    device=self.device,
+                    local_files_only=True,
+                )
+            logger.info(
+                "Loaded SentenceTransformer from cache: %s (device=%s, load_mode=%s)",
+                self.model_name,
+                self.device,
+                self.load_mode,
+            )
+        except (OSError, TypeError) as exc:
             # OSError → model not in local cache, need to download
             # TypeError → older sentence-transformers without local_files_only
+            if self.load_mode == "local_only":
+                raise EmbeddingModelUnavailableError(
+                    f"Embedding model '{self.model_name}' is not available locally and "
+                    "EMBEDDING_LOAD_MODE=local_only forbids downloading it."
+                ) from exc
             logger.info(
                 "Downloading SentenceTransformer: %s (device=%s)",
                 self.model_name,
@@ -319,26 +355,48 @@ class MultiVectorEmbedder:
         self._ensure_loaded()
         self.encode_dense(["warmup"])
         logger.info(
-            "Model warmed up: %s (backend=%s, device=%s, batch_size=%d)",
+            "Model warmed up: %s (backend=%s, device=%s, batch_size=%d, load_mode=%s)",
             self.model_name,
             self.backend.name,
             self.device,
             self.batch_size,
+            self.load_mode,
         )
+
+    def runtime_summary(self) -> dict[str, Any]:
+        """Return a compact backend summary for diagnostics and startup logs."""
+        summary: dict[str, Any] = {
+            "model_name": self.model_name,
+            "device": self.device,
+            "batch_size": self.batch_size,
+            "load_mode": self.load_mode,
+        }
+        if self._backend is None:
+            summary["backend"] = "unloaded"
+            summary["has_sparse"] = self._sparse_enabled
+            summary["has_colbert"] = self._colbert_enabled
+            return summary
+        summary["backend"] = self.backend.name
+        summary["has_sparse"] = self.backend.has_sparse
+        summary["has_colbert"] = self.backend.has_colbert
+        return summary
 
     def _mps_cache_clear(self) -> None:
         """Free MPS GPU cache periodically (every _MPS_CLEAR_INTERVAL encodes)."""
-        if self.device == "mps":
-            self._encode_count += 1
-            if self._encode_count % _MPS_CLEAR_INTERVAL != 0:
-                return
-            try:
-                import torch
+        if self.device != "mps" or not _MPS_CACHE_CLEAR_ENABLED:
+            return
 
-                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                    torch.mps.empty_cache()
-            except (ImportError, RuntimeError):
-                pass  # torch/MPS not available — cache clear is optional
+        self._encode_count += 1
+        if self._encode_count % _MPS_CLEAR_INTERVAL != 0:
+            return
+
+        try:
+            import torch
+
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                torch.mps.empty_cache()
+        except (ImportError, RuntimeError):
+            pass  # torch/MPS not available — cache clear is optional
 
 
 def _to_list_of_lists(vecs: Any) -> list[list[float]]:
@@ -378,3 +436,26 @@ def _normalize_colbert(colbert_vecs: list[Any]) -> list[np.ndarray]:
         else:
             result.append(np.array(vecs))
     return result
+
+
+@contextmanager
+def _offline_model_load(enabled: bool):
+    """Temporarily force Hugging Face libraries into offline mode."""
+    if not enabled:
+        yield
+        return
+    old_hf = os.environ.get("HF_HUB_OFFLINE")
+    old_tx = os.environ.get("TRANSFORMERS_OFFLINE")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        if old_hf is None:
+            os.environ.pop("HF_HUB_OFFLINE", None)
+        else:
+            os.environ["HF_HUB_OFFLINE"] = old_hf
+        if old_tx is None:
+            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+        else:
+            os.environ["TRANSFORMERS_OFFLINE"] = old_tx

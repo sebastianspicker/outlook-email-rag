@@ -57,6 +57,7 @@ class EmailEmbedder:
                 colbert_enabled=self.settings.colbert_rerank_enabled,
                 batch_size=batch_size,
                 mps_float16=self.settings.mps_float16,
+                load_mode=self.settings.embedding_load_mode,
             )
         return self._embedder
 

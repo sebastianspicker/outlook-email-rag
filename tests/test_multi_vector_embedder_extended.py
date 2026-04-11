@@ -76,6 +76,7 @@ class TestBackendRuntimeError:
         emb._sparse_enabled = False
         emb._colbert_enabled = False
         emb._mps_float16 = False
+        emb.load_mode = "auto"
         emb.batch_size = 16
         emb._encode_count = 0
 
@@ -100,6 +101,7 @@ class TestLoadModelEarlyReturn:
         emb._sparse_enabled = False
         emb._colbert_enabled = False
         emb._mps_float16 = False
+        emb.load_mode = "auto"
 
         # Should not attempt to load again
         emb._load_model()
@@ -117,6 +119,7 @@ class TestSentenceTransformerFallback:
         emb.device = "cpu"
         emb._model = None
         emb._backend = None
+        emb.load_mode = "auto"
 
         mock_st_module = MagicMock()
         call_count = [0]
@@ -143,6 +146,7 @@ class TestSentenceTransformerFallback:
         emb.device = "cpu"
         emb._model = None
         emb._backend = None
+        emb.load_mode = "auto"
 
         mock_st_module = MagicMock()
         call_count = [0]
@@ -289,6 +293,7 @@ class TestSTEncodeAllMpsSubBatching:
         emb._encode_count = 0
         emb._sparse_enabled = False
         emb._colbert_enabled = False
+        emb.load_mode = "auto"
 
         texts = ["a", "b", "c", "d", "e"]
         result = emb.encode_all(texts)

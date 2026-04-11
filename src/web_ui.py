@@ -111,7 +111,7 @@ def _serialize_result(result: Any) -> dict[str, Any]:
 
 def _date_key(result: Any) -> str:
     metadata = getattr(result, "metadata", {}) or {}
-    return str(metadata.get("date", ""))[:10]
+    return str(metadata.get("date", "")).strip()
 
 
 def _sender_key(result: Any) -> str:

@@ -2,30 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from typing import TYPE_CHECKING
 
+from .db_queries_browse import (
+    get_email_for_reembed_impl,
+    get_email_full_impl,
+    get_emails_full_batch_impl,
+    get_inferred_thread_emails_impl,
+    get_thread_emails_impl,
+    list_emails_paginated_impl,
+    recipients_for_uid_impl,
+    recipients_for_uids_impl,
+)
 from .db_schema import _escape_like
 
 if TYPE_CHECKING:
     pass  # conn declared below for mypy
-
-
-def _safe_json_parse(raw: str | None, default: list | dict | None = None) -> list | dict:
-    """Parse a JSON string, returning default (or []) on failure."""
-    if not raw or not isinstance(raw, str):
-        return default if default is not None else []
-    try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return default if default is not None else []
-
-
-def _format_recipient(name: str | None, addr: str) -> str:
-    """Format a recipient as 'Name <addr>' or bare addr."""
-    return f"{name} <{addr}>" if name else addr
-
 
 class QueryMixin:
     """Read queries, full-body retrieval, browsing, and consistency checks."""
@@ -168,159 +161,22 @@ class QueryMixin:
     # ------------------------------------------------------------------
 
     def _recipients_for_uid(self, uid: str) -> dict[str, list[str]]:
-        """Return {to: [...], cc: [...], bcc: [...]} for a single email."""
-        rows = self.conn.execute(
-            "SELECT address, display_name, type FROM recipients WHERE email_uid = ?",
-            (uid,),
-        ).fetchall()
-        result: dict[str, list[str]] = {"to": [], "cc": [], "bcc": []}
-        for r in rows:
-            if r["type"] in result:
-                result[r["type"]].append(_format_recipient(r["display_name"], r["address"]))
-        return result
+        return recipients_for_uid_impl(self, uid)
 
     def _recipients_for_uids(self, uids: list[str]) -> dict[str, dict[str, list[str]]]:
-        """Return {uid: {to: [...], cc: [...], bcc: [...]}} for multiple emails in one query."""
-        if not uids:
-            return {}
-        result: dict[str, dict[str, list[str]]] = {}
-        # Batch to stay under SQLite's SQLITE_MAX_VARIABLE_NUMBER (default 999)
-        batch_size = 900
-        for start in range(0, len(uids), batch_size):
-            batch = uids[start : start + batch_size]
-            placeholders = ",".join("?" * len(batch))
-            rows = self.conn.execute(
-                f"SELECT address, display_name, type, email_uid FROM recipients WHERE email_uid IN ({placeholders})",  # nosec B608
-                batch,
-            ).fetchall()
-            for r in rows:
-                uid = r["email_uid"]
-                if uid not in result:
-                    result[uid] = {"to": [], "cc": [], "bcc": []}
-                if r["type"] in result[uid]:
-                    result[uid][r["type"]].append(_format_recipient(r["display_name"], r["address"]))
-        return result
+        return recipients_for_uids_impl(self, uids)
 
     def get_email_full(self, uid: str) -> dict | None:
-        """Get a single email with full body text by UID."""
-        row = self.conn.execute("SELECT * FROM emails WHERE uid = ?", (uid,)).fetchone()
-        if not row:
-            return None
-        email = dict(row)
-        recipients = self._recipients_for_uid(uid)
-        email["to"] = recipients["to"]
-        email["cc"] = recipients["cc"]
-        email["bcc"] = recipients["bcc"]
-        email["categories"] = _safe_json_parse(email.pop("categories", None))
-        email["references"] = _safe_json_parse(email.pop("references_json", None))
-        # Attachments from normalized table
-        email["attachments"] = self.attachments_for_email(uid)
-        return email
+        return get_email_full_impl(self, uid)
 
     def get_emails_full_batch(self, uids: list[str]) -> dict[str, dict]:
-        """Get multiple emails with full body, recipients, and attachments.
-
-        Returns {uid: email_dict} -- batched queries to stay under SQLite variable limits.
-        """
-        if not uids:
-            return {}
-
-        # 1) Emails (batched)
-        rows = []
-        batch_size = 900
-        for start in range(0, len(uids), batch_size):
-            batch = uids[start : start + batch_size]
-            placeholders = ",".join("?" * len(batch))
-            rows.extend(
-                self.conn.execute(
-                    f"SELECT * FROM emails WHERE uid IN ({placeholders})",  # nosec B608
-                    batch,
-                ).fetchall()
-            )
-
-        # 2) Recipients (batch — already handles batching internally)
-        all_recipients = self._recipients_for_uids(uids)
-
-        # 3) Attachments (batched)
-        attachments_by_uid: dict[str, list[dict]] = {}
-        for start in range(0, len(uids), batch_size):
-            batch = uids[start : start + batch_size]
-            placeholders = ",".join("?" * len(batch))
-            att_rows = self.conn.execute(
-                "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
-                f" FROM attachments WHERE email_uid IN ({placeholders})",
-                batch,
-            ).fetchall()
-            for a in att_rows:
-                attachments_by_uid.setdefault(a["email_uid"], []).append(
-                    {
-                        "name": a["name"],
-                        "mime_type": a["mime_type"],
-                        "size": a["size"],
-                        "content_id": a["content_id"],
-                        "is_inline": a["is_inline"],
-                    }
-                )
-
-        result: dict[str, dict] = {}
-        for row in rows:
-            email = dict(row)
-            uid = email["uid"]
-            recips = all_recipients.get(uid, {"to": [], "cc": [], "bcc": []})
-            email["to"] = recips["to"]
-            email["cc"] = recips["cc"]
-            email["bcc"] = recips["bcc"]
-            email["categories"] = _safe_json_parse(email.pop("categories", None))
-            email["references"] = _safe_json_parse(email.pop("references_json", None))
-            email["attachments"] = attachments_by_uid.get(uid, [])
-            result[uid] = email
-        return result
+        return get_emails_full_batch_impl(self, uids)
 
     def get_thread_emails(self, conversation_id: str) -> list[dict]:
-        """Get all emails in a conversation thread, sorted by date ASC."""
-        if not conversation_id:
-            return []
-        rows = self.conn.execute(
-            "SELECT * FROM emails WHERE conversation_id = ? ORDER BY date ASC",
-            (conversation_id,),
-        ).fetchall()
-        uids = [row["uid"] for row in rows]
-        all_recipients = self._recipients_for_uids(uids) if uids else {}
-        # Batch-fetch attachments (same pattern as get_emails_full_batch)
-        attachments_by_uid: dict[str, list[dict]] = {}
-        if uids:
-            batch_size = 900
-            for start in range(0, len(uids), batch_size):
-                batch = uids[start : start + batch_size]
-                placeholders = ",".join("?" * len(batch))
-                att_rows = self.conn.execute(
-                    "SELECT name, mime_type, size, content_id, is_inline, email_uid"  # nosec B608
-                    f" FROM attachments WHERE email_uid IN ({placeholders})",
-                    batch,
-                ).fetchall()
-                for a in att_rows:
-                    attachments_by_uid.setdefault(a["email_uid"], []).append(
-                        {
-                            "name": a["name"],
-                            "mime_type": a["mime_type"],
-                            "size": a["size"],
-                            "content_id": a["content_id"],
-                            "is_inline": a["is_inline"],
-                        }
-                    )
-        result = []
-        for row in rows:
-            email = dict(row)
-            uid = email["uid"]
-            recips = all_recipients.get(uid, {"to": [], "cc": [], "bcc": []})
-            email["to"] = recips["to"]
-            email["cc"] = recips["cc"]
-            email["bcc"] = recips["bcc"]
-            email["categories"] = _safe_json_parse(email.pop("categories", None))
-            email["references"] = _safe_json_parse(email.pop("references_json", None))
-            email["attachments"] = attachments_by_uid.get(uid, [])
-            result.append(email)
-        return result
+        return get_thread_emails_impl(self, conversation_id)
+
+    def get_inferred_thread_emails(self, inferred_thread_id: str) -> list[dict]:
+        return get_inferred_thread_emails_impl(self, inferred_thread_id)
 
     def list_emails_paginated(
         self,
@@ -334,119 +190,25 @@ class QueryMixin:
         date_from: str | None = None,
         date_to: str | None = None,
     ) -> dict:
-        """Return a page of emails with metadata for browsing.
-
-        Args:
-            offset: Starting position.
-            limit: Emails per page.
-            sort_by: Column to sort by (date, subject, sender_email).
-            sort_order: ASC or DESC.
-            folder: Optional folder filter (exact match).
-            sender: Optional sender filter (LIKE match).
-            category: Optional category filter (exact match via JOIN).
-            date_from: Optional start date in YYYY-MM-DD format (inclusive).
-            date_to: Optional end date in YYYY-MM-DD format (inclusive).
-
-        Returns:
-            {"emails": [...], "total": int, "offset": int, "limit": int}
-        """
-        allowed_sort = {"date", "subject", "sender_email", "folder"}
-        if sort_by not in allowed_sort:
-            sort_by = "date"
-        sort_order = "ASC" if sort_order.upper() == "ASC" else "DESC"
-        if offset < 0:
-            offset = 0
-        if limit < 1:
-            limit = 1
-
-        join = ""
-        conditions = []
-        params: list = []
-        if category:
-            join = " JOIN email_categories ec ON emails.uid = ec.email_uid"
-            conditions.append("ec.category = ?")
-            params.append(category)
-        if folder:
-            conditions.append("folder = ?")
-            params.append(folder)
-        if sender:
-            conditions.append("sender_email LIKE ? ESCAPE '\\'")
-            params.append(f"%{_escape_like(sender)}%")
-        if date_from:
-            conditions.append("SUBSTR(date, 1, 10) >= ?")
-            params.append(date_from[:10])
-        if date_to:
-            conditions.append("SUBSTR(date, 1, 10) <= ?")
-            params.append(date_to[:10])
-
-        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-
-        total_row = self.conn.execute(f"SELECT COUNT(*) AS c FROM emails{join}{where}", params).fetchone()  # nosec B608
-        total = total_row["c"]
-
-        rows = self.conn.execute(
-            f"SELECT emails.uid, subject, sender_name, sender_email, date, folder,"  # nosec B608
-            f" email_type, has_attachments, attachment_count, body_length,"
-            f" conversation_id"
-            f" FROM emails{join}{where}"
-            f" ORDER BY {sort_by} {sort_order}"
-            f" LIMIT ? OFFSET ?",
-            [*params, limit, offset],
-        ).fetchall()
-
-        return {
-            "emails": [dict(r) for r in rows],
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-        }
+        return list_emails_paginated_impl(
+            self,
+            offset=offset,
+            limit=limit,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            folder=folder,
+            sender=sender,
+            category=category,
+            date_from=date_from,
+            date_to=date_to,
+        )
 
     # ------------------------------------------------------------------
     # Re-embed helper
     # ------------------------------------------------------------------
 
     def get_email_for_reembed(self, uid: str) -> dict | None:
-        """Read an email from SQLite in the dict format expected by chunk_email().
-
-        Returns None if the UID is not found or body_text is empty.
-        """
-        full = self.get_email_full(uid)
-        if not full:
-            return None
-        body = full.get("body_text") or ""
-        if not body.strip():
-            return None
-        # Use ``or`` instead of ``.get(key, default)`` for string/int fields
-        # because dict(sqlite_row) sets keys to None for NULL columns and
-        # ``.get("key", "")`` returns None (not "") when the key exists.
-        return {
-            "uid": full["uid"],
-            "message_id": full.get("message_id") or "",
-            "subject": full.get("subject") or "",
-            "sender_name": full.get("sender_name") or "",
-            "sender_email": full.get("sender_email") or "",
-            "to": full.get("to") or [],
-            "cc": full.get("cc") or [],
-            "bcc": full.get("bcc") or [],
-            "date": full.get("date") or "",
-            "body": body,
-            "folder": full.get("folder") or "",
-            "has_attachments": bool(full.get("has_attachments") or full.get("attachment_count")),
-            "attachment_names": [a["name"] for a in (full.get("attachments") or []) if a.get("name")],
-            "attachments": full.get("attachments") or [],
-            "attachment_count": full.get("attachment_count") or 0,
-            "conversation_id": full.get("conversation_id") or "",
-            "in_reply_to": full.get("in_reply_to") or "",
-            "references": full.get("references") or [],
-            "priority": full.get("priority") or 0,
-            "is_read": bool(full.get("is_read", True)),
-            "email_type": full.get("email_type") or "original",
-            "base_subject": full.get("base_subject") or "",
-            "categories": full.get("categories") if isinstance(full.get("categories"), list) else [],
-            "thread_topic": full.get("thread_topic") or "",
-            "inference_classification": full.get("inference_classification") or "",
-            "is_calendar_message": bool(full.get("is_calendar_message")),
-        }
+        return get_email_for_reembed_impl(self, uid)
 
     # ------------------------------------------------------------------
     # Grouping

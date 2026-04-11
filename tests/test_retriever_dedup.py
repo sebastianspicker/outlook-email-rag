@@ -70,7 +70,7 @@ def test_format_results_groups_threads():
         SearchResult("c", "Email C", {"conversation_id": "", "date": "2025-01-01"}, 0.15),
     ]
 
-    formatted = retriever.format_results_for_claude(results)
+    formatted = retriever.format_results_for_llm(results)
     assert "Conversation Thread (2 emails)" in formatted
     assert "End Thread" in formatted
     # Thread members should be sorted by date (B before A)
@@ -87,13 +87,13 @@ def test_format_results_no_grouping_for_single_conversation_member():
         SearchResult("b", "Email B", {"conversation_id": "conv2", "date": "2025-01-02"}, 0.2),
     ]
 
-    formatted = retriever.format_results_for_claude(results)
+    formatted = retriever.format_results_for_llm(results)
     assert "Conversation Thread" not in formatted
 
 
 def test_format_results_empty():
     retriever = EmailRetriever.__new__(EmailRetriever)
-    assert retriever.format_results_for_claude([]) == "No matching emails found."
+    assert retriever.format_results_for_llm([]) == "No matching emails found."
 
 
 # ── Dedup integration in search_filtered ─────────────────────────

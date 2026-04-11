@@ -95,7 +95,7 @@ def test_format_results_includes_untrusted_data_warning():
     retriever = EmailRetriever.__new__(EmailRetriever)
     result = _build_result("a@example.com", "Alice", "2023-01-01T00:00:00Z")
 
-    output = retriever.format_results_for_claude([result])
+    output = retriever.format_results_for_llm([result])
 
     assert "untrusted email content" in output.lower()
 

@@ -14,10 +14,31 @@ venv/
 .coverage
 htmlcov/
 
-# Claude worktrees and orchestration artifacts
-.claude/worktrees/
-.claude/ralph/
-.claude/ralph-progress.md
+# Agent worktrees and orchestration artifacts
+.claude/
+.codex/
+.agents/
+.github/codex/
+.github/workflows/codex.yml
+AGENTS.md
+HARNESS_PRINCIPLES.md
+code_review.md
+AUDIT.md
+docs/source-audit/
+docs/agent/Prompt.md
+docs/agent/Plan.md
+docs/agent/Documentation.md
+docs/agent/Implement.md
+docs/agent/RunModes.md
+docs/agent/AutonomyPolicy.md
+docs/agent/Goals.md
+docs/agent/RepoProfile.md
+docs/agent/Findings.md
+docs/agent/Backlog.md
+docs/agent/Topology.md
+docs/agent/VerificationMatrix.md
+docs/agent/Checkpoint.md
+docs/agent/Decisions.md
 
 # Stale planning and progress artifacts
 plans/
@@ -52,11 +73,11 @@ credentials.json
 service_account.json
 *_secret*.json
 
-# Personal Claude instructions (not for public repo)
-CLAUDE.personal.md
-
 # IDE
 .vscode/
 .idea/
 *.swp
 .DS_Store
+
+# Local examples/scratch
+/.example/

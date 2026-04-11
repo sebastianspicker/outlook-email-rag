@@ -7,7 +7,15 @@ import re
 import sqlite3
 from typing import TYPE_CHECKING, ClassVar
 
-from .db_schema import _escape_like
+from .db_evidence_queries import (
+    evidence_categories_impl,
+    evidence_stats_impl,
+    evidence_timeline_impl,
+    get_evidence_impl,
+    list_evidence_impl,
+    search_evidence_impl,
+    verify_evidence_quotes_impl,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,44 +191,18 @@ class EvidenceMixin:
         Returns:
             {"items": [...], "total": int}
         """
-        conditions: list[str] = []
-        params: list = []
-
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            conditions.append("relevance >= ?")
-            params.append(min_relevance)
-        if email_uid:
-            conditions.append("email_uid = ?")
-            params.append(email_uid)
-
-        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-
-        total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where}",  # nosec B608
-            params,
-        ).fetchone()
-        total = total_row["c"]
-
-        rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ? OFFSET ?",  # nosec B608
-            [*params, limit, offset],
-        ).fetchall()
-
-        return {
-            "items": [dict(r) for r in rows],
-            "total": total,
-        }
+        return list_evidence_impl(
+            self,
+            category=category,
+            min_relevance=min_relevance,
+            email_uid=email_uid,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_evidence(self, evidence_id: int) -> dict | None:
         """Get a single evidence item by ID."""
-        row = self.conn.execute(
-            "SELECT * FROM evidence_items WHERE id = ?",
-            (evidence_id,),
-        ).fetchone()
-        return dict(row) if row else None
+        return get_evidence_impl(self, evidence_id)
 
     def update_evidence(self, evidence_id: int, **fields) -> bool:
         """Update fields on an evidence item.
@@ -335,71 +317,7 @@ class EvidenceMixin:
         Returns:
             {"verified": int, "failed": int, "failures": [{"evidence_id": ..., "key_quote_preview": ..., "email_uid": ...}, ...]}
         """
-        rows = self.conn.execute(
-            """SELECT ei.id, ei.key_quote, ei.email_uid, e.body_text
-               FROM evidence_items ei
-               LEFT JOIN emails e ON ei.email_uid = e.uid"""
-        ).fetchall()
-
-        verified_count = 0
-        failed_count = 0
-        orphaned_count = 0
-        failures: list[dict] = []
-        verified_ids: list[tuple[int]] = []
-        failed_ids: list[tuple[int]] = []
-
-        for row in rows:
-            body_text = row["body_text"]
-            quote = (row["key_quote"] or "").strip()
-
-            if body_text is None:
-                # Orphaned evidence — source email missing
-                orphaned_count += 1
-                failed_ids.append((row["id"],))
-                failures.append(
-                    {
-                        "evidence_id": row["id"],
-                        "key_quote_preview": quote[:80] + ("..." if len(quote) > 80 else ""),
-                        "email_uid": row["email_uid"],
-                        "orphaned": True,
-                    }
-                )
-                continue
-
-            is_verified = 1 if quote and _normalize_ws(quote) in _normalize_ws(body_text) else 0
-
-            if is_verified:
-                verified_count += 1
-                verified_ids.append((row["id"],))
-            else:
-                failed_count += 1
-                failed_ids.append((row["id"],))
-                failures.append(
-                    {
-                        "evidence_id": row["id"],
-                        "key_quote_preview": quote[:80] + ("..." if len(quote) > 80 else ""),
-                        "email_uid": row["email_uid"],
-                    }
-                )
-
-        if verified_ids:
-            self.conn.executemany(
-                "UPDATE evidence_items SET verified = 1 WHERE id = ?",
-                verified_ids,
-            )
-        if failed_ids:
-            self.conn.executemany(
-                "UPDATE evidence_items SET verified = 0 WHERE id = ?",
-                failed_ids,
-            )
-        self.conn.commit()
-        return {
-            "verified": verified_count,
-            "failed": failed_count,
-            "orphaned": orphaned_count,
-            "total": verified_count + failed_count + orphaned_count,
-            "failures": failures,
-        }
+        return verify_evidence_quotes_impl(self)
 
     def evidence_stats(
         self,
@@ -417,45 +335,7 @@ class EvidenceMixin:
              "by_category": [{"category": str, "count": int}, ...],
              "by_relevance": [{"relevance": int, "count": int}, ...]}
         """
-        where_clauses: list[str] = []
-        params: list[object] = []
-        if category:
-            where_clauses.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            where_clauses.append("relevance >= ?")
-            params.append(min_relevance)
-        where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
-
-        total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql}",  # nosec B608
-            params,
-        ).fetchone()
-        total = total_row["c"]
-
-        verified_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where_sql} {'AND' if where_clauses else 'WHERE'} verified = 1",  # nosec B608
-            params,
-        ).fetchone()
-        verified = verified_row["c"]
-
-        cat_rows = self.conn.execute(
-            f"SELECT category, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY category ORDER BY count DESC",  # nosec B608
-            params,
-        ).fetchall()
-
-        rel_rows = self.conn.execute(
-            f"SELECT relevance, COUNT(*) AS count FROM evidence_items{where_sql} GROUP BY relevance ORDER BY relevance DESC",  # nosec B608
-            params,
-        ).fetchall()
-
-        return {
-            "total": total,
-            "verified": verified,
-            "unverified": total - verified,
-            "by_category": [dict(r) for r in cat_rows],
-            "by_relevance": [dict(r) for r in rel_rows],
-        }
+        return evidence_stats_impl(self, category=category, min_relevance=min_relevance)
 
     # ── Evidence: extended queries ────────────────────────────
 
@@ -471,34 +351,13 @@ class EvidenceMixin:
         Returns:
             {"items": [...], "total": int, "query": str}
         """
-        conditions = ["(key_quote LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')"]
-        pattern = f"%{_escape_like(query)}%"
-        params: list = [pattern, pattern, pattern]
-
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            conditions.append("relevance >= ?")
-            params.append(min_relevance)
-
-        where = " WHERE " + " AND ".join(conditions)
-
-        total_row = self.conn.execute(
-            f"SELECT COUNT(*) AS c FROM evidence_items{where}",  # nosec B608
-            params,
-        ).fetchone()
-
-        rows = self.conn.execute(
-            f"SELECT * FROM evidence_items{where} ORDER BY date ASC LIMIT ?",  # nosec B608
-            [*params, limit],
-        ).fetchall()
-
-        return {
-            "items": [dict(r) for r in rows],
-            "total": total_row["c"],
-            "query": query,
-        }
+        return search_evidence_impl(
+            self,
+            query=query,
+            category=category,
+            min_relevance=min_relevance,
+            limit=limit,
+        )
 
     def evidence_timeline(
         self,
@@ -518,31 +377,13 @@ class EvidenceMixin:
         Returns:
             List of evidence items ordered by date ascending.
         """
-        conditions: list[str] = []
-        params: list = []
-
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_relevance is not None:
-            conditions.append("relevance >= ?")
-            params.append(min_relevance)
-
-        where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-
-        sql = f"SELECT * FROM evidence_items{where} ORDER BY date ASC"  # nosec B608
-        if limit is not None and limit >= 0:
-            sql += " LIMIT ?"
-            params.append(limit)
-        elif offset > 0:
-            # OFFSET requires LIMIT in SQLite; use -1 for unlimited
-            sql += " LIMIT -1"
-        if offset > 0:
-            sql += " OFFSET ?"
-            params.append(offset)
-
-        rows = self.conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        return evidence_timeline_impl(
+            self,
+            category=category,
+            min_relevance=min_relevance,
+            limit=limit,
+            offset=offset,
+        )
 
     def evidence_categories(self) -> list[dict]:
         """Return all canonical categories with current evidence counts.
@@ -550,7 +391,4 @@ class EvidenceMixin:
         Returns:
             List of {"category": str, "count": int} for all 10 canonical categories.
         """
-        count_rows = self.conn.execute("SELECT category, COUNT(*) AS count FROM evidence_items GROUP BY category").fetchall()
-        counts = {r["category"]: r["count"] for r in count_rows}
-
-        return [{"category": cat, "count": counts.get(cat, 0)} for cat in self.EVIDENCE_CATEGORIES]
+        return evidence_categories_impl(self)

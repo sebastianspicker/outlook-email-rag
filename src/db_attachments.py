@@ -38,7 +38,8 @@ class AttachmentMixin:
     def attachments_for_email(self, uid: str) -> list[dict]:
         """Get all attachments for a specific email."""
         rows = self.conn.execute(
-            "SELECT name, mime_type, size, content_id, is_inline FROM attachments WHERE email_uid = ?",
+            "SELECT name, mime_type, size, content_id, is_inline, extraction_state, evidence_strength, "
+            "ocr_used, failure_reason, text_preview FROM attachments WHERE email_uid = ?",
             (uid,),
         ).fetchall()
         return [dict(r) for r in rows]

@@ -18,7 +18,7 @@ class TestProfileResolution:
         try:
             s = Settings.from_env()
             assert s.mcp_model_profile == "auto"
-            # auto = sonnet defaults
+            # auto = balanced defaults
             assert s.mcp_max_body_chars == 500
             assert s.mcp_max_response_tokens == 8000
             assert s.mcp_max_full_body_chars == 10000
@@ -28,10 +28,10 @@ class TestProfileResolution:
         finally:
             get_settings.cache_clear()
 
-    def test_haiku_profile_sets_tight_defaults(self, monkeypatch):
+    def test_tight_profile_sets_tight_defaults(self, monkeypatch):
         from src.config import Settings, get_settings
 
-        monkeypatch.setenv("MCP_MODEL_PROFILE", "haiku")
+        monkeypatch.setenv("MCP_MODEL_PROFILE", "tight")
         # Clear any per-variable overrides
         for var in [
             "MCP_MAX_BODY_CHARS",
@@ -45,7 +45,7 @@ class TestProfileResolution:
         get_settings.cache_clear()
         try:
             s = Settings.from_env()
-            assert s.mcp_model_profile == "haiku"
+            assert s.mcp_model_profile == "tight"
             assert s.mcp_max_body_chars == 300
             assert s.mcp_max_response_tokens == 4000
             assert s.mcp_max_full_body_chars == 5000
@@ -55,10 +55,10 @@ class TestProfileResolution:
         finally:
             get_settings.cache_clear()
 
-    def test_opus_profile_sets_generous_defaults(self, monkeypatch):
+    def test_generous_profile_sets_generous_defaults(self, monkeypatch):
         from src.config import Settings, get_settings
 
-        monkeypatch.setenv("MCP_MODEL_PROFILE", "opus")
+        monkeypatch.setenv("MCP_MODEL_PROFILE", "generous")
         for var in [
             "MCP_MAX_BODY_CHARS",
             "MCP_MAX_RESPONSE_TOKENS",
@@ -71,7 +71,7 @@ class TestProfileResolution:
         get_settings.cache_clear()
         try:
             s = Settings.from_env()
-            assert s.mcp_model_profile == "opus"
+            assert s.mcp_model_profile == "generous"
             assert s.mcp_max_body_chars == 800
             assert s.mcp_max_response_tokens == 16000
             assert s.mcp_max_full_body_chars == 20000
@@ -98,7 +98,7 @@ class TestProfileResolution:
         try:
             s = Settings.from_env()
             assert s.mcp_model_profile == "auto"
-            # Falls back to sonnet defaults
+            # Falls back to balanced defaults
             assert s.mcp_max_body_chars == 500
             assert s.mcp_max_response_tokens == 8000
         finally:
@@ -107,13 +107,13 @@ class TestProfileResolution:
     def test_env_override_wins_over_profile(self, monkeypatch):
         from src.config import Settings, get_settings
 
-        monkeypatch.setenv("MCP_MODEL_PROFILE", "haiku")
+        monkeypatch.setenv("MCP_MODEL_PROFILE", "tight")
         monkeypatch.setenv("MCP_MAX_BODY_CHARS", "1000")
         get_settings.cache_clear()
         try:
             s = Settings.from_env()
-            assert s.mcp_model_profile == "haiku"
-            # Body chars overridden by env, rest from haiku profile
+            assert s.mcp_model_profile == "tight"
+            # Body chars overridden by env, rest from tight profile
             assert s.mcp_max_body_chars == 1000
             assert s.mcp_max_response_tokens == 4000
         finally:
@@ -122,7 +122,7 @@ class TestProfileResolution:
     def test_resolve_runtime_passes_through_profile(self, monkeypatch):
         from src.config import get_settings, resolve_runtime_settings
 
-        monkeypatch.setenv("MCP_MODEL_PROFILE", "opus")
+        monkeypatch.setenv("MCP_MODEL_PROFILE", "generous")
         for var in [
             "MCP_MAX_BODY_CHARS",
             "MCP_MAX_RESPONSE_TOKENS",
@@ -135,7 +135,7 @@ class TestProfileResolution:
         get_settings.cache_clear()
         try:
             s = resolve_runtime_settings()
-            assert s.mcp_model_profile == "opus"
+            assert s.mcp_model_profile == "generous"
             assert s.mcp_max_triage_results == 100
             assert s.mcp_max_search_results == 50
         finally:
@@ -169,7 +169,7 @@ class _CapturingRetriever:
     def serialize_results(self, query, results):
         return {"query": query, "count": len(results), "results": []}
 
-    def format_results_for_claude(self, results):
+    def format_results_for_llm(self, results):
         return "formatted"
 
     def stats(self):
@@ -183,7 +183,7 @@ async def test_triage_top_k_clamped_by_profile(monkeypatch):
     from src.mcp_models import EmailTriageInput
     from src.tools import search as search_mod
 
-    monkeypatch.setenv("MCP_MODEL_PROFILE", "haiku")
+    monkeypatch.setenv("MCP_MODEL_PROFILE", "tight")
     for var in ["MCP_MAX_TRIAGE_RESULTS", "MCP_MAX_SEARCH_RESULTS"]:
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()
@@ -192,7 +192,7 @@ async def test_triage_top_k_clamped_by_profile(monkeypatch):
     monkeypatch.setattr(mcp_server, "get_retriever", lambda: retriever)
 
     try:
-        # Pydantic allows up to 100; haiku profile caps at 30
+        # Pydantic allows up to 100; tight profile caps at 30
         params = EmailTriageInput(query="test query", top_k=80)
         result = await search_mod.email_triage(params)
         data = json.loads(result)
@@ -200,7 +200,7 @@ async def test_triage_top_k_clamped_by_profile(monkeypatch):
         assert retriever.captured_kwargs["top_k"] == 30
         assert data["_capped"]["requested"] == 80
         assert data["_capped"]["effective"] == 30
-        assert data["_capped"]["profile"] == "haiku"
+        assert data["_capped"]["profile"] == "tight"
     finally:
         get_settings.cache_clear()
 
@@ -212,7 +212,7 @@ async def test_search_top_k_clamped_by_profile(monkeypatch):
     from src.mcp_models import EmailSearchStructuredInput
     from src.tools.search import email_search_structured
 
-    monkeypatch.setenv("MCP_MODEL_PROFILE", "haiku")
+    monkeypatch.setenv("MCP_MODEL_PROFILE", "tight")
     for var in ["MCP_MAX_TRIAGE_RESULTS", "MCP_MAX_SEARCH_RESULTS"]:
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()
@@ -221,7 +221,7 @@ async def test_search_top_k_clamped_by_profile(monkeypatch):
     monkeypatch.setattr(mcp_server, "get_retriever", lambda: retriever)
 
     try:
-        # Pydantic allows up to 30; haiku profile caps at 15
+        # Pydantic allows up to 30; tight profile caps at 15
         params = EmailSearchStructuredInput(query="test query", top_k=30)
         result = await email_search_structured(params)
         data = json.loads(result)
@@ -229,7 +229,7 @@ async def test_search_top_k_clamped_by_profile(monkeypatch):
         assert retriever.captured_kwargs["top_k"] == 15
         assert data["_capped"]["requested"] == 30
         assert data["_capped"]["effective"] == 15
-        assert data["_capped"]["profile"] == "haiku"
+        assert data["_capped"]["profile"] == "tight"
     finally:
         get_settings.cache_clear()
 
@@ -242,7 +242,7 @@ async def test_no_capping_when_under_limit(monkeypatch):
     from src.mcp_models import EmailSearchStructuredInput
     from src.tools.search import email_search_structured
 
-    monkeypatch.setenv("MCP_MODEL_PROFILE", "opus")
+    monkeypatch.setenv("MCP_MODEL_PROFILE", "generous")
     for var in ["MCP_MAX_TRIAGE_RESULTS", "MCP_MAX_SEARCH_RESULTS"]:
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()
@@ -269,7 +269,7 @@ async def test_diagnostics_includes_profile(monkeypatch):
     from src.config import get_settings
     from src.tools.diagnostics import email_diagnostics
 
-    monkeypatch.setenv("MCP_MODEL_PROFILE", "haiku")
+    monkeypatch.setenv("MCP_MODEL_PROFILE", "tight")
     for var in [
         "MCP_MAX_BODY_CHARS",
         "MCP_MAX_RESPONSE_TOKENS",
@@ -306,7 +306,9 @@ async def test_diagnostics_includes_profile(monkeypatch):
     try:
         result = await email_diagnostics(_FakeDeps)
         data = json.loads(result)
-        assert data["mcp_profile"] == "haiku"
+        assert data["mcp_profile"] == "tight"
+        assert data["batch_size_setting"] == 0
+        assert data["embedder_device"] == "cpu"
         assert data["mcp_budget"]["max_body_chars"] == 300
         assert data["mcp_budget"]["max_response_tokens"] == 4000
         assert data["mcp_budget"]["max_full_body_chars"] == 5000

@@ -3,6 +3,10 @@ import types
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+pytest_plugins = ("tests._custody_cases",)
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -186,3 +190,55 @@ def _ensure_mcp_stub() -> None:
 _ensure_chromadb_stub()
 _ensure_sentence_transformers_stub()
 _ensure_mcp_stub()
+
+
+class FakeMultiVectorEmbedder:
+    """Offline-safe embedder stub for unit tests that do not need live models."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.model_name = kwargs.get("model_name", "fake-bge-m3")
+        self.device = kwargs.get("device", "cpu")
+        self.batch_size = kwargs.get("batch_size", 16)
+        self.load_mode = kwargs.get("load_mode", "local_only")
+        self.has_sparse = kwargs.get("sparse_enabled", False)
+        self.has_colbert = kwargs.get("colbert_enabled", False)
+        self._model = object()
+
+    def encode(self, texts, **kwargs: Any):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    def encode_dense(self, texts):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    def encode_all(self, texts):
+        from src.multi_vector_embedder import MultiVectorResult
+
+        dense = [[0.1, 0.2, 0.3] for _ in texts]
+        sparse = [{1: 0.5} for _ in texts] if self.has_sparse else None
+        colbert = [None for _ in texts] if self.has_colbert else None
+        return MultiVectorResult(dense=dense, sparse=sparse, colbert=colbert)
+
+    def warmup(self) -> None:
+        return None
+
+    def runtime_summary(self) -> dict[str, Any]:
+        return {
+            "model_name": self.model_name,
+            "device": self.device,
+            "batch_size": self.batch_size,
+            "load_mode": self.load_mode,
+            "backend": "fake",
+            "has_sparse": self.has_sparse,
+            "has_colbert": self.has_colbert,
+        }
+
+
+@pytest.fixture
+def stub_multi_vector_embedder(monkeypatch):
+    """Replace MultiVectorEmbedder with an offline-safe fake in selected modules."""
+
+    def _apply(module):
+        monkeypatch.setattr(module, "MultiVectorEmbedder", FakeMultiVectorEmbedder)
+        return FakeMultiVectorEmbedder
+
+    return _apply

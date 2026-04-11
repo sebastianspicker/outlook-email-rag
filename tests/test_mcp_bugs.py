@@ -104,7 +104,7 @@ class TestSettings:
             get_settings.cache_clear()
 
 
-# ── format_results_for_claude budget ─────────────────────────
+# ── format_results_for_llm budget ────────────────────────────
 
 
 class TestFormatResultsBudget:
@@ -127,7 +127,7 @@ class TestFormatResultsBudget:
     def test_body_truncation_applied(self):
         r = self._make_retriever()
         result = self._make_result(text="x" * 1000, uid="u1")
-        output = r.format_results_for_claude([result], max_body_chars=100, max_response_tokens=0)
+        output = r.format_results_for_llm([result], max_body_chars=100, max_response_tokens=0)
         assert "truncated" in output
         assert "x" * 100 in output
 
@@ -135,7 +135,7 @@ class TestFormatResultsBudget:
         r = self._make_retriever()
         # Create many results with large bodies to exceed budget
         results = [self._make_result(text="x" * 500, uid=f"u{i}") for i in range(50)]
-        output = r.format_results_for_claude(
+        output = r.format_results_for_llm(
             results,
             max_body_chars=0,
             max_response_tokens=200,
@@ -145,7 +145,7 @@ class TestFormatResultsBudget:
     def test_unlimited_budget_shows_all(self):
         r = self._make_retriever()
         results = [self._make_result(uid=f"u{i}") for i in range(5)]
-        output = r.format_results_for_claude(results, max_body_chars=0, max_response_tokens=0)
+        output = r.format_results_for_llm(results, max_body_chars=0, max_response_tokens=0)
         assert "omitted" not in output
         assert "Result 5" in output
 

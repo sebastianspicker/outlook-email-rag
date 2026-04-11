@@ -78,6 +78,20 @@ def test_sort_search_results_supports_relevance_and_date():
     assert [item.chunk_id for item in by_oldest] == ["older", "best", "newer"]
 
 
+def test_sort_search_results_uses_full_timestamp_within_same_day():
+    results = [
+        _result("earlier", 0.2, "2024-06-01T08:00:00Z"),
+        _result("later", 0.3, "2024-06-01T17:30:00Z"),
+        _result("middle", 0.1, "2024-06-01T12:15:00Z"),
+    ]
+
+    by_newest = sort_search_results(results, "date_desc")
+    by_oldest = sort_search_results(results, "date_asc")
+
+    assert [item.chunk_id for item in by_newest] == ["later", "middle", "earlier"]
+    assert [item.chunk_id for item in by_oldest] == ["earlier", "middle", "later"]
+
+
 def test_build_export_payload_includes_filters_and_sort():
     results = [_result("best", 0.1, "2024-03-01T00:00:00Z")]
     payload = build_export_payload(

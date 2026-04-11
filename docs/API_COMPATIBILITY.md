@@ -30,11 +30,10 @@ The following CLI capabilities are stable for `0.1.x`:
    14. `--min-score`
    15. `--rerank`
    16. `--hybrid`
-   17. `--topic`
-   18. `--cluster-id`
-   19. `--expand-query`
-   20. `--json` and `--format {text,json}`
-   21. `--version`
+   17. `--cluster-id`
+   18. `--expand-query`
+   19. `--json` and `--format {text,json}`
+   20. `--version`
 2. Operational path:
    1. `--stats`
    2. `--list-senders N`
@@ -79,7 +78,7 @@ The following CLI capabilities are stable for `0.1.x`:
 
 ## MCP Compatibility Contract
 
-The following 46 tool names are stable for `0.1.x`:
+The following 45 tool names are stable for `0.1.x`:
 
 ### Core Search (6)
 
@@ -140,31 +139,32 @@ The following 46 tool names are stable for `0.1.x`:
 37. `email_clusters`
 38. `email_discovery`
 39. `email_find_similar`
-40. `email_topics`
 
 ### Temporal (1)
 
-41. `email_temporal` (discriminator: `analysis`)
+40. `email_temporal` (discriminator: `analysis`)
 
 ### Data Quality (1)
 
-42. `email_quality` (discriminator: `check`)
+41. `email_quality` (discriminator: `check`)
 
 ### Reporting (1)
 
-43. `email_report` (discriminator: `type`)
+42. `email_report` (discriminator: `type`)
 
 ### Attachments (1)
 
-44. `email_attachments` (discriminator: `mode`)
+43. `email_attachments` (discriminator: `mode`)
 
 ### Admin (1)
 
-45. `email_admin` (discriminator: `action`)
+44. `email_admin` (discriminator: `action`)
 
 ### Scan Sessions (1)
 
-46. `email_scan` (discriminator: `action`)
+45. `email_scan` (discriminator: `action`)
+
+`email_topics` and the CLI `--topic` filter remain available in the codebase, but they are excluded from the stable `0.1.x` compatibility contract until the repository ships a first-party workflow that populates topic tables.
 
 ## Stable MCP Input Schema Summary
 
@@ -199,13 +199,12 @@ The following 46 tool names are stable for `0.1.x`:
     15. `min_score: float | null` (optional, bounded 0.0-1.0)
     16. `rerank: bool` (optional, default false)
     17. `hybrid: bool` (optional, default false)
-    18. `topic_id: int | null` (optional, ge=0)
-    19. `cluster_id: int | null` (optional, ge=0)
-    20. `expand_query: bool` (optional, default false)
-    21. `email_type: str | null` (optional, one of reply/forward/original)
-    22. `category: str | null` (optional) — Outlook category partial match
-    23. `is_calendar: bool | null` (optional) — filter calendar/meeting messages
-    24. `scan_id: str | null` (optional, 1-100 chars) — scan session ID for progressive search
+    18. `cluster_id: int | null` (optional, ge=0)
+    19. `expand_query: bool` (optional, default false)
+    20. `email_type: str | null` (optional, one of reply/forward/original)
+    21. `category: str | null` (optional) — Outlook category partial match
+    22. `is_calendar: bool | null` (optional) — filter calendar/meeting messages
+    23. `scan_id: str | null` (optional, 1-100 chars) — scan session ID for progressive search
 5. `email_stats`
     1. no parameters
 6. `email_triage`
@@ -386,6 +385,9 @@ The following 46 tool names are stable for `0.1.x`:
     2. `query: str | null` (optional) — query text to find similar emails for
     3. `top_k: int` (optional, default 10, bounded 1-50)
     4. `scan_id: str | null` (optional, 1-100 chars) — scan session ID for progressive search
+
+### Conditional Topic Surface (not stable for `0.1.x`)
+
 40. `email_topics`
     1. `topic_id: int | null` (optional, ge=0) — omit to list topics; set to list emails for topic
     2. `limit: int` (optional, default 20, bounded 1-100)
@@ -431,6 +433,7 @@ The following 46 tool names are stable for `0.1.x`:
 
 45. `email_admin`
     1. `action: str` (required) — "diagnostics", "reingest_bodies", "reembed", "reingest_metadata", or "reingest_analytics"
+       `diagnostics` returns resolved runtime settings, current embedder/backend state, MCP budgets, and sparse-index status.
     2. `olm_path: str | null` (optional) — required for reingest_bodies and reingest_metadata
     3. `force: bool` (optional, default false) — for reingest_bodies only
     4. `batch_size: int` (optional, default 100, ge=1) — for reembed only

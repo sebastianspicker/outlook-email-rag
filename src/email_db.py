@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import sqlite3
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .db_analytics import AnalyticsMixin
 from .db_attachments import AttachmentMixin
@@ -17,29 +15,79 @@ from .db_entities import EntityMixin
 from .db_evidence import EvidenceMixin
 from .db_queries import QueryMixin
 from .db_schema import _escape_like, init_schema
-
-if TYPE_CHECKING:
-    from src.parse_olm import Email
+from .email_db_enrichment import parse_address
+from .email_db_enrichment import (
+    upsert_communication_edge as _upsert_communication_edge_impl,
+)
+from .email_db_enrichment import (
+    upsert_contact as _upsert_contact_impl,
+)
+from .email_db_persistence import (
+    insert_email_impl,
+    insert_emails_batch_impl,
+)
+from .parse_olm import BODY_NORMALIZATION_VERSION, Email
 
 logger = logging.getLogger(__name__)
 
-_ADDR_RE = re.compile(r"^(.*?)\s*<([^>]+)>$")
+# Backward-compatible re-export for tests and existing imports.
+_parse_address = parse_address
 
-
-def _parse_address(raw: str) -> tuple[str, str]:
-    """Parse 'Display Name <email>' into (name, email).
-
-    Handles bare email addresses and name-only strings.
-    """
-    raw = raw.strip()
-    if not raw:
-        return ("", "")
-    m = _ADDR_RE.match(raw)
-    if m:
-        return (m.group(1).strip().strip('"'), m.group(2).strip())
-    if "@" in raw:
-        return ("", raw)
-    return (raw, "")
+_EMAIL_INSERT_COLUMNS = (
+    "uid",
+    "message_id",
+    "subject",
+    "sender_name",
+    "sender_email",
+    "date",
+    "folder",
+    "email_type",
+    "has_attachments",
+    "attachment_count",
+    "priority",
+    "is_read",
+    "conversation_id",
+    "in_reply_to",
+    "base_subject",
+    "body_length",
+    "body_text",
+    "body_html",
+    "raw_body_text",
+    "raw_body_html",
+    "raw_source",
+    "raw_source_headers_json",
+    "forensic_body_text",
+    "forensic_body_source",
+    "normalized_body_source",
+    "body_normalization_version",
+    "body_kind",
+    "body_empty_reason",
+    "recovery_strategy",
+    "recovery_confidence",
+    "to_identities_json",
+    "cc_identities_json",
+    "bcc_identities_json",
+    "recipient_identity_source",
+    "reply_context_from",
+    "reply_context_to_json",
+    "reply_context_subject",
+    "reply_context_date",
+    "reply_context_source",
+    "inferred_parent_uid",
+    "inferred_thread_id",
+    "inferred_match_reason",
+    "inferred_match_confidence",
+    "content_sha256",
+    "categories",
+    "thread_topic",
+    "inference_classification",
+    "is_calendar_message",
+    "references_json",
+    "ingestion_run_id",
+)
+_EMAIL_INSERT_SQL = f"""INSERT INTO emails ({", ".join(_EMAIL_INSERT_COLUMNS)})
+VALUES ({",".join("?" for _ in _EMAIL_INSERT_COLUMNS)})"""
+_EMAIL_INSERT_OR_IGNORE_SQL = _EMAIL_INSERT_SQL.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
 
 
 class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, AttachmentMixin, QueryMixin):
@@ -57,6 +105,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         self._db_path = db_path
         self._conn: sqlite3.Connection | None = None
         self._conn_lock = threading.Lock()
+        self._email_insert_sql = _EMAIL_INSERT_SQL
+        self._email_insert_or_ignore_sql = _EMAIL_INSERT_OR_IGNORE_SQL
+        self._sqlite_integrity_error = sqlite3.IntegrityError
 
     @property
     def conn(self) -> sqlite3.Connection:  # type: ignore[override]  # mixin stubs declare as attribute
@@ -150,6 +201,16 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             result[row["chunk_id"]] = dict(zip(token_ids, weights, strict=True))
         return result
 
+    def iter_sparse_vectors(self):
+        """Yield sparse vectors row-by-row to avoid full corpus materialization."""
+        import struct
+
+        for row in self.conn.execute("SELECT chunk_id, token_ids, weights, num_tokens FROM sparse_vectors"):
+            n = row["num_tokens"]
+            token_ids = list(struct.unpack(f"<{n}i", row["token_ids"]))
+            weights = list(struct.unpack(f"<{n}f", row["weights"]))
+            yield row["chunk_id"], dict(zip(token_ids, weights, strict=True))
+
     # ------------------------------------------------------------------
     # Analytics batch update
     # ------------------------------------------------------------------
@@ -182,113 +243,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         its related rows (recipients, contacts, edges) are committed together,
         or nothing is written.
         """
-        cur = self.conn.cursor()
-        content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
-        categories_json = json.dumps(getattr(email, "categories", []) or [])
-        references_json = json.dumps(getattr(email, "references", []) or [])
-        try:
-            cur.execute("BEGIN IMMEDIATE")
-            cur.execute(
-                """INSERT INTO emails (uid, message_id, subject, sender_name,
-                   sender_email, date, folder, email_type, has_attachments,
-                   attachment_count, priority, is_read, conversation_id,
-                   in_reply_to, base_subject, body_length, body_text, body_html,
-                   content_sha256, categories, thread_topic, inference_classification,
-                   is_calendar_message, references_json, ingestion_run_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    email.uid,
-                    email.message_id,
-                    email.subject,
-                    email.sender_name,
-                    email.sender_email,
-                    email.date,
-                    email.folder,
-                    email.email_type,
-                    int(email.has_attachments),
-                    len(email.attachment_names),
-                    email.priority,
-                    int(email.is_read),
-                    email.conversation_id,
-                    email.in_reply_to,
-                    email.base_subject,
-                    len(email.clean_body) if email.clean_body else 0,
-                    email.clean_body,
-                    email.body_html,
-                    content_sha256,
-                    categories_json,
-                    getattr(email, "thread_topic", "") or "",
-                    getattr(email, "inference_classification", "") or "",
-                    int(getattr(email, "is_calendar_message", False)),
-                    references_json,
-                    ingestion_run_id,
-                ),
-            )
-
-            # Categories (normalized table)
-            cats = getattr(email, "categories", []) or []
-            if cats:
-                cur.executemany(
-                    "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
-                    [(email.uid, cat) for cat in cats],
-                )
-
-            # Attachments table
-            atts = getattr(email, "attachments", []) or []
-            if atts:
-                cur.executemany(
-                    "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) VALUES(?,?,?,?,?,?)",
-                    [
-                        (
-                            email.uid,
-                            att.get("name", ""),
-                            att.get("mime_type", ""),
-                            att.get("size", 0),
-                            att.get("content_id", ""),
-                            int(att.get("is_inline", False)),
-                        )
-                        for att in atts
-                    ],
-                )
-
-            # Recipients (to + cc + bcc in one batch)
-            all_recipients: list[tuple[str, str]] = []
-            recipient_rows: list[tuple] = []
-            for addr, rtype in (
-                *[(a, "to") for a in email.to],
-                *[(a, "cc") for a in email.cc],
-                *[(a, "bcc") for a in email.bcc],
-            ):
-                name, em = _parse_address(addr)
-                recipient_rows.append((email.uid, em or addr, name, rtype))
-                all_recipients.append((name, em or addr))
-            if recipient_rows:
-                cur.executemany(
-                    "INSERT OR IGNORE INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                    recipient_rows,
-                )
-
-            # Upsert contacts
-            if email.sender_email:
-                self._upsert_contact(cur, email.sender_email, email.sender_name, email.date, "sender")
-            for name, em in all_recipients:
-                if em:
-                    self._upsert_contact(cur, em, name, email.date, "recipient")
-
-            # Communication edges
-            if email.sender_email:
-                for _, em in all_recipients:
-                    if em:
-                        self._upsert_communication_edge(cur, email.sender_email, em, email.date)
-
-            self.conn.commit()
-        except sqlite3.IntegrityError:
-            self.conn.rollback()
-            return False
-        except Exception:
-            self.conn.rollback()
-            raise
-        return True
+        return insert_email_impl(self, email, ingestion_run_id=ingestion_run_id)
 
     def insert_emails_batch(
         self,
@@ -305,187 +260,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         attachments, contacts, and communication edges to reduce per-row
         execute() overhead.
         """
-        inserted_uids: set[str] = set()
-        cur = self.conn.cursor()
-
-        # Collect rows for executemany() across the whole batch
-        recipient_rows: list[tuple] = []
-        category_rows: list[tuple] = []
-        attachment_rows: list[tuple] = []
-        contact_rows: list[tuple] = []
-        edge_rows: list[tuple] = []
-
-        try:
-            for email in emails:
-                content_sha256 = self.compute_content_hash(email.clean_body) if email.clean_body else None
-                categories_json = json.dumps(getattr(email, "categories", []) or [])
-                references_json = json.dumps(getattr(email, "references", []) or [])
-                cur.execute(
-                    """INSERT OR IGNORE INTO emails (uid, message_id, subject, sender_name,
-                       sender_email, date, folder, email_type, has_attachments,
-                       attachment_count, priority, is_read, conversation_id,
-                       in_reply_to, base_subject, body_length, body_text, body_html,
-                       content_sha256, categories, thread_topic,
-                       inference_classification, is_calendar_message, references_json,
-                       ingestion_run_id)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        email.uid,
-                        email.message_id,
-                        email.subject,
-                        email.sender_name,
-                        email.sender_email,
-                        email.date,
-                        email.folder,
-                        email.email_type,
-                        int(email.has_attachments),
-                        len(email.attachment_names),
-                        email.priority,
-                        int(email.is_read),
-                        email.conversation_id,
-                        email.in_reply_to,
-                        email.base_subject,
-                        len(email.clean_body) if email.clean_body else 0,
-                        email.clean_body,
-                        email.body_html,
-                        content_sha256,
-                        categories_json,
-                        getattr(email, "thread_topic", "") or "",
-                        getattr(email, "inference_classification", "") or "",
-                        int(getattr(email, "is_calendar_message", False)),
-                        references_json,
-                        ingestion_run_id,
-                    ),
-                )
-                if cur.rowcount == 0:
-                    continue
-
-                # Collect categories for batch insert
-                for cat in getattr(email, "categories", []) or []:
-                    category_rows.append((email.uid, cat))
-
-                # Collect attachments for batch insert
-                for att in getattr(email, "attachments", []) or []:
-                    attachment_rows.append(
-                        (
-                            email.uid,
-                            att.get("name", ""),
-                            att.get("mime_type", ""),
-                            att.get("size", 0),
-                            att.get("content_id", ""),
-                            int(att.get("is_inline", False)),
-                        )
-                    )
-
-                # Collect recipients for batch insert
-                all_recipients: list[tuple[str, str]] = []
-                for addr in email.to:
-                    name, em = _parse_address(addr)
-                    recipient_rows.append((email.uid, em or addr, name, "to"))
-                    all_recipients.append((name, em or addr))
-                for addr in email.cc:
-                    name, em = _parse_address(addr)
-                    recipient_rows.append((email.uid, em or addr, name, "cc"))
-                    all_recipients.append((name, em or addr))
-                for addr in email.bcc:
-                    name, em = _parse_address(addr)
-                    recipient_rows.append((email.uid, em or addr, name, "bcc"))
-                    all_recipients.append((name, em or addr))
-
-                # Collect contacts for batch upsert
-                if email.sender_email:
-                    contact_rows.append(
-                        (
-                            email.sender_email,
-                            email.sender_name,
-                            email.date,
-                            email.date,
-                            1,
-                            0,
-                        )
-                    )
-                for name, em in all_recipients:
-                    if em:
-                        contact_rows.append((em, name, email.date, email.date, 0, 1))
-
-                # Collect edges for batch upsert
-                if email.sender_email:
-                    for _, em in all_recipients:
-                        if em:
-                            edge_rows.append((email.sender_email, em, email.date, email.date))
-
-                inserted_uids.add(email.uid)
-
-            # Batch insert collected rows
-            if recipient_rows:
-                cur.executemany(
-                    "INSERT OR IGNORE INTO recipients(email_uid, address, display_name, type) VALUES(?,?,?,?)",
-                    recipient_rows,
-                )
-            if category_rows:
-                cur.executemany(
-                    "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
-                    category_rows,
-                )
-            if attachment_rows:
-                cur.executemany(
-                    "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) VALUES(?,?,?,?,?,?)",
-                    attachment_rows,
-                )
-            if contact_rows:
-                cur.executemany(
-                    """INSERT INTO contacts(email_address, display_name, first_seen, last_seen,
-                       sent_count, received_count)
-                       VALUES(?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(email_address) DO UPDATE SET
-                         display_name = COALESCE(NULLIF(excluded.display_name, ''), contacts.display_name),
-                         first_seen = CASE
-                           WHEN excluded.first_seen IS NULL OR excluded.first_seen = '' THEN contacts.first_seen
-                           WHEN contacts.first_seen IS NULL OR contacts.first_seen = '' THEN excluded.first_seen
-                           ELSE MIN(contacts.first_seen, excluded.first_seen)
-                         END,
-                         last_seen = CASE
-                           WHEN excluded.last_seen IS NULL OR excluded.last_seen = '' THEN contacts.last_seen
-                           WHEN contacts.last_seen IS NULL OR contacts.last_seen = '' THEN excluded.last_seen
-                           ELSE MAX(contacts.last_seen, excluded.last_seen)
-                         END,
-                         sent_count = contacts.sent_count + excluded.sent_count,
-                         received_count = contacts.received_count + excluded.received_count
-                    """,
-                    contact_rows,
-                )
-            if edge_rows:
-                cur.executemany(
-                    """INSERT INTO communication_edges(sender_email, recipient_email,
-                       email_count, first_date, last_date)
-                       VALUES(?, ?, 1, ?, ?)
-                       ON CONFLICT(sender_email, recipient_email) DO UPDATE SET
-                         email_count = communication_edges.email_count + 1,
-                         first_date = CASE
-                           WHEN excluded.first_date IS NULL OR excluded.first_date = ''
-                             THEN communication_edges.first_date
-                           WHEN communication_edges.first_date IS NULL
-                             OR communication_edges.first_date = ''
-                             THEN excluded.first_date
-                           ELSE MIN(communication_edges.first_date, excluded.first_date)
-                         END,
-                         last_date = CASE
-                           WHEN excluded.last_date IS NULL OR excluded.last_date = ''
-                             THEN communication_edges.last_date
-                           WHEN communication_edges.last_date IS NULL
-                             OR communication_edges.last_date = ''
-                             THEN excluded.last_date
-                           ELSE MAX(communication_edges.last_date, excluded.last_date)
-                         END
-                    """,
-                    edge_rows,
-                )
-
-            self.conn.commit()
-        except Exception:
-            self.conn.rollback()
-            raise
-        return inserted_uids
+        return insert_emails_batch_impl(self, emails, ingestion_run_id=ingestion_run_id)
 
     def _upsert_contact(
         self,
@@ -495,34 +270,7 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         date: str,
         role: str,
     ) -> None:
-        cur.execute(
-            """INSERT INTO contacts(email_address, display_name, first_seen, last_seen,
-               sent_count, received_count)
-               VALUES(?, ?, ?, ?, ?, ?)
-               ON CONFLICT(email_address) DO UPDATE SET
-                 display_name = COALESCE(NULLIF(excluded.display_name, ''), contacts.display_name),
-                 first_seen = CASE
-                   WHEN excluded.first_seen IS NULL OR excluded.first_seen = '' THEN contacts.first_seen
-                   WHEN contacts.first_seen IS NULL OR contacts.first_seen = '' THEN excluded.first_seen
-                   ELSE MIN(contacts.first_seen, excluded.first_seen)
-                 END,
-                 last_seen = CASE
-                   WHEN excluded.last_seen IS NULL OR excluded.last_seen = '' THEN contacts.last_seen
-                   WHEN contacts.last_seen IS NULL OR contacts.last_seen = '' THEN excluded.last_seen
-                   ELSE MAX(contacts.last_seen, excluded.last_seen)
-                 END,
-                 sent_count = contacts.sent_count + excluded.sent_count,
-                 received_count = contacts.received_count + excluded.received_count
-            """,
-            (
-                email_address,
-                display_name,
-                date,
-                date,
-                1 if role == "sender" else 0,
-                1 if role == "recipient" else 0,
-            ),
-        )
+        _upsert_contact_impl(cur, email_address, display_name, date, role)
 
     def _upsert_communication_edge(
         self,
@@ -531,31 +279,26 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         recipient: str,
         date: str,
     ) -> None:
-        cur.execute(
-            """INSERT INTO communication_edges(sender_email, recipient_email,
-               email_count, first_date, last_date)
-               VALUES(?, ?, 1, ?, ?)
-               ON CONFLICT(sender_email, recipient_email) DO UPDATE SET
-                 email_count = communication_edges.email_count + 1,
-                 first_date = CASE
-                   WHEN excluded.first_date IS NULL OR excluded.first_date = '' THEN communication_edges.first_date
-                   WHEN communication_edges.first_date IS NULL OR communication_edges.first_date = '' THEN excluded.first_date
-                   ELSE MIN(communication_edges.first_date, excluded.first_date)
-                 END,
-                 last_date = CASE
-                   WHEN excluded.last_date IS NULL OR excluded.last_date = '' THEN communication_edges.last_date
-                   WHEN communication_edges.last_date IS NULL OR communication_edges.last_date = '' THEN excluded.last_date
-                   ELSE MAX(communication_edges.last_date, excluded.last_date)
-                 END
-            """,
-            (sender, recipient, date, date),
-        )
+        _upsert_communication_edge_impl(cur, sender, recipient, date)
 
     # ------------------------------------------------------------------
     # Read operations — see QueryMixin (db_queries.py)
     # ------------------------------------------------------------------
 
-    def update_body_text(self, uid: str, body_text: str, body_html: str, *, commit: bool = True) -> bool:
+    def update_body_text(
+        self,
+        uid: str,
+        body_text: str,
+        body_html: str,
+        *,
+        normalized_body_source: str | None = None,
+        body_normalization_version: int | None = None,
+        body_kind: str | None = None,
+        body_empty_reason: str | None = None,
+        recovery_strategy: str | None = None,
+        recovery_confidence: float | None = None,
+        commit: bool = True,
+    ) -> bool:
         """Update body_text and body_html for an existing email.
 
         Only overwrites body_html if the new value is non-empty, to avoid
@@ -563,15 +306,55 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         Returns True if updated.  Pass ``commit=False`` to defer the commit
         (caller is responsible for calling ``self.conn.commit()``).
         """
+        if normalized_body_source is None:
+            normalized_body_source = "body_text"
+        if body_normalization_version is None:
+            body_normalization_version = BODY_NORMALIZATION_VERSION
+        if body_kind is None:
+            body_kind = "content"
+        if body_empty_reason is None:
+            body_empty_reason = ""
+        if recovery_strategy is None:
+            recovery_strategy = ""
+        if recovery_confidence is None:
+            recovery_confidence = 0.0
+
         if body_html:
             cur = self.conn.execute(
-                "UPDATE emails SET body_text = ?, body_html = ? WHERE uid = ?",
-                (body_text, body_html, uid),
+                """UPDATE emails
+                   SET body_text = ?, body_html = ?, normalized_body_source = ?,
+                       body_normalization_version = ?, body_kind = ?, body_empty_reason = ?,
+                       recovery_strategy = ?, recovery_confidence = ?
+                 WHERE uid = ?""",
+                (
+                    body_text,
+                    body_html,
+                    normalized_body_source,
+                    body_normalization_version,
+                    body_kind,
+                    body_empty_reason,
+                    recovery_strategy,
+                    recovery_confidence,
+                    uid,
+                ),
             )
         else:
             cur = self.conn.execute(
-                "UPDATE emails SET body_text = ? WHERE uid = ?",
-                (body_text, uid),
+                """UPDATE emails
+                   SET body_text = ?, normalized_body_source = ?,
+                       body_normalization_version = ?, body_kind = ?, body_empty_reason = ?,
+                       recovery_strategy = ?, recovery_confidence = ?
+                 WHERE uid = ?""",
+                (
+                    body_text,
+                    normalized_body_source,
+                    body_normalization_version,
+                    body_kind,
+                    body_empty_reason,
+                    recovery_strategy,
+                    recovery_confidence,
+                    uid,
+                ),
             )
         if commit:
             self.conn.commit()
@@ -647,7 +430,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         atts = getattr(email, "attachments", []) or []
         if atts:
             cur.executemany(
-                "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline) VALUES(?,?,?,?,?,?)",
+                "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline, "
+                "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         email.uid,
@@ -656,6 +440,11 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                         att.get("size", 0),
                         att.get("content_id", ""),
                         int(att.get("is_inline", False)),
+                        att.get("extraction_state", "") or "",
+                        att.get("evidence_strength", "") or "",
+                        int(bool(att.get("ocr_used", False))),
+                        att.get("failure_reason", "") or "",
+                        att.get("text_preview", "") or "",
                     )
                     for att in atts
                 ],

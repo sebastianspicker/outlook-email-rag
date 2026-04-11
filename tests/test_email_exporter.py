@@ -84,6 +84,22 @@ def test_export_thread_html_contains_body():
     assert "Important meeting notes here." in result["html"]
 
 
+def test_export_thread_html_forensic_mode_uses_forensic_body():
+    emails = [
+        _fake_email(
+            body_text="Normalized retrieval body.",
+            forensic_body_text="Forensic body with preserved quoted history.",
+        )
+    ]
+    db = _mock_db(thread_emails=emails)
+    exporter = EmailExporter(db)
+
+    result = exporter.export_thread_html("conv_001", render_mode="forensic")
+    assert "Forensic body with preserved quoted history." in result["html"]
+    assert "Normalized retrieval body." not in result["html"]
+    assert result["render_mode"] == "forensic"
+
+
 def test_export_thread_html_empty_thread():
     db = _mock_db(thread_emails=[])
     exporter = EmailExporter(db)

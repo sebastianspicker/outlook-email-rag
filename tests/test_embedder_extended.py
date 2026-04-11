@@ -17,6 +17,13 @@ def _make_chunk(uid: str = "uid1", index: int = 0, text: str = "Hello world") ->
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_multi_vector_embedder(stub_multi_vector_embedder):
+    import src.embedder as embedder_mod
+
+    stub_multi_vector_embedder(embedder_mod)
+
+
 # ── add_chunks ───────────────────────────────────────────────────────
 
 

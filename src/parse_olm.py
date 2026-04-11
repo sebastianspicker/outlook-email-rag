@@ -18,47 +18,55 @@ import hashlib
 import logging
 import os
 import re
-import zipfile
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from functools import cached_property
 
-from lxml import etree
-
-from .html_converter import clean_text as _clean_text
-from .html_converter import html_to_text as _html_to_text
-from .html_converter import looks_like_html as _looks_like_html
+from .body_recovery import BodyRecovery, classify_body_state
+from .conversation_segments import ConversationSegment
+from .html_converter import clean_text as _clean_text  # noqa: F401 - re-exported for backward compat
+from .html_converter import html_to_text as _html_to_text  # noqa: F401 - re-exported for backward compat
 from .olm_xml_helpers import (
     _NS_OUTLOOK,  # noqa: F401 — re-exported for backward compat
-    _detect_namespace,
-    _extract_address_details,
-    _extract_addresses,
-    _extract_attachment_contents,
     _extract_attachment_field,  # noqa: F401 — re-exported for backward compat
-    _extract_attachments,
-    _extract_categories,
-    _extract_exchange_list,
-    _extract_exchange_meetings,
-    _extract_exchange_smart_links,
-    _extract_folder,
-    _extract_html_body,
-    _extract_meeting_data,
-    _find,
-    _find_text,
-    _new_xml_parser,
     _parse_address_element,  # noqa: F401 — re-exported for backward compat
-    _parse_references,
-    _read_limited_bytes,
+    )
+from .parse_olm_normalization import (
+    BODY_NORMALIZATION_VERSION,  # noqa: F401 - re-exported for backward compat
+    NormalizedBody,
+    _normalize_preview_candidate,  # noqa: F401 - re-exported for backward compat
+    _select_normalized_body,
+    _strip_normalized_leading_forward_header_block,
+    _strip_normalized_quoted_content,
+    _strip_normalized_reply_header_tail,
 )
+from .parse_olm_postprocess import (
+    ParsedEmailEnrichments as _ParsedEmailEnrichments,
+)
+from .parse_olm_postprocess import (
+    ParsedEmailParts as _ParsedEmailParts,
+)
+from .parse_olm_postprocess import (
+    apply_source_header_fallbacks as _apply_source_header_fallbacks_impl,
+)
+from .parse_olm_postprocess import (
+    derive_email_enrichments as _derive_email_enrichments_impl,
+)
+from .parse_olm_postprocess import (
+    finalize_parsed_email_parts as _finalize_parsed_email_parts_impl,
+)
+from .parse_olm_xml_parser import (
+    build_parsed_email_from_parts_impl as _build_parsed_email_from_parts_impl,
+)
+from .parse_olm_xml_parser import parse_email_xml_impl as _parse_email_xml_impl
+from .parse_olm_xml_parser import parse_olm_archive_impl as _parse_olm_archive_impl
 from .rfc2822 import (
     _calendar_to_text,  # noqa: F401 — re-exported for backward compat (used by tests)
-    _decode_mime_words,
-    _extract_body_from_source,
-    _extract_email_from_header,
-    _extract_header,
-    _extract_name_from_header,
-    _normalize_date,
+    _extract_body_from_source,  # noqa: F401 — re-exported for backward compat (used by tests)
+    _extract_email_from_header,  # noqa: F401 — re-exported for backward compat (used by tests)
+    _extract_header,  # noqa: F401 — re-exported for backward compat (used by tests)
+    _extract_name_from_header,  # noqa: F401 — re-exported for backward compat (used by tests)
     _parse_address_list,
-    _parse_int,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +79,29 @@ _RE_FW_PREFIX = re.compile(
     r"^(RE|AW|FW|WG|SV|VS|Antw|Doorst)\s*:\s*",
     re.IGNORECASE,
 )
+def _extract_identity_addresses(addresses: list[str]) -> list[str]:
+    """Extract normalized email identities from parsed recipient strings."""
+    identities: list[str] = []
+    for raw in addresses:
+        for address in _parse_address_list(raw):
+            normalized = address.strip().lower()
+            if normalized and normalized not in identities:
+                identities.append(normalized)
+    return identities
+
+
+def _classify_email_type(subject: str, in_reply_to: str) -> str:
+    """Classify email type from stable message-level metadata only."""
+    subj = (subject or "").strip()
+    prefix_match = _RE_FW_PREFIX.match(subj)
+    if prefix_match:
+        prefix = prefix_match.group(1).upper()
+        if prefix in ("FW", "WG", "DOORST", "VS"):
+            return "forward"
+        return "reply"
+    if in_reply_to:
+        return "reply"
+    return "original"
 
 
 @dataclass
@@ -89,11 +120,32 @@ class Email:
     body_html: str
     folder: str
     has_attachments: bool
+    preview_text: str = ""
+    raw_body_text: str = ""
+    raw_body_html: str = ""
+    raw_source: str = ""
+    raw_source_headers: dict[str, str] = field(default_factory=dict)
+    forensic_body_text: str = ""
+    forensic_body_source: str = ""
+    to_identities: list[str] = field(default_factory=list)
+    cc_identities: list[str] = field(default_factory=list)
+    bcc_identities: list[str] = field(default_factory=list)
+    recipient_identity_source: str = ""
     attachment_names: list[str] = field(default_factory=list)
     attachments: list[dict] = field(default_factory=list)
     conversation_id: str = ""
     in_reply_to: str = ""
     references: list[str] = field(default_factory=list)
+    reply_context_from: str = ""
+    reply_context_to: list[str] = field(default_factory=list)
+    reply_context_subject: str = ""
+    reply_context_date: str = ""
+    reply_context_source: str = ""
+    segments: list[ConversationSegment] = field(default_factory=list)
+    inferred_parent_uid: str = ""
+    inferred_thread_id: str = ""
+    inferred_match_reason: str = ""
+    inferred_match_confidence: float = 0.0
     priority: int = 0  # 0 = normal
     is_read: bool = True
     attachment_contents: list[tuple[str, bytes]] = field(default_factory=list)
@@ -129,17 +181,7 @@ class Email:
         Uses subject prefix first, then falls back to ``in_reply_to``
         for implicit replies that lack a RE:/AW: prefix.
         """
-        subj = (self.subject or "").strip()
-        prefix_match = _RE_FW_PREFIX.match(subj)
-        if prefix_match:
-            prefix = prefix_match.group(1).upper()
-            if prefix in ("FW", "WG", "DOORST", "VS"):
-                return "forward"
-            return "reply"
-        # No subject prefix — check in_reply_to as secondary signal
-        if self.in_reply_to:
-            return "reply"
-        return "original"
+        return _classify_email_type(self.subject, self.in_reply_to)
 
     @property
     def base_subject(self) -> str:
@@ -155,14 +197,75 @@ class Email:
     @property
     def clean_body(self) -> str:
         """Best available plain text body, with HTML stripped."""
-        if self.body_text and self.body_text.strip():
-            # OLM sometimes puts HTML in the "plain text" body field
-            if _looks_like_html(self.body_text):
-                return _html_to_text(self.body_text)
-            return _clean_text(self.body_text)
-        if self.body_html:
-            return _html_to_text(self.body_html)
-        return ""
+        return self.normalized_body.text
+
+    @property
+    def body_kind(self) -> str:
+        """Classify whether the stored body contains user-visible content."""
+        return self.body_recovery.body_kind
+
+    @property
+    def body_empty_reason(self) -> str:
+        """Explain why the normalized body needed recovery or stayed empty."""
+        return self.body_recovery.body_empty_reason
+
+    @property
+    def recovery_strategy(self) -> str:
+        """Which deterministic fallback populated the normalized body."""
+        return self.body_recovery.recovery_strategy
+
+    @property
+    def recovery_confidence(self) -> float:
+        """Confidence for the applied recovery strategy."""
+        return self.body_recovery.recovery_confidence
+
+    @cached_property
+    def _normalized_body_base(self) -> NormalizedBody:
+        """Derived normalized body before empty-body recovery."""
+        normalized = _select_normalized_body(self.body_text or "", self.body_html or "")
+        stripped_text = _strip_normalized_quoted_content(normalized.text, self.email_type)
+        stripped_text = _strip_normalized_reply_header_tail(stripped_text, self.email_type)
+        stripped_text = _strip_normalized_leading_forward_header_block(stripped_text, self.email_type)
+        if stripped_text != normalized.text:
+            normalized = NormalizedBody(stripped_text, normalized.source, normalized.version)
+        return normalized
+
+    @cached_property
+    def body_recovery(self) -> BodyRecovery:
+        """Classify and, when justified, recover an empty normalized body."""
+        return classify_body_state(
+            raw_body_text=self.raw_body_text or self.body_text or "",
+            raw_body_html=self.raw_body_html or self.body_html or "",
+            raw_source=self.raw_source or "",
+            preview_text=self.preview_text or "",
+            clean_body=self._normalized_body_base.text,
+            email_type=self.email_type,
+            has_attachments=self.has_attachments,
+        )
+
+    @cached_property
+    def normalized_body(self) -> NormalizedBody:
+        """Derived normalized body with source provenance."""
+        normalized = self._normalized_body_base
+        if normalized.text.strip():
+            return normalized
+        if self.body_recovery.recovered_text:
+            return NormalizedBody(
+                self.body_recovery.recovered_text,
+                self.body_recovery.recovered_source,
+                normalized.version,
+            )
+        return normalized
+
+    @property
+    def clean_body_source(self) -> str:
+        """Which source representation produced ``clean_body``."""
+        return self.normalized_body.source
+
+    @property
+    def body_normalization_version(self) -> int:
+        """Version number for the body normalization pipeline."""
+        return self.normalized_body.version
 
     def to_dict(self) -> dict:
         return {
@@ -174,8 +277,24 @@ class Email:
             "to": self.to,
             "cc": self.cc,
             "bcc": self.bcc,
+            "to_identities": self.to_identities,
+            "cc_identities": self.cc_identities,
+            "bcc_identities": self.bcc_identities,
+            "recipient_identity_source": self.recipient_identity_source,
             "date": self.date,
             "body": self.clean_body,
+            "body_source": self.clean_body_source,
+            "body_normalization_version": self.body_normalization_version,
+            "body_kind": self.body_kind,
+            "body_empty_reason": self.body_empty_reason,
+            "recovery_strategy": self.recovery_strategy,
+            "recovery_confidence": self.recovery_confidence,
+            "raw_body_text": self.raw_body_text,
+            "raw_body_html": self.raw_body_html,
+            "raw_source": self.raw_source,
+            "raw_source_headers": self.raw_source_headers,
+            "forensic_body_text": self.forensic_body_text,
+            "forensic_body_source": self.forensic_body_source,
             "folder": self.folder,
             "has_attachments": self.has_attachments,
             "attachment_names": self.attachment_names,
@@ -184,6 +303,16 @@ class Email:
             "conversation_id": self.conversation_id,
             "in_reply_to": self.in_reply_to,
             "references": self.references,
+            "reply_context_from": self.reply_context_from,
+            "reply_context_to": self.reply_context_to,
+            "reply_context_subject": self.reply_context_subject,
+            "reply_context_date": self.reply_context_date,
+            "reply_context_source": self.reply_context_source,
+            "segments": [segment.to_dict() for segment in self.segments],
+            "inferred_parent_uid": self.inferred_parent_uid,
+            "inferred_thread_id": self.inferred_thread_id,
+            "inferred_match_reason": self.inferred_match_reason,
+            "inferred_match_confidence": self.inferred_match_confidence,
             "priority": self.priority,
             "is_read": self.is_read,
             "email_type": self.email_type,
@@ -220,219 +349,48 @@ def parse_olm(
     if not os.path.exists(olm_path):
         raise FileNotFoundError(f"OLM file not found: {olm_path}")
 
-    # Context manager ensures the ZIP file handle is closed even if the
-    # generator is abandoned mid-iteration (GeneratorExit).
-    with zipfile.ZipFile(olm_path, "r") as zf:
-        processed_xml_files = 0
-        processed_xml_bytes = 0
-
-        for info in zf.infolist():
-            xml_path = info.filename
-            normalized_path = xml_path.lower()
-            if not normalized_path.endswith(".xml") or "com.microsoft.__messages" not in normalized_path:
-                continue
-
-            if processed_xml_files >= MAX_XML_FILES:
-                logger.warning(
-                    "Stopping parse due to MAX_XML_FILES limit (%s).",
-                    MAX_XML_FILES,
-                )
-                break
-
-            if processed_xml_bytes + info.file_size > MAX_TOTAL_XML_BYTES:
-                logger.warning(
-                    "Stopping parse due to MAX_TOTAL_XML_BYTES limit (%s).",
-                    MAX_TOTAL_XML_BYTES,
-                )
-                break
-
-            try:
-                if info.file_size > MAX_XML_BYTES:
-                    logger.warning(
-                        "Skipping oversized XML payload (%s bytes): %s",
-                        info.file_size,
-                        xml_path,
-                    )
-                    continue
-                processed_xml_files += 1
-                with zf.open(xml_path) as file_obj:
-                    xml_bytes = _read_limited_bytes(file_obj, byte_limit=MAX_XML_BYTES)
-                    if processed_xml_bytes + len(xml_bytes) > MAX_TOTAL_XML_BYTES:
-                        logger.warning(
-                            "Stopping parse due to MAX_TOTAL_XML_BYTES limit (%s).",
-                            MAX_TOTAL_XML_BYTES,
-                        )
-                        break
-                    processed_xml_bytes += len(xml_bytes)
-                    email = _parse_email_xml(xml_bytes, xml_path)
-                    if email and extract_attachments:
-                        email.attachment_contents = _extract_attachment_contents(
-                            xml_bytes,
-                            xml_path,
-                            zf,
-                        )
-                    if email:
-                        yield email
-            except Exception as exc:  # pragma: no cover - defensive branch
-                logger.warning("Failed to parse %s: %s", xml_path, exc)
+    yield from _parse_olm_archive_impl(
+        olm_path,
+        extract_attachments=extract_attachments,
+        max_xml_files=MAX_XML_FILES,
+        max_total_xml_bytes=MAX_TOTAL_XML_BYTES,
+        max_xml_bytes=MAX_XML_BYTES,
+        logger=logger,
+        parse_email_xml_fn=_parse_email_xml,
+    )
 
 
 # ── Email XML Parsing ─────────────────────────────────────────
 
 
+def _apply_source_header_fallbacks(parts: _ParsedEmailParts) -> None:
+    _apply_source_header_fallbacks_impl(parts, extract_identity_addresses_fn=_extract_identity_addresses)
+
+
+def _finalize_parsed_email_parts(parts: _ParsedEmailParts) -> None:
+    _finalize_parsed_email_parts_impl(parts, extract_identity_addresses_fn=_extract_identity_addresses)
+
+
+def _derive_email_enrichments(parts: _ParsedEmailParts, source_path: str) -> _ParsedEmailEnrichments:
+    return _derive_email_enrichments_impl(parts, source_path, classify_email_type_fn=_classify_email_type)
+
+
+def _build_parsed_email_from_parts(parts: _ParsedEmailParts, enrichments: _ParsedEmailEnrichments) -> Email:
+    return _build_parsed_email_from_parts_impl(
+        parts,
+        enrichments,
+        email_cls=Email,
+    )
+
+
 def _parse_email_xml(xml_bytes: bytes, source_path: str) -> Email | None:
-    """Parse a single email XML file from the OLM archive."""
-    try:
-        root = etree.fromstring(xml_bytes, parser=_new_xml_parser())
-    except etree.XMLSyntaxError as exc:
-        logger.warning("Failed to parse email XML %s: %s", source_path, exc)
-        return None
-
-    ns = _detect_namespace(root)
-    folder = _extract_folder(source_path)
-
-    # ── Direct XML fields ──────────────────────────────────
-    message_id = _find_text(root, "OPFMessageCopyMessageID", ns)
-    subject = _find_text(root, "OPFMessageCopySubject", ns)
-    date = _normalize_date(_find_text(root, "OPFMessageCopySentTime", ns))
-    # Body fields: plain text uses itertext(); HTML preserves child element
-    # structure (e.g. <p>, <br/>, <table>) via serialization when present.
-    body_text_el = _find(root, "OPFMessageCopyBody", ns)
-    body_text = "".join(body_text_el.itertext()) if body_text_el is not None else ""
-    body_html_el = _find(root, "OPFMessageCopyHTMLBody", ns)
-    body_html = _extract_html_body(body_html_el) if body_html_el is not None else ""
-
-    sender_el = _find(root, "OPFMessageCopySenderAddress", ns)
-    sender_name_el = _find(root, "OPFMessageCopySenderName", ns)
-    sender_email = sender_el.text if sender_el is not None and sender_el.text else ""
-    sender_name = sender_name_el.text if sender_name_el is not None and sender_name_el.text else ""
-
-    to_addresses = _extract_addresses(root, ns, "OPFMessageCopyToAddresses")
-    cc_addresses = _extract_addresses(root, ns, "OPFMessageCopyCCAddresses")
-    bcc_addresses = _extract_addresses(root, ns, "OPFMessageCopyBCCAddresses")
-
-    # Fallback: OPFMessageCopyDisplayTo (display name only, no email)
-    if not to_addresses:
-        display_to = _find_text(root, "OPFMessageCopyDisplayTo", ns)
-        if display_to:
-            to_addresses = [name.strip() for name in display_to.split(";") if name.strip()]
-
-    # Also try OPFMessageCopyFromAddresses (provides both name and email)
-    if not sender_email or not sender_name:
-        from_pairs = _extract_address_details(root, ns, "OPFMessageCopyFromAddresses")
-        if from_pairs:
-            if not sender_name and from_pairs[0][0]:
-                sender_name = from_pairs[0][0]
-            if not sender_email and from_pairs[0][1]:
-                sender_email = from_pairs[0][1]
-
-    # ── Threading / metadata fields ────────────────────────
-    conversation_id = _find_text(root, "OPFMessageCopyExchangeConversationId", ns)
-    in_reply_to = _find_text(root, "OPFMessageCopyInReplyTo", ns)
-    references_raw = _find_text(root, "OPFMessageCopyReferences", ns)
-    references = _parse_references(references_raw)
-    priority = _parse_int(_find_text(root, "OPFMessageGetPriority", ns), default=0)
-    is_read = _find_text(root, "OPFMessageGetIsRead", ns).lower() != "false"
-
-    # ── New OLM metadata fields ───────────────────────────
-    categories = _extract_categories(root, ns)
-    thread_topic = _find_text(root, "OPFMessageCopyThreadTopic", ns)
-    thread_index = _find_text(root, "OPFMessageCopyThreadIndex", ns)
-    inference_classification = _find_text(root, "OPFMessageCopyInferenceClassification", ns)
-    is_calendar_raw = _find_text(root, "OPFMessageCopyIsCalendarMessage", ns)
-    is_calendar_message = is_calendar_raw.lower() == "true" if is_calendar_raw else False
-    meeting_data = _extract_meeting_data(root, ns)
-    exchange_extracted_links = _extract_exchange_smart_links(root, ns)
-    exchange_extracted_emails = _extract_exchange_list(root, ns, "OPFMessageGetExchangeExtractedEmails")
-    exchange_extracted_contacts = _extract_exchange_list(root, ns, "OPFMessageGetExchangeExtractedContacts")
-    exchange_extracted_meetings = _extract_exchange_meetings(root, ns)
-
-    # ── Fallback: parse OPFMessageCopySource headers ───────
-    raw_source_el = _find(root, "OPFMessageCopySource", ns)
-    raw_source = "".join(raw_source_el.itertext()) if raw_source_el is not None else ""
-    if raw_source:
-        if not message_id:
-            message_id = _extract_header(raw_source, "Message-ID").strip("<>")
-        if not subject:
-            subject = _extract_header(raw_source, "Subject")
-        if not sender_email:
-            sender_email = _extract_email_from_header(raw_source, "From")
-        if not sender_name:
-            sender_name = _extract_name_from_header(raw_source, "From")
-        if not date:
-            date = _normalize_date(_extract_header(raw_source, "Date"))
-        if not to_addresses:
-            to_raw = _extract_header(raw_source, "To")
-            if to_raw:
-                to_addresses = _parse_address_list(to_raw)
-        if not cc_addresses:
-            cc_raw = _extract_header(raw_source, "CC")
-            if cc_raw:
-                cc_addresses = _parse_address_list(cc_raw)
-        if not bcc_addresses:
-            bcc_raw = _extract_header(raw_source, "BCC")
-            if bcc_raw:
-                bcc_addresses = _parse_address_list(bcc_raw)
-        # Threading fallbacks from RFC 2822 headers
-        if not in_reply_to:
-            in_reply_to = _extract_header(raw_source, "In-Reply-To").strip("<>")
-        if not references:
-            refs_raw = _extract_header(raw_source, "References")
-            if refs_raw:
-                references = _parse_references(refs_raw)
-
-    # ── Fallback: extract body from raw RFC 2822 source ─────
-    if not body_text and not body_html and raw_source:
-        body_text, body_html = _extract_body_from_source(raw_source)
-
-    # ── Fallback: OPFMessageCopyPreview for body ───────────
-    if not body_text and not body_html:
-        preview = _find_text(root, "OPFMessageCopyPreview", ns)
-        if preview:
-            body_text = preview
-
-    # ── Attachments ────────────────────────────────────────
-    attachment_names, attachments = _extract_attachments(root, ns)
-
-    # Decode MIME encoded-words in subject and sender name
-    subject = _decode_mime_words(subject) if subject else ""
-    sender_name = _decode_mime_words(sender_name) if sender_name else ""
-
-    # Normalize sender email: strip whitespace, lowercase
-    sender_email = sender_email.strip().lower() if sender_email else ""
-
-    # Default subject
-    if not subject:
-        subject = "(no subject)"
-
-    return Email(
-        message_id=message_id,
-        subject=subject,
-        sender_name=sender_name,
-        sender_email=sender_email,
-        to=to_addresses,
-        cc=cc_addresses,
-        bcc=bcc_addresses,
-        date=date,
-        body_text=body_text,
-        body_html=body_html,
-        folder=folder,
-        has_attachments=bool(attachment_names),
-        attachment_names=attachment_names,
-        attachments=attachments,
-        conversation_id=conversation_id,
-        in_reply_to=in_reply_to,
-        references=references,
-        priority=priority,
-        is_read=is_read,
-        categories=categories,
-        thread_topic=thread_topic,
-        thread_index=thread_index,
-        inference_classification=inference_classification,
-        is_calendar_message=is_calendar_message,
-        meeting_data=meeting_data,
-        exchange_extracted_links=exchange_extracted_links,
-        exchange_extracted_emails=exchange_extracted_emails,
-        exchange_extracted_contacts=exchange_extracted_contacts,
-        exchange_extracted_meetings=exchange_extracted_meetings,
+    return _parse_email_xml_impl(
+        xml_bytes,
+        source_path,
+        logger=logger,
+        extract_identity_addresses_fn=_extract_identity_addresses,
+        apply_source_header_fallbacks_fn=_apply_source_header_fallbacks,
+        finalize_parsed_email_parts_fn=_finalize_parsed_email_parts,
+        derive_email_enrichments_fn=_derive_email_enrichments,
+        build_parsed_email_from_parts_fn=_build_parsed_email_from_parts,
     )

@@ -58,16 +58,7 @@ class EmailClusterer:
         if k < 2:
             k = 2
 
-        from sklearn.cluster import MiniBatchKMeans
-
-        model = MiniBatchKMeans(
-            n_clusters=k,
-            random_state=42,
-            batch_size=min(1000, len(embeddings)),
-            n_init=3,
-        )
-        self._labels = model.fit_predict(embeddings)
-        self._centroids = model.cluster_centers_
+        self._labels, self._centroids = self._fit_kmeans(embeddings, k, n_init=3)
         self._embeddings = embeddings
         self._uids = uids
         self._is_fitted = True
@@ -75,7 +66,6 @@ class EmailClusterer:
 
     def _auto_detect_k(self, embeddings: np.ndarray) -> int:
         """Auto-detect optimal k using silhouette score sampling."""
-        from sklearn.cluster import MiniBatchKMeans
         from sklearn.metrics import silhouette_score
 
         n = len(embeddings)
@@ -97,8 +87,7 @@ class EmailClusterer:
         k_range = range(5, max_k, 5) if max_k > 5 else range(2, max_k + 1)
 
         for k in k_range:
-            model = MiniBatchKMeans(n_clusters=k, random_state=42, n_init=2)
-            labels = model.fit_predict(sample)
+            labels, _ = self._fit_kmeans(sample, k, n_init=2)
             try:
                 score = silhouette_score(sample, labels, sample_size=min(500, sample_size))
                 if score > best_score:
@@ -109,6 +98,75 @@ class EmailClusterer:
 
         logger.info("Auto-detected k=%d (silhouette=%.3f)", best_k, best_score)
         return best_k
+
+    @staticmethod
+    def _fit_kmeans(
+        embeddings: np.ndarray,
+        n_clusters: int,
+        n_init: int = 3,
+        max_iter: int = 100,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Deterministic NumPy k-means fallback for local clustering."""
+        data = np.asarray(embeddings, dtype=np.float64)
+        best_labels: np.ndarray | None = None
+        best_centroids: np.ndarray | None = None
+        best_inertia = float("inf")
+
+        for init_idx in range(max(1, n_init)):
+            seed = 42 + init_idx
+            labels, centroids, inertia = EmailClusterer._fit_kmeans_once(
+                data,
+                n_clusters,
+                np.random.RandomState(seed),
+                max_iter=max_iter,
+            )
+            if inertia < best_inertia:
+                best_inertia = inertia
+                best_labels = labels
+                best_centroids = centroids
+
+        assert best_labels is not None
+        assert best_centroids is not None
+        return best_labels, best_centroids.astype(np.float32, copy=False)
+
+    @staticmethod
+    def _fit_kmeans_once(
+        embeddings: np.ndarray,
+        n_clusters: int,
+        rng: np.random.RandomState,
+        max_iter: int = 100,
+    ) -> tuple[np.ndarray, np.ndarray, float]:
+        """Run one Lloyd iteration sequence with random unique starts."""
+        n_samples = len(embeddings)
+        initial_indices = rng.choice(n_samples, size=n_clusters, replace=False)
+        centroids = embeddings[initial_indices].copy()
+        labels = np.zeros(n_samples, dtype=np.int32)
+
+        for _ in range(max_iter):
+            distances = np.linalg.norm(embeddings[:, None, :] - centroids[None, :, :], axis=2)
+            new_labels = np.argmin(distances, axis=1).astype(np.int32)
+            new_centroids = centroids.copy()
+
+            for cluster_id in range(n_clusters):
+                members = embeddings[new_labels == cluster_id]
+                if len(members) == 0:
+                    farthest_idx = int(np.argmax(np.min(distances, axis=1)))
+                    new_centroids[cluster_id] = embeddings[farthest_idx]
+                    new_labels[farthest_idx] = cluster_id
+                    continue
+                new_centroids[cluster_id] = members.mean(axis=0)
+
+            if np.array_equal(new_labels, labels) and np.allclose(new_centroids, centroids):
+                labels = new_labels
+                centroids = new_centroids
+                break
+
+            labels = new_labels
+            centroids = new_centroids
+
+        final_distances = np.linalg.norm(embeddings - centroids[labels], axis=1)
+        inertia = float(np.sum(final_distances**2))
+        return labels, centroids, inertia
 
     def fit_hybrid(
         self,

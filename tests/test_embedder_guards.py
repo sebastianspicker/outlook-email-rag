@@ -2,6 +2,26 @@ import pytest
 
 from src.chunker import EmailChunk
 from src.embedder import EmailEmbedder
+from src.multi_vector_embedder import MultiVectorResult
+
+
+class _FakeMultiVectorEmbedder:
+    def __init__(self, **_kw):
+        self.model_name = "fake-bge-m3"
+
+    def encode_all(self, texts):
+        dense = [[0.1, 0.2, 0.3] for _ in texts]
+        return MultiVectorResult(dense=dense, sparse=None, colbert=None)
+
+    def warmup(self):
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _stub_multi_vector_embedder(monkeypatch):
+    import src.embedder as embedder_mod
+
+    monkeypatch.setattr(embedder_mod, "MultiVectorEmbedder", _FakeMultiVectorEmbedder)
 
 
 def test_add_chunks_rejects_non_positive_batch_size():

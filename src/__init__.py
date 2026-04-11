@@ -1,1 +1,1 @@
-"""Email RAG — Search your Outlook emails with Claude."""
+"""Email RAG — Search your Outlook emails locally."""

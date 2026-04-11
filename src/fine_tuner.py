@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import resolve_device
+from .transformers_compat import ensure_flagembedding_transformers_compat
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,7 @@ class FineTuner:
         triplet_count: int,
     ) -> dict[str, Any]:
         """Train using FlagEmbedding's native training API."""
+        ensure_flagembedding_transformers_compat()
         import FlagEmbedding  # noqa: F401 — runtime availability check
 
         # FlagEmbedding training expects specific directory structure

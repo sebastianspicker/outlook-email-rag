@@ -92,7 +92,7 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 return json_response(db.emails_by_topic(params.topic_id, limit=params.limit))
             results = db.topic_distribution()
             if not results:
-                return json_error("No topics available. Run ingestion with --extract-keywords.")
+                return json_error("No topics available. Topic tables are not populated by the default ingest pipeline.")
             return json_response(results)
 
         return await run_with_db(deps, _work)

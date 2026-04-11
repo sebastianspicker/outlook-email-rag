@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from .mcp_models_analysis import BehavioralCaseScopeInput
 from .mcp_models_base import (
     DateRangeInput,
     PlainInput,
@@ -92,6 +93,51 @@ class EmailSearchStructuredInput(DateRangeInput, StrictInput):
         min_length=1,
         max_length=100,
         description="Scan session ID for progressive search. Excludes previously seen emails and tracks new ones.",
+    )
+
+
+class EmailAnswerContextInput(DateRangeInput, StrictInput):
+    """Input for building a compact answer-ready evidence bundle."""
+
+    question: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Natural-language mailbox question to answer from retrieved evidence.",
+    )
+    max_results: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Number of candidate emails to return in the evidence bundle (1-10).",
+    )
+    evidence_mode: Literal["retrieval", "forensic", "hybrid"] = Field(
+        default="retrieval",
+        description=(
+            "Evidence render policy. 'retrieval' returns normalized-body evidence, "
+            "'forensic' prefers source-preserved body text, and 'hybrid' retrieves with "
+            "normalized text but verifies snippets against forensic text when available."
+        ),
+    )
+    sender: str | None = Field(default=None, description="Filter by sender (partial match).")
+    subject: str | None = Field(default=None, description="Filter by subject (partial match).")
+    folder: str | None = Field(default=None, description="Filter by folder name (partial match).")
+    has_attachments: bool | None = Field(default=None, description="Filter by attachment presence.")
+    email_type: Literal["reply", "forward", "original"] | None = Field(
+        default=None,
+        description="Filter by email type: 'reply', 'forward', or 'original'.",
+    )
+    rerank: bool = Field(
+        default=False,
+        description="Re-rank results with cross-encoder for better precision (slower).",
+    )
+    hybrid: bool = Field(
+        default=False,
+        description="Use hybrid semantic + BM25 keyword search for better recall.",
+    )
+    case_scope: BehavioralCaseScopeInput | None = Field(
+        default=None,
+        description="Structured investigation scope for case-based behavioural analysis.",
     )
 
 
@@ -229,6 +275,10 @@ class EmailExportInput(StrictInput):
         default="html",
         description="Output format: 'html' or 'pdf' (pdf requires weasyprint).",
     )
+    render_mode: Literal["retrieval", "forensic"] = Field(
+        default="retrieval",
+        description="Body render mode: 'retrieval' for normalized text or 'forensic' for source-preserved body text.",
+    )
 
     @field_validator("output_path")
     @classmethod
@@ -260,6 +310,10 @@ class BrowseInput(DateRangeInput, PlainInput):
         default=False,
         description="Include body text in results (default off to save context).",
     )
+    render_mode: Literal["retrieval", "forensic"] = Field(
+        default="retrieval",
+        description="Body render mode when include_body=true: 'retrieval' or 'forensic'.",
+    )
     is_calendar: bool | None = Field(
         default=None,
         description="Filter by calendar/meeting messages. True = only calendar emails.",
@@ -277,6 +331,14 @@ class EmailDeepContextInput(StrictInput):
     include_thread: bool = Field(default=True, description="Include thread summary and timeline.")
     include_evidence: bool = Field(default=True, description="Include existing evidence from this email.")
     include_sender_stats: bool = Field(default=True, description="Include sender communication profile.")
+    include_conversation_debug: bool = Field(
+        default=False,
+        description="Include segments and inferred-thread debug metadata.",
+    )
+    render_mode: Literal["retrieval", "forensic"] = Field(
+        default="retrieval",
+        description="Body render mode for the returned email body: 'retrieval' or 'forensic'.",
+    )
     max_body_chars: int | None = Field(
         default=None,
         ge=0,

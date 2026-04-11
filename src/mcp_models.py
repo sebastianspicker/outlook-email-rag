@@ -12,8 +12,12 @@ Sub-modules:
 
 from .mcp_models_analysis import (
     ActionItemsInput,
+    BehavioralCaseScopeInput,
+    BehavioralOrgContextInput,
+    CasePartyInput,
     CoordinatedTimingInput,
     DecisionsInput,
+    DependencyRelationInput,
     EmailAdminInput,
     EmailAttachmentsInput,
     EmailClustersInput,
@@ -30,8 +34,12 @@ from .mcp_models_analysis import (
     NetworkAnalysisInput,
     RelationshipPathsInput,
     RelationshipSummaryInput,
+    ReportingLineInput,
+    RoleFactInput,
     SharedRecipientsInput,
     ThreadSummaryInput,
+    TriggerEventInput,
+    VulnerabilityContextInput,
 )
 from .mcp_models_base import (
     DateRangeInput,
@@ -55,6 +63,7 @@ from .mcp_models_evidence import (
 )
 from .mcp_models_search import (
     BrowseInput,
+    EmailAnswerContextInput,
     EmailDeepContextInput,
     EmailDiscoveryInput,
     EmailExportInput,
@@ -68,12 +77,17 @@ from .mcp_models_search import (
 
 __all__ = [
     "ActionItemsInput",
+    "BehavioralCaseScopeInput",
+    "BehavioralOrgContextInput",
     "BrowseInput",
+    "CasePartyInput",
     "CoordinatedTimingInput",
     "CustodyChainInput",
     "DateRangeInput",
     "DecisionsInput",
+    "DependencyRelationInput",
     "EmailAdminInput",
+    "EmailAnswerContextInput",
     "EmailAttachmentsInput",
     "EmailClustersInput",
     "EmailContactsInput",
@@ -110,8 +124,12 @@ __all__ = [
     "PlainInput",
     "RelationshipPathsInput",
     "RelationshipSummaryInput",
+    "ReportingLineInput",
+    "RoleFactInput",
     "SharedRecipientsInput",
     "StrictInput",
     "ThreadSummaryInput",
+    "TriggerEventInput",
+    "VulnerabilityContextInput",
     "_validate_output_path",
 ]

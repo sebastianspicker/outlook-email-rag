@@ -1,19 +1,19 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![MCP Tools](https://img.shields.io/badge/MCP_tools-46-purple)
-![Tests](https://img.shields.io/badge/tests-2147-brightgreen)
+![Tests](https://img.shields.io/badge/tests-pytest-brightgreen)
 
 # Email RAG
 
-Search your Outlook emails with natural language using Claude — no cloud, no subscriptions, everything stays on your Mac.
+Search your Outlook emails with natural language — no cloud, no subscriptions, everything stays on your Mac.
 
-> **Claude-native:** Claude Code calls the built-in MCP tools directly. Your emails never leave your machine. No API keys required.
+> **MCP-native:** Any compatible MCP client can call the built-in tools directly. Your emails never leave your machine. No API keys required.
 
 ---
 
 ## What This Does
 
-You export your mailbox from Outlook for Mac once, run a one-time indexing step, and then ask Claude questions like:
+You export your mailbox from Outlook for Mac once, run a one-time indexing step, and then ask your MCP client questions like:
 
 - *"Find emails about the Q3 budget from finance@company.com"*
 - *"What did legal say about the contract renewal in January?"*
@@ -21,13 +21,12 @@ You export your mailbox from Outlook for Mac once, run a one-time indexing step,
 - *"Who are my top 10 email contacts?"*
 - *"Summarize the thread about the server migration"*
 - *"What action items came out of last week's emails?"*
-- *"What topics dominate my inbox?"*
 - *"Find emails similar to this one about the contract"*
 - *"Analyze the writing style of emails from marketing"*
 - *"Export the conversation about the contract renewal as a PDF"*
 - *"Browse through all my emails from January, 20 at a time"*
 
-Claude reads the indexed emails and gives you precise, sourced answers — without touching Outlook again.
+Your client reads the indexed emails and gives you precise, sourced answers — without touching Outlook again.
 
 ---
 
@@ -58,32 +57,32 @@ flowchart LR
     NLP --> N2["Topic\nmodeling"]
     NLP --> N3["Email\nclustering"]
 
-    I["You ask\nClaude"] --> J["46 MCP tools\ncalled by Claude"]
+    I["You ask\nyour client"] --> J["46 MCP tools\ncalled by the client"]
     J --> G
     J --> H
     G --> K["Ranked\nresults"]
     H --> K
     K --> R["ColBERT / cross-encoder\nreranking"]
     R --> J
-    J --> L["Claude's\nanswer"]
+    J --> L["Client\nanswer"]
 ```
 
 ```mermaid
 sequenceDiagram
     participant You
-    participant Claude as Claude Code
+    participant Client as MCP Client
     participant MCP as MCP Server (46 tools)
     participant VDB as ChromaDB (vectors)
     participant SQL as SQLite (metadata)
 
-    You->>Claude: "Summarize the thread about Q3 budget"
-    Claude->>MCP: email_thread_summary(query, ...)
+    You->>Client: "Summarize the thread about Q3 budget"
+    Client->>MCP: email_thread_summary(query, ...)
     MCP->>VDB: vector similarity search
     MCP->>SQL: metadata + analytics queries
     VDB-->>MCP: ranked email chunks
     SQL-->>MCP: thread context + stats
-    MCP-->>Claude: formatted results + metadata
-    Claude-->>You: answer with sources
+    MCP-->>Client: formatted results + metadata
+    Client-->>You: answer with sources
 ```
 
 ### Multi-vector embedding pipeline
@@ -140,7 +139,7 @@ flowchart TB
 - Emails are stored in local databases (`data/chromadb/`, `data/email_metadata.db`) that only you can access
 - Re-indexing is safe and idempotent — already-indexed emails are skipped automatically
 - Semantic search finds relevant emails even when you don't remember the exact words
-- NLP pipeline provides topic modeling, clustering, entity extraction, and thread intelligence
+- NLP pipeline provides clustering, entity extraction, and thread intelligence
 
 ---
 
@@ -152,11 +151,9 @@ You need:
 |------------|-------------|
 | **Mac** (Outlook for Mac .olm format) | — |
 | **Python 3.11 or newer** | `python3 --version` in Terminal |
-| **Claude Code** | `claude --version` in Terminal |
 | **Git** | `git --version` in Terminal |
 
 If you don't have Python 3.11+, download it from [python.org](https://python.org/downloads/).
-If you don't have Claude Code, follow the [Claude Code quickstart](https://docs.anthropic.com/en/claude-code/quickstart).
 
 ---
 
@@ -179,9 +176,10 @@ This keeps the project's dependencies isolated from the rest of your system:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
-You should see packages being installed. This takes a few minutes the first time (it downloads the embedding model).
+You should see packages being installed. This takes a few minutes the first time because the local models may be downloaded and cached.
 
 > **Tip:** You need to run `source .venv/bin/activate` every time you open a new Terminal window for this project. You'll know it's active when you see `(.venv)` at the start of your prompt.
 
@@ -231,25 +229,25 @@ Elapsed:         14m 22s
 
 > **Re-running is safe:** If you export an updated `.olm` later, running ingest again skips emails that are already indexed.
 
-### Step 5 — Open the project in Claude Code
+### Step 5 — Start the MCP server
 
 ```bash
-claude .
+.venv/bin/python -m src.mcp_server
 ```
 
-The project includes a `.claude/settings.json` that automatically registers the MCP server. Claude Code will detect it and load the email search tools.
+Point your MCP client at the same command if you want tool access from an external assistant.
 
-**That's it.** You can now ask Claude about your emails.
+**That's it.** You can now query your archive from the CLI, web UI, or any MCP client.
 
 ---
 
-## Using with Claude Code (MCP Server)
+## Using with an MCP Client
 
-This is the primary way to use Email RAG. Claude Code talks to your email index through 46 MCP tools — you just ask questions in plain English.
+Email RAG exposes 46 MCP tools. Any compatible client can talk to your local email index in plain English.
 
 ### How it connects
 
-The project includes a `.claude/settings.json` file that tells Claude Code how to start the MCP server:
+Configure your client to start the MCP server like this:
 
 ```json
 {
@@ -263,24 +261,24 @@ The project includes a `.claude/settings.json` file that tells Claude Code how t
 }
 ```
 
-When you run `claude .` from the project directory, Claude Code reads this file and starts the MCP server automatically. You don't need to configure anything manually.
+Use absolute paths if your client launches servers from a different working directory.
 
 ### Verifying the connection
 
-After opening the project in Claude Code, you can check that the tools loaded:
+After connecting your client, verify that the tools loaded:
 
-1. Type `/mcp` in the Claude Code prompt
+1. Open your client's MCP server/status view
 2. Look for `email_search` in the server list — it should show as **connected**
 3. You should see all 46 tools listed beneath it
 
 If it shows as disconnected:
 - Make sure the virtual environment exists: `ls .venv/bin/python`
 - Make sure dependencies are installed: `.venv/bin/python -c "from src.mcp_server import mcp; print('OK')"`
-- Restart Claude Code with `claude .` from the project root
+- Restart the MCP client after updating its server command
 
 ### Asking questions
 
-Just talk to Claude naturally. It picks the right MCP tool automatically based on your question. Here are examples organized by what you can do:
+Just talk to your MCP client naturally. It should pick the right tool automatically based on your question. Here are examples organized by what you can do:
 
 **Searching emails:**
 
@@ -333,7 +331,7 @@ Show me my email volume by month for the past year.
 What's my activity pattern? When do I send the most emails?
 ```
 ```
-What topics are most common in my inbox?
+Which keywords dominate my inbox?
 ```
 ```
 Show me the most frequently mentioned organizations in my emails.
@@ -384,7 +382,7 @@ Generate an HTML report of my email archive.
 Export my communication network as a graph file I can open in Gephi.
 ```
 
-**Re-ingesting from within Claude:**
+**Re-ingesting from an MCP client:**
 
 ```
 Ingest my new export at data/latest-export.olm
@@ -392,25 +390,25 @@ Ingest my new export at data/latest-export.olm
 
 ### What happens under the hood
 
-When you ask a question like *"Find emails about the Q3 budget from finance"*, Claude:
+When you ask a question like *"Find emails about the Q3 budget from finance"*, your MCP client:
 
 1. Picks the most appropriate tool — typically `email_triage` for broad scans or `email_search_structured` for filtered searches
 2. Sends parameters like `query="Q3 budget"`, `sender="finance"` to the MCP server
 3. The server runs a semantic vector search in ChromaDB, filters by sender, deduplicates, and formats results
-4. Claude reads the results and gives you a sourced answer
+4. Reads the results and gives you a sourced answer
 
-You never need to remember tool names or parameters — Claude handles that automatically.
+You never need to remember tool names or parameters — the client handles that automatically.
 
 ### Available MCP Tools (46)
 
-Claude picks the right tool automatically. For detailed parameter reference, see [docs/CLAUDE-TOOLS.md](docs/CLAUDE-TOOLS.md).
+For detailed parameter reference, see [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
 
 #### Search & Triage (6)
 
 | Tool | What it does |
 |------|-------------|
 | `email_triage` | Fast scan: up to 100 ultra-compact results (~80 tokens each). Issue 3–5 calls with different queries; pass `scan_id` to auto-deduplicate across calls |
-| `email_search_structured` | Semantic search with the full filter set: sender, date, folder, CC/To/BCC, attachments, priority, topic, cluster, hybrid search, reranking, query expansion |
+| `email_search_structured` | Semantic search with the full filter set: sender, date, folder, CC/To/BCC, attachments, priority, cluster, hybrid search, reranking, query expansion. `topic_id` is currently a conditional filter that requires pre-populated topic tables. |
 | `email_find_similar` | Find emails most similar to a given email UID or text snippet |
 | `email_search_by_entity` | Find emails mentioning a specific entity (person, org, URL, phone) |
 | `email_thread_lookup` | Retrieve all emails in a thread by `conversation_id` or `thread_topic` |
@@ -444,7 +442,7 @@ Claude picks the right tool automatically. For detailed parameter reference, see
 
 | Tool | What it does |
 |------|-------------|
-| `email_topics` | Discovered topic labels with email counts; set `topic_id` to list emails in a topic |
+| `email_topics` | Topic lookup for archives whose topic tables were populated outside the default ingest flow |
 | `email_clusters` | Email clusters with sizes; set `cluster_id` to list emails in a cluster |
 | `email_discovery` | `mode='keywords'` for top TF-IDF keywords; `mode='suggestions'` for search suggestions |
 
@@ -518,11 +516,11 @@ Claude picks the right tool automatically. For detailed parameter reference, see
 
 | Tool | What it does |
 |------|-------------|
-| `email_ingest` | Trigger ingestion of an `.olm` file from within Claude (supports `extract_attachments`, `embed_images`) |
-| `email_admin` | Diagnostics and maintenance: `action='diagnostics'` shows model/device/backend info; `action='reembed/reingest_bodies/reingest_metadata/reingest_analytics'` backfills missing data |
-### Registering in other Claude environments
+| `email_ingest` | Trigger ingestion of an `.olm` file from an MCP client (supports `extract_attachments`, `embed_images`) |
+| `email_admin` | Diagnostics and maintenance: `action='diagnostics'` shows resolved runtime settings, embedder/backend state, MCP budgets, and sparse-index status; `action='reembed/reingest_bodies/reingest_metadata/reingest_analytics'` backfills missing data |
+### Registering in other MCP clients
 
-If you want to use the MCP server outside the project directory (for example, from a global Claude Code config or the Claude desktop app), you need to use **absolute paths**:
+If you want to use the MCP server outside the project directory, use **absolute paths**:
 
 ```json
 {
@@ -536,15 +534,11 @@ If you want to use the MCP server outside the project directory (for example, fr
 }
 ```
 
-For **Claude Code** global config, add this to `~/.claude/settings.json`.
-
-For the **Claude desktop app**, add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
-
 ---
 
 ## CLI
 
-A standalone terminal interface for searching and analyzing your email archive — no Claude Code required.
+A standalone terminal interface for searching and analyzing your email archive — no MCP client required.
 
 ```bash
 # Interactive mode
@@ -562,12 +556,13 @@ python -m src.cli --log-level INFO analytics heatmap
 
 Supports 7 subcommand groups (`search`, `browse`, `export`, `evidence`, `analytics`, `training`, `admin`) with 58+ flags. See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the full reference.
 Temporal analytics bucket timestamps in `ANALYTICS_TIMEZONE` (default: local system timezone). Set an IANA zone such as `Europe/Berlin` to make charts and heatmaps use one explicit display timezone.
+Topic filters and `email_topics` remain present in the codebase, but the default ingest workflow does not populate topic tables yet.
 
 ---
 
 ## Streamlit Web UI
 
-A visual search interface that runs in your browser. This is a good option if you want a GUI but don't use Claude Code.
+A visual search interface that runs in your browser. This is a good option if you want a GUI but don't use an MCP client.
 
 ![Streamlit search interface with sidebar navigation, archive overview, and empty-state guidance](docs/screenshots/streamlit-search-ui.png)
 
@@ -608,22 +603,29 @@ COLLECTION_NAME=emails             # ChromaDB collection name
 TOP_K=10                           # default number of results
 LOG_LEVEL=INFO                     # INFO or DEBUG
 DEVICE=auto                        # auto | mps | cuda | cpu
-RERANK_ENABLED=false               # cross-encoder reranking (slower, more precise)
+RUNTIME_PROFILE=quality            # balanced | quality | low-memory | offline-test
+EMBEDDING_LOAD_MODE=auto           # auto | local_only | download
 RERANK_MODEL=BAAI/bge-reranker-v2-m3  # reranking model (multilingual, BGE-M3 aligned)
-HYBRID_ENABLED=false               # hybrid semantic + BM25 keyword search
 
-# BGE-M3 multi-vector features (all optional, default: disabled)
-SPARSE_ENABLED=false               # learned sparse vectors (replaces BM25)
-COLBERT_RERANK_ENABLED=false       # ColBERT token-level reranking
-EMBEDDING_BATCH_SIZE=0             # 0 = auto-detect (MPS: 32, CUDA: 64, CPU: 16)
-MPS_CACHE_CLEAR_INTERVAL=1         # clear MPS GPU cache every N encode calls
+# `quality` already enables hybrid search, reranking, sparse retrieval, and ColBERT.
+# Uncomment any of the following only when you intentionally want to override the profile:
+# RERANK_ENABLED=false
+# HYBRID_ENABLED=false
+# SPARSE_ENABLED=false
+# COLBERT_RERANK_ENABLED=false
+
+EMBEDDING_BATCH_SIZE=0             # 0 = auto-detect (MPS: 32, CUDA: 32, CPU: 16)
+MPS_CACHE_CLEAR_ENABLED=0          # opt-in; some Torch/MPS stacks crash on empty_cache()
+MPS_CACHE_CLEAR_INTERVAL=1         # only used when MPS_CACHE_CLEAR_ENABLED=1
 
 # Ingestion performance tuning (Apple Silicon)
-INGEST_BATCH_COOLDOWN=0            # seconds between batches (2 = recommended for thermal throttling)
+INGEST_BATCH_COOLDOWN=1            # seconds between batches (2 = stronger thermal protection)
 INGEST_WAL_CHECKPOINT_INTERVAL=10  # checkpoint SQLite WAL every N batches
 ```
 
 Copy `.env.example` as a starting point: `cp .env.example .env`
+
+For runtime profiles, offline/cache-only model loading, Apple Silicon guidance, and detailed performance notes, see [docs/RUNTIME_TUNING.md](docs/RUNTIME_TUNING.md).
 
 ---
 
@@ -643,12 +645,12 @@ If total is 0, try re-running ingest with verbose output:
 LOG_LEVEL=DEBUG python -m src.ingest data/my-export.olm --max-emails 50
 ```
 
-### MCP tools not appearing in Claude Code
+### MCP tools not appearing in your client
 
-1. Make sure you're in the project directory when you run `claude .`
+1. Make sure the client is launching the project-local server command
 2. Check that the virtual environment was created: `ls .venv/bin/python`
-3. Reload the MCP server in Claude Code: type `/mcp` and look for `email_search`
-4. If it shows as disconnected, check that `source .venv/bin/activate` was run before `claude .`
+3. Reload the MCP server in the client and look for `email_search`
+4. If it shows as disconnected, check that the configured command points at this repo's `.venv/bin/python`
 
 ### Import errors when running ingest
 
@@ -668,7 +670,7 @@ This is expected — each chunk requires a full BGE-M3 forward pass (560M parame
 If throughput degrades over time (first batches fast, later batches slow), this is **thermal throttling on Apple Silicon**, not a software bug. The chip reduces GPU frequency under sustained load. Mitigations:
 
 ```bash
-# Add to .env — 2-second cooldown between batches prevents sustained thermal throttling
+# Add to .env — 1 second is the current default; 2 seconds gives stronger thermal protection
 INGEST_BATCH_COOLDOWN=2
 ```
 
@@ -685,12 +687,6 @@ python -m src.ingest data/my-export.olm --timing
 ```
 
 See [Performance & Hardware](#performance--hardware) for detailed benchmarks and tuning options.
-
-### "command not found: claude"
-
-Install Claude Code: follow the [official quickstart](https://docs.anthropic.com/en/claude-code/quickstart).
-
----
 
 ## Architecture
 
@@ -790,7 +786,7 @@ block-beta
 | `src/evidence_exporter.py` | Export evidence reports as HTML, CSV, or PDF for legal review |
 | `src/dossier_generator.py` | Proof dossier combining evidence, emails, relationships, and custody chain |
 | `src/mcp_models.py` | Pydantic input models for all MCP tool parameters |
-| `src/mcp_server.py` | FastMCP server exposing 46 tools for Claude Code |
+| `src/mcp_server.py` | FastMCP server exposing 46 tools to MCP clients |
 | `src/tools/` | MCP tool subpackage — 46 tools across 13 domain modules (search, browse, evidence, entities, network, scan, attachments, diagnostics, etc.) |
 | `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
 | `src/cli.py` | Rich terminal interface with 7 subcommand groups and 58 flags — legacy flat-flag syntax still supported |
@@ -800,7 +796,7 @@ block-beta
 | `src/storage.py` | ChromaDB client and collection helpers |
 | `src/validation.py` | Shared input validators (dates, positive_int) |
 | `src/sanitization.py` | Output safety (ANSI stripping, control character removal) |
-| `src/formatting.py` | Result formatting for Claude and CLI |
+| `src/formatting.py` | Result formatting for LLM clients and CLI |
 | `src/html_converter.py` | HTML-to-text conversion preserving structure |
 | `src/rfc2822.py` | RFC 2822 header, MIME, and iCalendar parsing |
 | `src/result_filters.py` | Result filtering and deduplication logic |
@@ -940,105 +936,23 @@ flowchart TB
 
 ## Performance & Hardware
 
-### Embedding model
+The default model is [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3). Inference runs on-device using Apple Metal (MPS), NVIDIA CUDA, or CPU. Email content stays local, but first-run model loading may contact Hugging Face to download or validate cached weights.
 
-The default model is [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) — a 560M-parameter multilingual embedding model producing 1024-dimensional dense vectors. It runs entirely on-device using Apple Metal (MPS), NVIDIA CUDA, or CPU. No API calls, no data leaves your machine.
+For the full runtime guide, see [docs/RUNTIME_TUNING.md](docs/RUNTIME_TUNING.md).
 
-| Capability | Backend | Output |
-|------------|---------|--------|
-| Dense vectors (always on) | SentenceTransformers or FlagEmbedding | 1024-d float32 |
-| Learned sparse vectors | FlagEmbedding only | token-weight dict |
-| ColBERT token vectors | FlagEmbedding only | per-token 1024-d |
+Quick guidance:
 
-### Ingestion throughput
-
-The ingestion bottleneck is the embedding forward pass — each chunk requires a full transformer inference. On a real-world run of **20,257 emails → 47,229 chunks**, GPU encoding consumed **95%** of the total 4-hour runtime (13,628s encode vs. 747s writes). ChromaDB and SQLite I/O are negligible.
-
-| Hardware | Device | Batch size | Sustained rate | 20K emails (~47K chunks) |
-|----------|--------|------------|----------------|---------------------------|
-| **Apple M4 / 16 GB** | `mps` | 32 | **5→3 chunks/s** | **~4 hours** |
-| Apple M1 Pro / 16 GB | `mps` | 32 | ~4–5 chunks/s | ~4.5 hours |
-| Apple M2 Max / 32 GB | `mps` | 32 | ~5–6 chunks/s | ~3.5 hours |
-| NVIDIA RTX 3090 / 4090 | `cuda` | 64 | ~15–30 chunks/s | ~30–60 min |
-| Intel i7 (no GPU) | `cpu` | 16 | ~1–2 chunks/s | ~10+ hours |
-
-The M4 row is a measured benchmark; other rows are estimates based on relative GPU throughput.
-
-> **Rule of thumb:** Outlook exports average ~2–3 chunks per email (body + quoted content + attachments). Multiply your email count by 2.5 for a rough chunk estimate.
-
-### Throughput degradation on Apple Silicon
-
-On sustained runs (>30 minutes), throughput drops from ~5 chunks/s to ~3 chunks/s. This is **thermal throttling**, not a software bug — the M-series chip reduces GPU frequency after sustained MPS load to manage junction temperature. The pattern is visible in production logs:
-
-| Phase | Batches | Rate | Cause |
-|-------|---------|------|-------|
-| Warm-up | 1–18 | 5 chunks/s | Chip at peak frequency |
-| Steady | 19–40 | 4 chunks/s | Thermal envelope reached |
-| Throttled | 41–96 | 2–4 chunks/s | Sustained thermal limiting |
-
-Key evidence: intermittent recovery spikes (e.g., batch 66 recovering to 5 chunks/s after a parsing-heavy phase) confirm thermal cycling rather than linear degradation from data growth.
-
-**Mitigations** (set in `.env`):
-- `INGEST_BATCH_COOLDOWN=2` — 2-second sleep between batches (~3 min total overhead on a 96-batch run) breaks sustained GPU load, keeping the chip near peak frequency
-- `INGEST_WAL_CHECKPOINT_INTERVAL=10` — periodic SQLite WAL checkpoint prevents unbounded WAL growth during long runs (minor impact, but keeps disk I/O predictable)
-
-### What the pipeline does
-
-```
-Parse OLM (fast)
-  ↓
-Model preload — ~5 s (download on first run, cached after)
-  ↓
-Producer thread: parse → chunk → enqueue
-Consumer thread: encode (GPU, 95% of time) → store ChromaDB + SQLite (5%)
-  ↓
-Per-batch enrichment: spaCy NER, language detection, sentiment analysis
-```
-
-Each batch logs a timing split so you can see exactly where time is spent:
-
-```
-Stored 500 chunks (102.3s total: encode=78.1s, chromadb=24.2s, 5 chunks/s)
-```
-
-1. **Model preloading** — BGE-M3 weights are loaded and a warmup encode runs before the ingestion loop starts, so the first batch isn't penalized by model initialization. On subsequent runs the model loads from HuggingFace's local cache (`~/.cache/huggingface/`), skipping ~30 HTTP HEAD requests to the Hub that `SentenceTransformer()` would otherwise make to check for model updates.
-
-2. **Encode-then-store** — All chunks in a batch are encoded in a single `encode_all()` call, then written to ChromaDB and SQLite in separate storage-only batches. The naive approach — encode a small batch, write it, encode the next — creates GPU idle bubbles: ChromaDB's HNSW index construction is CPU-bound and holds a write lock, so the GPU sits waiting for each HNSW insert to finish before the next encode can start. By encoding everything first and then flushing to storage, the GPU runs at full utilization during the compute phase and the CPU handles the I/O phase without contention.
-
-3. **MPS memory management** — Apple's Metal Performance Shaders uses macOS unified memory (shared between CPU and GPU). Unlike CUDA, MPS never releases allocated GPU memory back to the system — it only grows. On a sustained workload like embedding 10K+ chunks, this means GPU memory pressure eventually competes with system RAM, causing swap thrashing and a ~5× throughput drop after the first few hundred chunks. The fix is calling `torch.mps.empty_cache()` between sub-batches. This call is near-free (~0.1 ms vs. ~200 ms for the forward pass itself), so clearing after every sub-batch of 32 texts has negligible overhead while keeping memory stable. The interval is configurable via `MPS_CACHE_CLEAR_INTERVAL` for experimentation, but 1 (every sub-batch) is the right default for most Apple Silicon machines.
-
-4. **MPS sub-batch encoding** — A single `model.encode(500_texts, batch_size=32)` call runs 16 internal forward passes, but the MPS cache is only cleared *after* the call returns — by which point memory has already accumulated. The pipeline instead calls `model.encode()` in explicit loops of `batch_size` texts, clearing the MPS cache between each iteration. This gives the same mathematical result but with bounded GPU memory usage. On CUDA this isn't necessary because CUDA's memory allocator handles fragmentation more gracefully.
-
-5. **Threading** — A producer thread parses and chunks emails while a consumer thread encodes and stores. Queue depth of 4 batches keeps both threads busy. The producer is I/O-bound (XML parsing, ZIP extraction) while the consumer is GPU-bound, so they overlap well.
-
-6. **HNSW deferred construction** — ChromaDB's HNSW index is configured with `batch_size=100,000` and `sync_threshold=100,000`, meaning the expensive graph construction is deferred until 100K elements are buffered. For most email archives (up to ~40K emails / ~100K chunks), this means the HNSW graph is built once at first query time rather than during ingestion — a much better trade-off since ingestion throughput is the primary bottleneck. The `construction_ef=128` and `M=16` settings balance recall quality with construction speed.
-
-7. **Thermal cooldown** (opt-in) — On Apple Silicon, sustained GPU+CPU load (embedding + spaCy NER + analytics) causes thermal throttling after ~15 minutes. The `INGEST_BATCH_COOLDOWN` setting inserts a brief sleep between batches, breaking the sustained-load pattern and allowing the chip to stay near peak frequency. The overhead is minimal (e.g., 96 batches × 2s = ~3 min on a 4-hour run) relative to the throughput maintained.
-
-8. **WAL checkpointing** — During long ingestions, SQLite's WAL file grows continuously. Every 10 batches (configurable via `INGEST_WAL_CHECKPOINT_INTERVAL`), a passive checkpoint transfers completed pages from the WAL to the main database file without blocking writes. This keeps disk I/O predictable and prevents the WAL from growing unboundedly.
-
-### Tuning
-
-These environment variables can be set in your `.env` file:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DEVICE` | `auto` | Force `mps`, `cuda`, or `cpu` (auto-detected by default) |
-| `EMBEDDING_BATCH_SIZE` | `0` (auto) | Forward-pass batch size; auto = 32 on MPS, 64 on CUDA, 16 on CPU |
-| `MPS_CACHE_CLEAR_INTERVAL` | `1` | Clear MPS GPU cache every N encode calls (increase to 2–3 if memory isn't an issue) |
-| `INGEST_BATCH_COOLDOWN` | `0` | Seconds to sleep between batches; `2` recommended for Apple Silicon thermal throttling |
-| `INGEST_WAL_CHECKPOINT_INTERVAL` | `10` | Checkpoint SQLite WAL every N batches; `0` to disable |
-| `SPARSE_ENABLED` | `false` | Enable learned sparse vectors (requires FlagEmbedding; ~10% slower) |
-| `COLBERT_RERANK_ENABLED` | `false` | Enable ColBERT reranking at query time |
-
-> **First run is slowest.** HuggingFace downloads the BGE-M3 weights (~2.3 GB) on first use. Subsequent runs load from disk cache in ~5 seconds.
+- Apple MacBook Air M4 / 16 GB: `DEVICE=auto`, `RUNTIME_PROFILE=quality`, `EMBEDDING_LOAD_MODE=auto`, `EMBEDDING_BATCH_SIZE=0`, `MPS_FLOAT16=false`
+- Offline or CI-like runs: `RUNTIME_PROFILE=offline-test`, `EMBEDDING_LOAD_MODE=local_only`
+- Diagnostics: use ingestion startup logs or `email_admin(action="diagnostics")` to inspect the resolved runtime state instead of inferring it from `.env`
+- Sustained Apple Silicon ingest still slows down over time because of thermal throttling; `INGEST_BATCH_COOLDOWN=1` is the safer default on fanless hardware
 
 ---
 
 ## Privacy & Security
 
 - **All data stays local.** No email content is sent to any external service.
-- **No API keys.** Claude Code reads MCP tool results directly — no Anthropic API calls are made by this project.
+- **No API keys.** MCP clients read tool results directly — this project does not make provider API calls.
 - **Safe XML parsing.** The OLM parser disables external entity resolution (XXE), network access, and resource-exhaustion attacks.
 - **Output sanitization.** ANSI escape codes and control characters in email content are stripped before display.
 - **Input validation.** All MCP tool inputs are validated with Pydantic before use.
@@ -1053,8 +967,11 @@ pip install -r requirements-dev.txt
 # or with pip install -e .[dev]
 
 ruff check .          # linting
-pytest -q             # tests (2147+)
-bandit -r src -q      # security scan
+ruff format --check .
+mypy src
+pytest -q --tb=short --cov=src --cov-report=term-missing --cov-fail-under=80
+python scripts/streamlit_smoke.py
+bandit -r src -q -ll -ii
 ```
 
 See [docs/API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) for the interface stability policy.
@@ -1068,7 +985,7 @@ outlook-email-rag/
 ├── src/
 │   ├── __init__.py              # package marker
 │   ├── __main__.py              # python -m src -> MCP server
-│   ├── mcp_server.py            # 46 MCP tools for Claude Code
+│   ├── mcp_server.py            # 46 MCP tools for MCP clients
 │   ├── retriever.py             # search, filters, hybrid, reranking
 │   ├── ingest.py                # ingestion pipeline
 │   ├── parse_olm.py             # OLM XML parser
@@ -1146,8 +1063,6 @@ outlook-email-rag/
 │       └── dossier.html         # proof dossier template
 ├── tests/                       # 1360+ tests
 ├── data/                        # put your .olm file here
-├── .claude/
-│   └── settings.json            # auto-registers MCP server in Claude Code
 ├── docs/
 │   ├── API_COMPATIBILITY.md
 │   └── CLI_REFERENCE.md

@@ -1,10 +1,10 @@
 """
 MCP Server for Email RAG.
 
-Exposes email search as tools that Claude Code can call directly.
+Exposes email search as tools that any MCP client can call directly.
 Run with: python -m src.mcp_server
 
-Claude Code MCP settings (~/.claude.json):
+Example MCP client settings:
 {
     "mcpServers": {
         "email_search": {
@@ -15,19 +15,8 @@ Claude Code MCP settings (~/.claude.json):
     }
 }
 
-Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):
-{
-    "mcpServers": {
-        "email_search": {
-            "command": "/absolute/path/to/.venv/bin/python",
-            "args": ["-m", "src.mcp_server"],
-            "cwd": "/absolute/path/to/outlook-email-rag"
-        }
-    }
-}
-
-IMPORTANT: Use absolute paths — relative paths will fail in GUI apps
-that launch the server from a different working directory.
+IMPORTANT: Use absolute paths when your MCP client launches servers from a
+different working directory.
 """
 
 from __future__ import annotations

@@ -45,8 +45,9 @@ class SparseIndex:
 
     def build_from_db(self, db: EmailDatabase) -> None:
         """Build the inverted index from all sparse vectors in SQLite."""
-        all_vecs = db.all_sparse_vectors()
-        self.build_from_vectors(all_vecs)
+        # Stream directly from SQLite to avoid materializing the sparse corpus
+        # and the inverted index in memory at the same time.
+        self.build_from_iterable(db.iter_sparse_vectors())
 
     def build_from_vectors(self, vectors: dict[str, dict[int, float]]) -> None:
         """Build the inverted index from a dict of {chunk_id: {token_id: weight}}.
@@ -72,6 +73,34 @@ class SparseIndex:
             self._inverted = new_inverted
             self._doc_norms = new_norms
             self._doc_count = len(vectors)
+            self._built = True
+
+        logger.info(
+            "Sparse index built: %d documents, %d unique tokens",
+            self._doc_count,
+            len(new_inverted),
+        )
+
+    def build_from_iterable(self, vectors) -> None:
+        """Build the inverted index from an iterable of sparse vectors."""
+        new_inverted: dict[int, list[tuple[str, float]]] = {}
+        new_norms: dict[str, float] = {}
+        doc_count = 0
+
+        for chunk_id, sv in vectors:
+            doc_count += 1
+            norm = 0.0
+            for token_id, weight in sv.items():
+                if weight <= 0:
+                    continue
+                new_inverted.setdefault(token_id, []).append((chunk_id, weight))
+                norm += weight * weight
+            new_norms[chunk_id] = math.sqrt(norm) if norm > 0 else 0.0
+
+        with self._lock:
+            self._inverted = new_inverted
+            self._doc_norms = new_norms
+            self._doc_count = doc_count
             self._built = True
 
         logger.info(

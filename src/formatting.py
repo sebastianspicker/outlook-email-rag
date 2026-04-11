@@ -70,7 +70,7 @@ def build_email_header(email_dict: Mapping[str, Any]) -> str:
 
 
 def build_result_header(metadata: Mapping[str, Any]) -> str:
-    """Build result header used in Claude context formatting.
+    """Build result header used in LLM context formatting.
 
     Compact format: date truncated to date-only, ``Folder: Inbox`` omitted
     (most common folder, low information value).
@@ -147,6 +147,72 @@ def truncate_body(text: str | None, max_chars: int) -> str:
     )
 
 
+def resolve_body_for_render(email_dict: Mapping[str, Any], render_mode: str = "retrieval") -> tuple[str, str]:
+    """Resolve the body text and provenance for a requested render mode."""
+    mode = "forensic" if render_mode == "forensic" else "retrieval"
+    if mode == "forensic":
+        forensic_text = (email_dict.get("forensic_body_text") or "").strip()
+        if forensic_text:
+            return forensic_text, str(email_dict.get("forensic_body_source") or "forensic_body_text")
+    return (email_dict.get("body_text") or ""), str(email_dict.get("normalized_body_source") or "body_text")
+
+
+def weak_message_semantics(email_dict: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a consistent answer-facing explanation for weak message bodies."""
+    body_kind = str(email_dict.get("body_kind") or "")
+    body_empty_reason = str(email_dict.get("body_empty_reason") or "")
+    recovery_strategy = str(email_dict.get("recovery_strategy") or "")
+    recovery_confidence = float(email_dict.get("recovery_confidence") or 0.0)
+
+    if body_empty_reason == "image_only":
+        return {
+            "is_weak": True,
+            "code": "image_only",
+            "label": "Image-only message",
+            "explanation": "The message matched, but no recoverable body text was found beyond image-backed content.",
+            "body_kind": body_kind or "content",
+            "body_empty_reason": body_empty_reason,
+            "recovery_strategy": recovery_strategy,
+            "recovery_confidence": recovery_confidence,
+        }
+    if body_empty_reason == "source_shell_only":
+        return {
+            "is_weak": True,
+            "code": "source_shell_only",
+            "label": "Source-shell message",
+            "explanation": (
+                "The message matched, but only source-shell structure or metadata was recoverable, not visible authored text."
+            ),
+            "body_kind": body_kind or "content",
+            "body_empty_reason": body_empty_reason,
+            "recovery_strategy": recovery_strategy,
+            "recovery_confidence": recovery_confidence,
+        }
+    if body_empty_reason == "metadata_only_reply":
+        return {
+            "is_weak": True,
+            "code": "metadata_only_reply",
+            "label": "Metadata-only reply",
+            "explanation": "The reply matched, but only reply metadata was recoverable; no authored reply body text was found.",
+            "body_kind": body_kind or "content",
+            "body_empty_reason": body_empty_reason,
+            "recovery_strategy": recovery_strategy,
+            "recovery_confidence": recovery_confidence,
+        }
+    if body_empty_reason == "true_blank":
+        return {
+            "is_weak": True,
+            "code": "true_blank",
+            "label": "Blank message",
+            "explanation": "The message matched, but no recoverable body text was present in the export surfaces.",
+            "body_kind": body_kind or "empty",
+            "body_empty_reason": body_empty_reason,
+            "recovery_strategy": recovery_strategy,
+            "recovery_confidence": recovery_confidence,
+        }
+    return None
+
+
 def format_context_block(
     text: str,
     metadata: Mapping[str, Any],
@@ -154,14 +220,14 @@ def format_context_block(
     *,
     max_body_chars: int = 0,
 ) -> str:
-    """Format a single result block for Claude context."""
+    """Format a single result block for LLM context."""
     header = build_result_header(metadata)
     body = truncate_body(text, max_body_chars)
     return f"---\n{header}\nRelevance: {score:.2f}\n---\n{body}\n"
 
 
 def estimate_tokens(text: str | None) -> int:
-    """Rough token estimate for Claude context budgeting (~4 chars per token)."""
+    """Rough token estimate for LLM context budgeting (~4 chars per token)."""
     if not text:
         return 1
     return max(1, len(text) // 4)

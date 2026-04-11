@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from ..config import get_settings
-from ..formatting import truncate_body
+from ..formatting import resolve_body_for_render, truncate_body, weak_message_semantics
 from ..mcp_models import (
     BrowseInput,
     EmailDeepContextInput,
@@ -15,6 +16,35 @@ from ..mcp_models import (
 from .utils import ToolDepsProto, json_error, json_response, run_with_db
 
 logger = logging.getLogger(__name__)
+
+
+def _thread_graph_for_email(email: dict[str, Any]) -> dict[str, Any]:
+    """Return canonical vs inferred thread graph fields for one email."""
+    references = email.get("references") or []
+    if not references and email.get("references_json"):
+        try:
+            references = json.loads(str(email.get("references_json") or "[]"))
+        except json.JSONDecodeError:
+            references = []
+    if not isinstance(references, list):
+        references = []
+    canonical: dict[str, Any] = {
+        "conversation_id": str(email.get("conversation_id") or ""),
+        "in_reply_to": str(email.get("in_reply_to") or ""),
+        "references": [str(reference) for reference in references if reference],
+    }
+    canonical["has_thread_links"] = bool(canonical["conversation_id"] or canonical["in_reply_to"] or canonical["references"])
+    inferred: dict[str, Any] = {
+        "parent_uid": str(email.get("inferred_parent_uid") or ""),
+        "thread_id": str(email.get("inferred_thread_id") or ""),
+        "reason": str(email.get("inferred_match_reason") or ""),
+        "confidence": float(email.get("inferred_match_confidence") or 0.0),
+    }
+    inferred["has_parent_link"] = bool(inferred["parent_uid"] or inferred["thread_id"])
+    return {
+        "canonical": canonical,
+        "inferred": inferred,
+    }
 
 
 def register(mcp: Any, deps: ToolDepsProto) -> None:
@@ -40,9 +70,10 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                         params.uid,
                         params.output_path,
                         fmt=params.format,
+                        render_mode=params.render_mode,
                     )
                 else:
-                    result = exporter.export_single_html(params.uid)
+                    result = exporter.export_single_html(params.uid, render_mode=params.render_mode)
             else:
                 if params.conversation_id is None:
                     return json_error("Provide either uid or conversation_id.")
@@ -51,9 +82,10 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                         params.conversation_id,
                         params.output_path,
                         fmt=params.format,
+                        render_mode=params.render_mode,
                     )
                 else:
-                    result = exporter.export_thread_html(params.conversation_id)
+                    result = exporter.export_thread_html(params.conversation_id, render_mode=params.render_mode)
             return json_response(result)
 
         return await run_with_db(deps, _work)
@@ -105,8 +137,14 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 for email in page["emails"]:
                     full = full_map.get(email["uid"])
                     if full:
-                        body = deps.sanitize(full.get("body_text") or "")
+                        body_text, body_source = resolve_body_for_render(full, params.render_mode)
+                        body = deps.sanitize(body_text)
                         email["body_text"] = truncate_body(body, max_chars)
+                        email["body_render_mode"] = params.render_mode
+                        email["body_render_source"] = body_source
+                        weak_message = weak_message_semantics(full)
+                        if weak_message:
+                            email["weak_message"] = weak_message
 
             return json_response(page)
 
@@ -131,7 +169,13 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
             if not email:
                 return json_error(f"Email not found: {params.uid}. Verify the UID is correct.")
             # Sanitize untrusted email body content
-            email["body_text"] = deps.sanitize(email.get("body_text") or "")
+            body_text, body_source = resolve_body_for_render(email, params.render_mode)
+            email["body_text"] = deps.sanitize(body_text)
+            email["body_render_mode"] = params.render_mode
+            email["body_render_source"] = body_source
+            weak_message = weak_message_semantics(email)
+            if weak_message:
+                email["weak_message"] = weak_message
             max_body = params.max_body_chars
             # When the caller didn't explicitly set max_body_chars (None sentinel),
             # honour the model-profile setting.
@@ -223,6 +267,30 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                     except Exception:
                         logger.debug("Failed to count emails for sender %s", sender_email, exc_info=True)
                     result["sender"] = sender
+
+            if params.include_conversation_debug:
+                segments = email.get("segments")
+                if segments is None:
+                    segments = db.conn.execute(
+                        """SELECT ordinal, segment_type, depth, text, source_surface, provenance_json
+                           FROM message_segments
+                           WHERE email_uid = ?
+                           ORDER BY ordinal ASC""",
+                        (params.uid,),
+                    ).fetchall()
+                thread_graph = _thread_graph_for_email(email)
+                inferred_thread = {
+                    "parent_uid": thread_graph["inferred"]["parent_uid"],
+                    "thread_id": thread_graph["inferred"]["thread_id"],
+                    "reason": thread_graph["inferred"]["reason"],
+                    "confidence": thread_graph["inferred"]["confidence"],
+                }
+                result["conversation_debug"] = {
+                    "segment_count": len(segments),
+                    "segments": [dict(segment) if not isinstance(segment, dict) else segment for segment in segments],
+                    "canonical_thread": thread_graph["canonical"],
+                    "inferred_thread": inferred_thread,
+                }
 
             return json_response(result, default=str)
 

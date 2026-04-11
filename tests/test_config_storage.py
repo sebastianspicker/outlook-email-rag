@@ -71,6 +71,49 @@ def test_settings_device_from_env(monkeypatch):
     assert settings.device == "cpu"
 
 
+def test_runtime_profile_quality_sets_retrieval_defaults(monkeypatch):
+    from src.config import Settings
+
+    monkeypatch.setenv("RUNTIME_PROFILE", "quality")
+    for var in [
+        "RERANK_ENABLED",
+        "HYBRID_ENABLED",
+        "SPARSE_ENABLED",
+        "COLBERT_RERANK_ENABLED",
+        "EMBEDDING_LOAD_MODE",
+    ]:
+        monkeypatch.delenv(var, raising=False)
+
+    settings = Settings.from_env()
+    assert settings.runtime_profile == "quality"
+    assert settings.rerank_enabled is True
+    assert settings.hybrid_enabled is True
+    assert settings.sparse_enabled is True
+    assert settings.colbert_rerank_enabled is True
+    assert settings.embedding_load_mode == "auto"
+
+
+def test_runtime_profile_offline_test_sets_local_only(monkeypatch):
+    from src.config import Settings
+
+    monkeypatch.setenv("RUNTIME_PROFILE", "offline-test")
+    monkeypatch.delenv("EMBEDDING_LOAD_MODE", raising=False)
+    settings = Settings.from_env()
+    assert settings.runtime_profile == "offline-test"
+    assert settings.embedding_load_mode == "local_only"
+
+
+def test_env_override_wins_over_runtime_profile(monkeypatch):
+    from src.config import Settings
+
+    monkeypatch.setenv("RUNTIME_PROFILE", "quality")
+    monkeypatch.setenv("RERANK_ENABLED", "false")
+    monkeypatch.setenv("EMBEDDING_LOAD_MODE", "download")
+    settings = Settings.from_env()
+    assert settings.rerank_enabled is False
+    assert settings.embedding_load_mode == "download"
+
+
 # --- resolve_device tests ---
 
 
@@ -182,6 +225,48 @@ def test_resolve_embedding_batch_size_mps_detection_fallback(monkeypatch):
 
     assert config._get_system_memory_gb() == 8.0
     assert config.resolve_embedding_batch_size("mps") == 16
+
+
+def test_should_enable_image_embedding_low_memory(monkeypatch):
+    from src import config
+
+    monkeypatch.delenv("IMAGE_EMBED_ALLOW_LOW_MEMORY", raising=False)
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 16.0)
+    assert config.should_enable_image_embedding() is False
+
+
+def test_should_enable_image_embedding_override(monkeypatch):
+    from src import config
+
+    monkeypatch.setenv("IMAGE_EMBED_ALLOW_LOW_MEMORY", "1")
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 16.0)
+    assert config.should_enable_image_embedding() is True
+
+
+def test_resolve_runtime_summary_reports_effective_state(monkeypatch):
+    from src import config
+
+    monkeypatch.setattr(config, "resolve_device", lambda _device: "mps")
+    monkeypatch.setattr(config, "resolve_embedding_batch_size", lambda _device: 32)
+    monkeypatch.setattr(config, "_get_system_memory_gb", lambda: 16.0)
+    monkeypatch.delenv("MPS_CACHE_CLEAR_ENABLED", raising=False)
+
+    settings = config.Settings(
+        device="auto",
+        runtime_profile="quality",
+        sparse_enabled=True,
+        hybrid_enabled=True,
+        rerank_enabled=True,
+        colbert_rerank_enabled=True,
+        embedding_batch_size=0,
+        embedding_load_mode="local_only",
+    )
+    summary = config.resolve_runtime_summary(settings)
+    assert summary["runtime_profile"] == "quality"
+    assert summary["resolved_device"] == "mps"
+    assert summary["resolved_batch_size"] == 32
+    assert summary["embedding_load_mode"] == "local_only"
+    assert summary["image_embedding_allowed"] is False
 
 
 def test_iter_collection_ids_returns_all_pages():

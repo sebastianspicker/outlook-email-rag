@@ -73,6 +73,8 @@ class TestSchemaIdempotency:
         expected = {
             "schema_version",
             "emails",
+            "message_segments",
+            "conversation_edges",
             "recipients",
             "contacts",
             "communication_edges",
@@ -102,12 +104,31 @@ class TestSchemaIdempotency:
         assert "uid" in cols
         assert "subject" in cols
         assert "ingestion_run_id" in cols  # v9 column
+        assert "normalized_body_source" in cols
+        assert "body_normalization_version" in cols
+        assert "body_kind" in cols
+        assert "body_empty_reason" in cols
+        assert "recovery_strategy" in cols
+        assert "recovery_confidence" in cols
+        assert "to_identities_json" in cols
+        assert "cc_identities_json" in cols
+        assert "bcc_identities_json" in cols
+        assert "recipient_identity_source" in cols
+        assert "reply_context_from" in cols
+        assert "reply_context_to_json" in cols
+        assert "reply_context_subject" in cols
+        assert "reply_context_date" in cols
+        assert "reply_context_source" in cols
+        assert "inferred_parent_uid" in cols
+        assert "inferred_thread_id" in cols
+        assert "inferred_match_reason" in cols
+        assert "inferred_match_confidence" in cols
         conn.close()
 
-    def test_schema_version_is_9(self):
+    def test_schema_version_matches_current_schema(self):
         db = EmailDatabase(":memory:")
         row = db.conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-        assert row["v"] == 9
+        assert row["v"] == _SCHEMA_VERSION
         db.close()
 
 

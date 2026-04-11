@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 
+from . import db_schema_migrations as migration_family
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ def _table_columns(cur: sqlite3.Cursor, table: str) -> set[str]:
     return {row[1] for row in cur.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
-_SCHEMA_VERSION = 9
+_SCHEMA_VERSION = 18
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -48,7 +50,52 @@ CREATE TABLE IF NOT EXISTS emails (
     base_subject     TEXT,
     body_length      INTEGER,
     body_text        TEXT,
-    body_html        TEXT
+    body_html        TEXT,
+    raw_body_text    TEXT,
+    raw_body_html    TEXT,
+    raw_source       TEXT,
+    raw_source_headers_json TEXT DEFAULT '{}',
+    forensic_body_text TEXT,
+    forensic_body_source TEXT DEFAULT '',
+    normalized_body_source TEXT DEFAULT 'body_text',
+    body_normalization_version INTEGER DEFAULT 11,
+    body_kind TEXT DEFAULT 'content',
+    body_empty_reason TEXT DEFAULT '',
+    recovery_strategy TEXT DEFAULT '',
+    recovery_confidence REAL DEFAULT 0,
+    to_identities_json TEXT DEFAULT '[]',
+    cc_identities_json TEXT DEFAULT '[]',
+    bcc_identities_json TEXT DEFAULT '[]',
+    recipient_identity_source TEXT DEFAULT '',
+    reply_context_from TEXT DEFAULT '',
+    reply_context_to_json TEXT DEFAULT '[]',
+    reply_context_subject TEXT DEFAULT '',
+    reply_context_date TEXT DEFAULT '',
+    reply_context_source TEXT DEFAULT '',
+    inferred_parent_uid TEXT DEFAULT '',
+    inferred_thread_id TEXT DEFAULT '',
+    inferred_match_reason TEXT DEFAULT '',
+    inferred_match_confidence REAL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS message_segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_uid TEXT NOT NULL REFERENCES emails(uid) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL,
+    segment_type TEXT NOT NULL,
+    depth INTEGER DEFAULT 0,
+    text TEXT NOT NULL,
+    source_surface TEXT NOT NULL,
+    provenance_json TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS conversation_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_uid TEXT NOT NULL REFERENCES emails(uid) ON DELETE CASCADE,
+    parent_uid TEXT NOT NULL REFERENCES emails(uid) ON DELETE CASCADE,
+    edge_type TEXT NOT NULL,
+    reason TEXT DEFAULT '',
+    confidence REAL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender_email);
@@ -58,6 +105,9 @@ CREATE INDEX IF NOT EXISTS idx_emails_conversation ON emails(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_emails_message_id ON emails(message_id);
 CREATE INDEX IF NOT EXISTS idx_emails_in_reply_to ON emails(in_reply_to);
 CREATE INDEX IF NOT EXISTS idx_emails_base_subject ON emails(base_subject);
+CREATE INDEX IF NOT EXISTS idx_message_segments_email_uid ON message_segments(email_uid, ordinal);
+CREATE INDEX IF NOT EXISTS idx_conversation_edges_child ON conversation_edges(child_uid);
+CREATE INDEX IF NOT EXISTS idx_conversation_edges_parent ON conversation_edges(parent_uid);
 
 CREATE TABLE IF NOT EXISTS recipients (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,7 +277,12 @@ CREATE TABLE IF NOT EXISTS attachments (
     mime_type TEXT,
     size INTEGER DEFAULT 0,
     content_id TEXT,
-    is_inline INTEGER DEFAULT 0
+    is_inline INTEGER DEFAULT 0,
+    extraction_state TEXT DEFAULT '',
+    evidence_strength TEXT DEFAULT '',
+    ocr_used INTEGER DEFAULT 0,
+    failure_reason TEXT DEFAULT '',
+    text_preview TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_uid ON attachments(email_uid);
 CREATE INDEX IF NOT EXISTS idx_attachments_inline ON attachments(is_inline);
@@ -257,117 +312,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
     cur.executescript(_SPARSE_SCHEMA_SQL)
     cur.executescript(_ATTACHMENTS_SCHEMA_SQL)
     cur.executescript(_CATEGORIES_SCHEMA_SQL)
-    row = cur.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
-    current = row[0] if row and row[0] else 0
-    if current < 3:
-        _migrate_to_v3(cur)
-    if current < 4:
-        _migrate_to_v4(cur)
-    if current < 5:
-        _migrate_to_v5(cur)
-    if current < 6:
-        _migrate_to_v6(cur)
-    if current < 7:
-        _migrate_to_v7(cur)
-    if current < 8:
-        _migrate_to_v8(cur)
-    if current < 9:
-        _migrate_to_v9(cur)
-    if current < _SCHEMA_VERSION:
-        cur.execute(
-            "INSERT OR REPLACE INTO schema_version(version) VALUES(?)",
-            (_SCHEMA_VERSION,),
-        )
-    conn.commit()
-
-
-def _migrate_to_v3(cur: sqlite3.Cursor) -> None:
-    """Add body_text and body_html columns (schema v3)."""
-    existing = _table_columns(cur, "emails")
-    if "body_text" not in existing:
-        cur.execute("ALTER TABLE emails ADD COLUMN body_text TEXT")
-        logger.info("Schema migration v3: added body_text column")
-    if "body_html" not in existing:
-        cur.execute("ALTER TABLE emails ADD COLUMN body_html TEXT")
-        logger.info("Schema migration v3: added body_html column")
-
-
-def _migrate_to_v4(cur: sqlite3.Cursor) -> None:
-    """Add chain-of-custody columns and tables (schema v4)."""
-    ir_cols = _table_columns(cur, "ingestion_runs")
-    if "olm_sha256" not in ir_cols:
-        cur.execute("ALTER TABLE ingestion_runs ADD COLUMN olm_sha256 TEXT")
-        cur.execute("ALTER TABLE ingestion_runs ADD COLUMN file_size_bytes INTEGER")
-        cur.execute("ALTER TABLE ingestion_runs ADD COLUMN custodian TEXT DEFAULT 'system'")
-        logger.info("Schema migration v4: added ingestion_runs custody columns")
-
-    em_cols = _table_columns(cur, "emails")
-    if "content_sha256" not in em_cols:
-        cur.execute("ALTER TABLE emails ADD COLUMN content_sha256 TEXT")
-        logger.info("Schema migration v4: added emails.content_sha256")
-
-    ev_cols = _table_columns(cur, "evidence_items")
-    if "content_hash" not in ev_cols:
-        cur.execute("ALTER TABLE evidence_items ADD COLUMN content_hash TEXT")
-        cur.execute("ALTER TABLE evidence_items ADD COLUMN ingestion_run_id INTEGER")
-        logger.info("Schema migration v4: added evidence_items custody columns")
-
-
-def _migrate_to_v5(cur: sqlite3.Cursor) -> None:
-    """Add sparse_vectors table (schema v5)."""
-    cur.executescript(_SPARSE_SCHEMA_SQL)
-    logger.info("Schema migration v5: created sparse_vectors table")
-
-
-def _migrate_to_v6(cur: sqlite3.Cursor) -> None:
-    """Add composite indexes for common query patterns (schema v6)."""
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_sender_date ON emails(sender_email, date)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_folder_date ON emails(folder, date)")
-    logger.info("Schema migration v6: added composite indexes (sender_date, folder_date)")
-
-
-def _migrate_to_v7(cur: sqlite3.Cursor) -> None:
-    """Add categories, calendar, thread_topic, references_json columns + tables (schema v7)."""
-    existing = _table_columns(cur, "emails")
-    new_cols = {
-        "categories": "TEXT",
-        "thread_topic": "TEXT",
-        "inference_classification": "TEXT",
-        "is_calendar_message": "INTEGER DEFAULT 0",
-        "references_json": "TEXT",
-    }
-    for col, col_type in new_cols.items():
-        if col not in existing:
-            cur.execute(f"ALTER TABLE emails ADD COLUMN {col} {col_type}")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_calendar ON emails(is_calendar_message, date)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_inference ON emails(inference_classification)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_thread_topic ON emails(thread_topic)")
-    logger.info("Schema migration v7: added categories, calendar, thread_topic, references_json columns + tables")
-
-
-def _migrate_to_v8(cur: sqlite3.Cursor) -> None:
-    """Add language detection and sentiment analysis columns (schema v8)."""
-    existing = _table_columns(cur, "emails")
-    new_cols = {
-        "detected_language": "TEXT",
-        "sentiment_label": "TEXT",
-        "sentiment_score": "REAL",
-    }
-    for col, col_type in new_cols.items():
-        if col not in existing:
-            cur.execute(f"ALTER TABLE emails ADD COLUMN {col} {col_type}")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_language ON emails(detected_language)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_sentiment ON emails(sentiment_label)")
-    logger.info("Schema migration v8: added detected_language, sentiment_label, sentiment_score columns")
-
-
-def _migrate_to_v9(cur: sqlite3.Cursor) -> None:
-    """Add ingestion_run_id to emails for provenance tracking (schema v9)."""
-    existing = _table_columns(cur, "emails")
-    if "ingestion_run_id" not in existing:
-        cur.execute("ALTER TABLE emails ADD COLUMN ingestion_run_id INTEGER")
-        logger.info("Schema migration v9: added emails.ingestion_run_id")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_ingestion_run ON emails(ingestion_run_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_evidence_category_relevance ON evidence_items(category, relevance)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_emails_type_date ON emails(email_type, date)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_recipients_uid_type ON recipients(email_uid, type)")
+    migration_family.apply_pending_migrations_impl(
+        conn,
+        cur,
+        schema_version=_SCHEMA_VERSION,
+        table_columns=_table_columns,
+        sparse_schema_sql=_SPARSE_SCHEMA_SQL,
+    )

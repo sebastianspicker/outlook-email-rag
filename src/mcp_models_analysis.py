@@ -6,12 +6,54 @@ from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from .mcp_models_analysis_case_events import TriggerEventInput
+from .mcp_models_analysis_case_parties import (
+    BehavioralOrgContextInput,
+    CasePartyInput,
+    DependencyRelationInput,
+    ReportingLineInput,
+    RoleFactInput,
+    VulnerabilityContextInput,
+)
+from .mcp_models_analysis_case_scope import BehavioralCaseScopeInput
 from .mcp_models_base import (
     DateRangeInput,
     PlainInput,
     StrictInput,
     _validate_output_path,
 )
+
+__all__ = [
+    "ActionItemsInput",
+    "BehavioralCaseScopeInput",
+    "BehavioralOrgContextInput",
+    "CasePartyInput",
+    "CoordinatedTimingInput",
+    "DecisionsInput",
+    "DependencyRelationInput",
+    "EmailAdminInput",
+    "EmailAttachmentsInput",
+    "EmailClustersInput",
+    "EmailContactsInput",
+    "EmailQualityInput",
+    "EmailReportInput",
+    "EmailTemporalInput",
+    "EmailThreadLookupInput",
+    "EmailTopicsInput",
+    "EntityNetworkInput",
+    "EntitySearchInput",
+    "EntityTimelineInput",
+    "ListEntitiesInput",
+    "NetworkAnalysisInput",
+    "RelationshipPathsInput",
+    "RelationshipSummaryInput",
+    "ReportingLineInput",
+    "RoleFactInput",
+    "SharedRecipientsInput",
+    "ThreadSummaryInput",
+    "TriggerEventInput",
+    "VulnerabilityContextInput",
+]
 
 # ── Network Analysis Inputs ──────────────────────────────────
 
@@ -373,7 +415,7 @@ class EmailAttachmentsInput(StrictInput):
 class EmailAdminInput(StrictInput):
     """Input for admin/diagnostic operations.
 
-    action='diagnostics': show system info (no extra params needed).
+    action='diagnostics': show resolved runtime settings, embedder state, and MCP budgets.
     action='reingest_bodies': re-parse OLM bodies (requires olm_path).
     action='reembed': re-embed all chunks (optional batch_size).
     action='reingest_metadata': backfill v7 metadata (requires olm_path).

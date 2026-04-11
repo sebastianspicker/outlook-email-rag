@@ -247,10 +247,24 @@ def _extract_attachment_field(
     if el is not None and el.text:
         return el.text.strip()
 
-    # Strategy 2: XML attributes (fuzzy matching)
-    hint_lower = attr_hint.lower()
+    # Strategy 2: exact/case-insensitive attachment attributes
+    expected_names = {
+        tag.casefold(),
+        attr_hint.casefold(),
+    }
     for attr_name, attr_value in att.attrib.items():
-        if hint_lower in attr_name.lower() and str(attr_value).strip():
+        local_name = etree.QName(attr_name).localname.casefold()
+        if local_name in expected_names and str(attr_value).strip():
+            return str(attr_value).strip()
+
+    # Strategy 3: XML attributes (bounded fuzzy matching)
+    hint_lower = attr_hint.casefold()
+    tag_lower = tag.casefold()
+    for attr_name, attr_value in att.attrib.items():
+        local_name = etree.QName(attr_name).localname.casefold()
+        if local_name.startswith("xml"):
+            continue
+        if (hint_lower in local_name or tag_lower in local_name) and str(attr_value).strip():
             return str(attr_value).strip()
 
     return ""

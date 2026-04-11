@@ -128,6 +128,18 @@ def test_db_all_sparse_vectors():
     assert 30 in all_vecs["y"]
 
 
+def test_db_iter_sparse_vectors():
+    db = EmailDatabase(":memory:")
+    db.insert_sparse_batch(
+        ["x", "y"],
+        [{10: 0.8, 20: 0.3}, {30: 0.9}],
+    )
+    rows = dict(db.iter_sparse_vectors())
+    assert len(rows) == 2
+    assert 10 in rows["x"]
+    assert 30 in rows["y"]
+
+
 def test_db_insert_sparse_skips_empty():
     db = EmailDatabase(":memory:")
     inserted = db.insert_sparse_batch(["a", "b"], [{1: 0.5}, {}])

@@ -6,11 +6,13 @@ from typing import Any
 
 from ..formatting import format_triage_results
 from ..mcp_models import (
+    EmailAnswerContextInput,
     EmailIngestInput,
     EmailSearchStructuredInput,
     EmailTriageInput,
     ListSendersInput,
 )
+from .search_answer_context import build_answer_context
 from .utils import ToolDepsProto, get_deps, json_error, json_response, run_with_retriever
 
 # Thread-safety note: _deps is written once during single-threaded module
@@ -58,6 +60,11 @@ def _build_search_kwargs(params: EmailSearchStructuredInput) -> dict[str, Any]:
         if getattr(params, field):
             kwargs[field] = True
     return kwargs
+
+
+async def email_answer_context(params: EmailAnswerContextInput) -> str:
+    """Build an answer-oriented evidence bundle for a natural-language question."""
+    return await build_answer_context(_d(), params)
 
 
 async def email_list_senders(params: ListSendersInput) -> str:
@@ -205,19 +212,19 @@ async def email_ingest(params: EmailIngestInput) -> str:
         # The retriever and email_db singletons may hold stale state
         # (BM25/sparse indices, query caches, etc.) from before ingestion.
         if not params.dry_run:
-            _invalidate_singletons_after_ingest()
+            invalidate_mcp_singletons()
 
         return json_response(stats)
 
     return await _d().offload(_run)
 
 
-def _invalidate_singletons_after_ingest() -> None:
-    """Reset cached retriever and email_db singletons after ingestion.
+def invalidate_mcp_singletons() -> None:
+    """Reset cached retriever and email_db singletons after archive mutations.
 
     The retriever caches BM25/sparse indices, query embeddings, and the
-    ChromaDB collection reference.  After new data is ingested these caches
-    are stale.  Re-creating the singletons forces a fresh load.
+    ChromaDB collection reference. After ingest or maintenance writes these
+    caches are stale. Re-creating the singletons forces a fresh load.
     """
     import src.mcp_server as _server
 
@@ -225,6 +232,11 @@ def _invalidate_singletons_after_ingest() -> None:
         _server._retriever = None
     with _server._email_db_lock:
         _server._email_db = None
+
+
+def _invalidate_singletons_after_ingest() -> None:
+    """Backward-compatible alias for older imports/tests."""
+    invalidate_mcp_singletons()
 
 
 def _archive_stats_hint(retriever: Any) -> dict[str, Any]:
@@ -305,6 +317,7 @@ def register(mcp_instance: Any, deps: ToolDepsProto) -> None:
     # email_search removed — subsumed by email_search_structured (no filters = same)
     mcp_instance.tool(name="email_list_senders", annotations=ann("List Email Senders"))(email_list_senders)
     mcp_instance.tool(name="email_stats", annotations=ann("Email Archive Stats"))(email_stats)
+    mcp_instance.tool(name="email_answer_context", annotations=ann("Question-to-Evidence Context"))(email_answer_context)
     mcp_instance.tool(name="email_search_structured", annotations=ann("Search Emails (Structured JSON)"))(email_search_structured)
     mcp_instance.tool(name="email_list_folders", annotations=ann("List Email Folders"))(email_list_folders)
     mcp_instance.tool(name="email_ingest", annotations=deps.idempotent_write_annotations("Ingest Email Archive"))(email_ingest)
