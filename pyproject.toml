@@ -22,7 +22,7 @@ dependencies = [
     "jinja2>=3.0.0",
     "spacy>=3.7.0",
     "textstat>=0.7.0",
-    "python-dotenv>=1.0.0",
+    "python-dotenv>=1.2.2",
     "rich>=13.0.0",
     "streamlit>=1.40.0",
     # Security: minimum versions for transitive deps with known CVEs
