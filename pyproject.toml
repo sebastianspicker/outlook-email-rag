@@ -23,7 +23,7 @@ dependencies = [
     "spacy>=3.7.0",
     "textstat>=0.7.0",
     "python-dotenv>=1.0.0",
-    "rich>=13.0.0",
+    "rich>=14.3.4",
     "streamlit>=1.40.0",
     # Security: minimum versions for transitive deps with known CVEs
     "PyJWT>=2.12.0",  # CVE-2026-32597 (required by mcp)
