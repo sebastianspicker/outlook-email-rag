@@ -6,6 +6,8 @@ import os
 import time
 from typing import Any
 
+from .attachment_extractor import attachment_format_profile, is_image_attachment
+
 
 def _set_attachment_evidence(
     email,
@@ -16,6 +18,9 @@ def _set_attachment_evidence(
     ocr_used: bool,
     failure_reason: str | None,
     text_preview: str = "",
+    extracted_text: str = "",
+    text_source_path: str = "",
+    text_locator: dict[str, Any] | None = None,
 ) -> None:
     """Persist attachment evidence semantics on the parsed email object."""
     attachments = getattr(email, "attachments", None) or []
@@ -26,6 +31,9 @@ def _set_attachment_evidence(
         attachment["ocr_used"] = bool(ocr_used)
         attachment["failure_reason"] = failure_reason
         attachment["text_preview"] = text_preview
+        attachment["extracted_text"] = extracted_text
+        attachment["text_source_path"] = text_source_path
+        attachment["text_locator"] = dict(text_locator or {})
 
 
 def _attachment_text_preview(text: str, *, max_chars: int = 280) -> str:
@@ -34,6 +42,50 @@ def _attachment_text_preview(text: str, *, max_chars: int = 280) -> str:
     if len(collapsed) <= max_chars:
         return collapsed
     return collapsed[: max_chars - 3].rstrip() + "..."
+
+
+def _mailbox_attachment_locator(*, email_uid: str, att_index: int, filename: str, extraction_state: str) -> dict[str, Any]:
+    return {
+        "kind": "mailbox_attachment",
+        "email_uid": email_uid,
+        "attachment_index": att_index,
+        "filename": filename,
+        "extraction_state": extraction_state,
+    }
+
+
+def _textless_attachment_state(*, filename: str, mime_type: str) -> tuple[str, str]:
+    return _textless_attachment_state_with_ocr(
+        filename=filename,
+        mime_type=mime_type,
+        ocr_attempted=False,
+        ocr_available=False,
+    )
+
+
+def _textless_attachment_state_with_ocr(
+    *,
+    filename: str,
+    mime_type: str,
+    ocr_attempted: bool,
+    ocr_available: bool,
+) -> tuple[str, str]:
+    profile = attachment_format_profile(
+        filename=filename,
+        mime_type=mime_type,
+        extraction_state="binary_only",
+        evidence_strength="weak_reference",
+        ocr_used=False,
+        text_available=False,
+    )
+    if is_image_attachment(filename):
+        if ocr_attempted and ocr_available:
+            return "ocr_failed", "ocr_failed"
+        return "binary_only", "no_text_extracted_ocr_not_available"
+    support_level = str(profile.get("support_level") or "")
+    if support_level == "unsupported":
+        return "unsupported", str(profile.get("degrade_reason") or "unsupported_format")
+    return "binary_only", str(profile.get("degrade_reason") or "no_text_extracted")
 
 
 def _preload_models(embedder, entity_extractor_fn) -> float:
@@ -121,10 +173,14 @@ def ingest_impl(
     entity_extractor_fn = resolve_entity_extractor(extract_entities, dry_run)
 
     attachment_extractor = None
+    attachment_ocr_extractor = None
+    attachment_ocr_available = False
     if extract_attachments:
-        from .attachment_extractor import extract_text
+        from .attachment_extractor import extract_image_text_ocr, extract_text, image_ocr_available
 
         attachment_extractor = extract_text
+        attachment_ocr_extractor = extract_image_text_ocr
+        attachment_ocr_available = image_ocr_available()
 
     image_embedder_fn = None
     is_image_attachment = None
@@ -153,8 +209,9 @@ def ingest_impl(
         olm_sha256 = None
         olm_file_size = None
         if os.path.isfile(olm_path):
-            olm_sha256 = hash_file_sha256(olm_path)
             olm_file_size = os.path.getsize(olm_path)
+            if os.environ.get("INGEST_RECORD_OLM_SHA256", "0") == "1":
+                olm_sha256 = hash_file_sha256(olm_path)
         ingestion_run_id = email_db.record_ingestion_start(
             olm_path,
             olm_sha256=olm_sha256,
@@ -183,28 +240,33 @@ def ingest_impl(
         pipeline.start()
 
     progress = make_progress_bar(max_emails, desc="Ingesting", unit="email")
+    completed_incremental_uids: set[str] = set()
+    if incremental and email_db and not embed_images:
+        completed_incremental_uids = email_db.completed_ingest_uids(
+            attachment_required=extract_attachments,
+        )
 
-    for email in parse_olm(olm_path, extract_attachments=extract_attachments):
+    parser = iter(parse_olm(olm_path, extract_attachments=extract_attachments))
+    while True:
         t_parse_start = time.monotonic()
+        try:
+            email = next(parser)
+        except StopIteration:
+            break
+        parse_seconds += time.monotonic() - t_parse_start
         total_emails += 1
 
-        if incremental and email_db and email_db.email_exists(email.uid):
-            chroma_ok = True
-            if embedder and hasattr(embedder, "collection"):
-                try:
-                    existing = embedder.collection.get(ids=[f"{email.uid}__0"], include=[])
-                    chroma_ok = bool(existing and existing.get("ids"))
-                except Exception:
-                    chroma_ok = False
-            if chroma_ok:
-                total_skipped_incremental += 1
-                progress.update(1)
-                parse_seconds += time.monotonic() - t_parse_start
-                continue
+        if incremental and completed_incremental_uids and email.uid in completed_incremental_uids:
+            total_skipped_incremental += 1
+            progress.update(1)
+            continue
 
         email_dict = email.to_dict()
         chunks = chunk_email(email_dict)
         total_chunks_created += len(chunks)
+        body_chunk_count = len(chunks)
+        attachment_chunk_count = 0
+        image_chunk_count = 0
         if embedder:
             pending_chunks.extend(chunks)
         if email_db:
@@ -214,6 +276,10 @@ def ingest_impl(
             from .chunker import EmailChunk
 
             for att_i, (att_name, att_bytes) in enumerate(email.attachment_contents):
+                mime_type = ""
+                attachments = getattr(email, "attachments", None) or []
+                if 0 <= att_i < len(attachments):
+                    mime_type = str((attachments[att_i] or {}).get("mime_type") or "")
                 if image_embedder_fn and is_image_attachment and is_image_attachment(att_name):
                     img_embedding = image_embedder_fn(att_name, att_bytes)
                     _set_attachment_evidence(
@@ -222,8 +288,16 @@ def ingest_impl(
                         extraction_state="image_embedding_only",
                         evidence_strength="weak_reference",
                         ocr_used=False,
-                        failure_reason="no_text_extracted",
+                        failure_reason="no_text_extracted_ocr_not_available",
                         text_preview="",
+                        extracted_text="",
+                        text_source_path="",
+                        text_locator=_mailbox_attachment_locator(
+                            email_uid=email.uid,
+                            att_index=att_i,
+                            filename=att_name,
+                            extraction_state="image_embedding_only",
+                        ),
                     )
                     if img_embedding and embedder:
                         img_chunk = EmailChunk(
@@ -249,18 +323,37 @@ def ingest_impl(
                         pending_chunks.append(img_chunk)
                         total_chunks_created += 1
                         total_image_embeddings += 1
+                        image_chunk_count += 1
                     continue
 
-                att_text = attachment_extractor(att_name, att_bytes)
+                att_text = attachment_extractor(att_name, att_bytes, mime_type=mime_type)
+                ocr_used = False
+                extraction_state = "text_extracted"
+                failure_reason = None
+                if not att_text and attachment_ocr_extractor:
+                    ocr_text = attachment_ocr_extractor(att_name, att_bytes)
+                    if ocr_text:
+                        att_text = ocr_text
+                        ocr_used = True
+                        extraction_state = "ocr_text_extracted"
                 if att_text:
+                    locator = _mailbox_attachment_locator(
+                        email_uid=email.uid,
+                        att_index=att_i,
+                        filename=att_name,
+                        extraction_state=extraction_state,
+                    )
                     _set_attachment_evidence(
                         email,
                         att_index=att_i,
-                        extraction_state="text_extracted",
+                        extraction_state=extraction_state,
                         evidence_strength="strong_text",
-                        ocr_used=False,
-                        failure_reason=None,
+                        ocr_used=ocr_used,
+                        failure_reason=failure_reason,
                         text_preview=_attachment_text_preview(att_text),
+                        extracted_text=att_text,
+                        text_source_path=f"attachment://{email.uid}/{att_i}/{att_name}",
+                        text_locator=locator,
                     )
                     att_chunks = chunk_attachment(
                         email_uid=email.uid,
@@ -275,28 +368,48 @@ def ingest_impl(
                             "folder": email_dict.get("folder", ""),
                         },
                         att_index=att_i,
-                        extraction_state="text_extracted",
+                        extraction_state=extraction_state,
                         evidence_strength="strong_text",
-                        ocr_used=False,
-                        failure_reason=None,
+                        ocr_used=ocr_used,
+                        failure_reason=failure_reason,
                     )
                     total_chunks_created += len(att_chunks)
                     total_attachment_chunks += len(att_chunks)
+                    attachment_chunk_count += len(att_chunks)
                     if embedder:
                         pending_chunks.extend(att_chunks)
                 else:
+                    extraction_state, failure_reason = _textless_attachment_state_with_ocr(
+                        filename=att_name,
+                        mime_type=mime_type,
+                        ocr_attempted=bool(attachment_ocr_extractor),
+                        ocr_available=attachment_ocr_available,
+                    )
                     _set_attachment_evidence(
                         email,
                         att_index=att_i,
-                        extraction_state="binary_only",
+                        extraction_state=extraction_state,
                         evidence_strength="weak_reference",
                         ocr_used=False,
-                        failure_reason="no_text_extracted",
+                        failure_reason=failure_reason,
                         text_preview="",
+                        extracted_text="",
+                        text_source_path="",
+                        text_locator=_mailbox_attachment_locator(
+                            email_uid=email.uid,
+                            att_index=att_i,
+                            filename=att_name,
+                            extraction_state=extraction_state,
+                        ),
                     )
 
+        email._ingest_body_chunk_count = body_chunk_count
+        email._ingest_attachment_chunk_count = attachment_chunk_count
+        email._ingest_image_chunk_count = image_chunk_count
+        email._ingest_attachment_requested = bool(extract_attachments)
+        email._ingest_image_requested = bool(embed_images)
+
         progress.update(1)
-        parse_seconds += time.monotonic() - t_parse_start
 
         if max_emails is not None and total_emails >= max_emails:
             break

@@ -119,27 +119,27 @@ def render_results_summary(
 
 
 @st.cache_resource
-def _get_email_db_safe():
+def _get_email_db_safe(sqlite_path: str | None, _cache_version: int = 0):
     """Try to get EmailDatabase instance, return None if unavailable."""
-    return get_email_db_safe_impl()
+    return get_email_db_safe_impl(sqlite_path=sqlite_path)
 
 
-def render_dashboard_page() -> None:
-    render_dashboard_page_impl(st_module=st, get_email_db_safe_fn=_get_email_db_safe)
+def render_dashboard_page(sqlite_path: str | None = None) -> None:
+    render_dashboard_page_impl(st_module=st, get_email_db_safe_fn=lambda: _get_email_db_safe(sqlite_path))
 
 
-def render_entity_page() -> None:
-    render_entity_page_impl(st_module=st, get_email_db_safe_fn=_get_email_db_safe)
+def render_entity_page(sqlite_path: str | None = None) -> None:
+    render_entity_page_impl(st_module=st, get_email_db_safe_fn=lambda: _get_email_db_safe(sqlite_path))
 
 
-def render_network_page() -> None:
-    render_network_page_impl(st_module=st, get_email_db_safe_fn=_get_email_db_safe)
+def render_network_page(sqlite_path: str | None = None) -> None:
+    render_network_page_impl(st_module=st, get_email_db_safe_fn=lambda: _get_email_db_safe(sqlite_path))
 
 
-def render_evidence_page() -> None:
+def render_evidence_page(sqlite_path: str | None = None) -> None:
     render_evidence_page_impl(
         st_module=st,
-        get_email_db_safe_fn=_get_email_db_safe,
+        get_email_db_safe_fn=lambda: _get_email_db_safe(sqlite_path),
         type_badge_html_fn=_type_badge_html,
     )
 
@@ -166,9 +166,13 @@ def main() -> None:
     inject_styles()
     st.markdown("<h1 class='hero-title'>Email RAG</h1>", unsafe_allow_html=True)
     st.markdown(
-        "<p class='hero-subtitle'>Search and investigate your Outlook email archive"
-        " with semantic search, filters, and analytics.</p>",
+        "<p class='hero-subtitle'>Exploratory archive search and lightweight evidence collection"
+        " for your Outlook email archive.</p>",
         unsafe_allow_html=True,
+    )
+    st.info(
+        "This Streamlit app is an exploratory archive UI. For prompt-grade legal-support workflows such as "
+        "full-pack review, counsel packs, chronology building, or issue matrices, use the CLI or MCP surfaces."
     )
 
     page = st.sidebar.radio(
@@ -185,20 +189,21 @@ def main() -> None:
     )
 
     chromadb_path = st.sidebar.text_input("ChromaDB Path", value="") or None
+    sqlite_path = st.sidebar.text_input("SQLite Path", value="") or None
     retriever = get_retriever(chromadb_path)
     render_sidebar(retriever)
 
     if page == "Dashboard":
-        render_dashboard_page()
+        render_dashboard_page(sqlite_path)
         return
     if page == "Entities":
-        render_entity_page()
+        render_entity_page(sqlite_path)
         return
     if page == "Network":
-        render_network_page()
+        render_network_page(sqlite_path)
         return
     if page == "Evidence":
-        render_evidence_page()
+        render_evidence_page(sqlite_path)
         return
 
     render_search_page(retriever)

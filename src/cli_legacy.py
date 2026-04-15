@@ -8,10 +8,10 @@ import sys
 from .config import get_settings
 from .validation import parse_iso_date, positive_int, score_float, validate_date_window
 
-_SUBCOMMANDS = frozenset({"search", "browse", "export", "evidence", "analytics", "training", "admin"})
-_ROOT_FLAGS_WITH_VALUES = frozenset({"--chromadb-path", "--log-level"})
+_SUBCOMMANDS = frozenset({"search", "browse", "export", "case", "evidence", "analytics", "training", "admin"})
+_ROOT_FLAGS_WITH_VALUES = frozenset({"--chromadb-path", "--sqlite-path", "--log-level"})
 _ROOT_FLAGS_NO_VALUES = frozenset({"--help", "-h", "--version"})
-_ROOT_FLAG_DESTS = {"--chromadb-path": "chromadb_path", "--log-level": "log_level"}
+_ROOT_FLAG_DESTS = {"--chromadb-path": "chromadb_path", "--sqlite-path": "sqlite_path", "--log-level": "log_level"}
 
 
 def _parse_iso_date(value: str) -> str:
@@ -87,6 +87,7 @@ def build_legacy_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cluster-id", type=int, default=None, metavar="CLUSTER_ID", help="Filter by cluster ID.")
     parser.add_argument("--expand-query", action="store_true", help="Expand query with related terms.")
     parser.add_argument("--chromadb-path", default=None, help="Custom ChromaDB path.")
+    parser.add_argument("--sqlite-path", default=None, help="Custom SQLite metadata path.")
     parser.add_argument("--stats", action="store_true", help="Print archive statistics and exit.")
     parser.add_argument("--list-senders", type=_positive_int_arg, default=0, metavar="N", help="List top N senders and exit.")
     parser.add_argument("--reset-index", action="store_true", help="Delete and recreate the email collection.")

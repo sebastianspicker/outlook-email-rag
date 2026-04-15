@@ -254,7 +254,7 @@ class TestDecodeMimeWords:
 
 class TestExtractEmailFromHeader:
     def test_angle_bracket_email(self):
-        source = "From: Alice Smith <alice@example.com>\n\nBody"
+        source = "From: Alice Example <alice@example.com>\n\nBody"
         assert _extract_email_from_header(source, "From") == "alice@example.com"
 
     def test_bare_email(self):
@@ -285,12 +285,12 @@ class TestExtractEmailFromHeader:
 
 class TestExtractNameFromHeader:
     def test_quoted_name(self):
-        source = 'From: "Alice Smith" <alice@example.com>\n\nBody'
-        assert _extract_name_from_header(source, "From") == "Alice Smith"
+        source = 'From: "Alice Example" <alice@example.com>\n\nBody'
+        assert _extract_name_from_header(source, "From") == "Alice Example"
 
     def test_unquoted_name(self):
-        source = "From: Alice Smith <alice@example.com>\n\nBody"
-        assert _extract_name_from_header(source, "From") == "Alice Smith"
+        source = "From: Alice Example <alice@example.com>\n\nBody"
+        assert _extract_name_from_header(source, "From") == "Alice Example"
 
     def test_missing_header(self):
         source = "Subject: Test\n\nBody"

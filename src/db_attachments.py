@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import TYPE_CHECKING
 
+from .attachment_record_semantics import enrich_attachment_record
 from .db_schema import _escape_like
 
 
@@ -39,10 +41,20 @@ class AttachmentMixin:
         """Get all attachments for a specific email."""
         rows = self.conn.execute(
             "SELECT name, mime_type, size, content_id, is_inline, extraction_state, evidence_strength, "
-            "ocr_used, failure_reason, text_preview FROM attachments WHERE email_uid = ?",
+            "ocr_used, failure_reason, text_preview, extracted_text, text_source_path, text_locator_json "
+            "FROM attachments WHERE email_uid = ?",
             (uid,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        attachments: list[dict] = []
+        for row in rows:
+            attachment = dict(row)
+            raw_locator = str(attachment.get("text_locator_json") or "").strip()
+            try:
+                attachment["text_locator"] = json.loads(raw_locator) if raw_locator else {}
+            except json.JSONDecodeError:
+                attachment["text_locator"] = {}
+            attachments.append(enrich_attachment_record(attachment))
+        return attachments
 
     def attachment_stats(self) -> dict:
         """Aggregate attachment statistics: counts, sizes, type distribution."""

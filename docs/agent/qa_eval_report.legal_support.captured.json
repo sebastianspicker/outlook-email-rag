@@ -1,0 +1,831 @@
+{
+  "questions_path": "docs/agent/qa_eval_questions.legal_support.captured.json",
+  "results_path": "docs/agent/qa_eval_results.legal_support.captured.json",
+  "total_cases": 5,
+  "cases": [
+    {
+      "id": "legal-support-001",
+      "bucket": "legal_support_workspace",
+      "question": "Do the major legal-support products exist for this matter?",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [],
+      "expected_top_uid": null,
+      "expected_ambiguity": null,
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [
+        "lawyer_issue_matrix",
+        "case_dashboard",
+        "actor_map",
+        "document_request_checklist",
+        "controlled_factual_drafting"
+      ],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "legal_support_product_completeness"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "legal-support-002",
+      "bucket": "legal_support_comparator",
+      "question": "Does the comparator matrix preserve the expected issue rows?",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [],
+      "expected_top_uid": null,
+      "expected_ambiguity": null,
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [
+        "comparative_treatment",
+        "lawyer_issue_matrix"
+      ],
+      "expected_comparator_issue_ids": [
+        "control_intensity",
+        "sbv_or_pr_participation"
+      ],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "comparator_analysis"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "legal-support-003",
+      "bucket": "legal_support_dashboard",
+      "question": "Does the dashboard keep the expected cards and actor references?",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [],
+      "expected_top_uid": null,
+      "expected_ambiguity": null,
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [
+        "case_dashboard",
+        "actor_map"
+      ],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [
+        "main_claims_or_issues",
+        "main_actors",
+        "recommended_next_actions"
+      ],
+      "expected_actor_ids": [
+        "actor-manager",
+        "actor-hr"
+      ],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "dashboard_refresh_stability",
+        "actor_witness_mapping"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "legal-support-004",
+      "bucket": "legal_support_documents",
+      "question": "Does the checklist preserve the expected records-request groups?",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [],
+      "expected_top_uid": null,
+      "expected_ambiguity": null,
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [
+        "document_request_checklist"
+      ],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [
+        "calendar_meeting_records",
+        "comparator_evidence"
+      ],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "document_request_quality"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "legal-support-005",
+      "bucket": "legal_support_drafting",
+      "question": "Does the controlled draft respect the allegation ceiling and required sections?",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [],
+      "expected_top_uid": null,
+      "expected_ambiguity": null,
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [
+        "controlled_factual_drafting"
+      ],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": "concern_only",
+      "expected_draft_sections": [
+        "established_facts",
+        "requests_for_clarification",
+        "formal_demands"
+      ],
+      "triage_tags": [
+        "drafting_guard"
+      ],
+      "notes": ""
+    }
+  ],
+  "results": [
+    {
+      "id": "legal-support-001",
+      "bucket": "legal_support_workspace",
+      "question": "Do the major legal-support products exist for this matter?",
+      "status": "labeled",
+      "source": "captured",
+      "count": 0,
+      "top_uid": null,
+      "candidate_uids": [],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [],
+      "matched_support_uids_top_3": [],
+      "top_1_correctness": null,
+      "support_uid_hit": null,
+      "support_uid_hit_top_3": null,
+      "support_uid_recall": null,
+      "evidence_precision": null,
+      "top_uid_match": null,
+      "ambiguity_match": null,
+      "confidence_calibration_match": null,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": true,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": null,
+      "observed_confidence_label": null,
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "legal-support-002",
+      "bucket": "legal_support_comparator",
+      "question": "Does the comparator matrix preserve the expected issue rows?",
+      "status": "labeled",
+      "source": "captured",
+      "count": 0,
+      "top_uid": null,
+      "candidate_uids": [],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [],
+      "matched_support_uids_top_3": [],
+      "top_1_correctness": null,
+      "support_uid_hit": null,
+      "support_uid_hit_top_3": null,
+      "support_uid_recall": null,
+      "evidence_precision": null,
+      "top_uid_match": null,
+      "ambiguity_match": null,
+      "confidence_calibration_match": null,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": true,
+      "comparator_matrix_coverage": 1.0,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": null,
+      "observed_confidence_label": null,
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "legal-support-003",
+      "bucket": "legal_support_dashboard",
+      "question": "Does the dashboard keep the expected cards and actor references?",
+      "status": "labeled",
+      "source": "captured",
+      "count": 0,
+      "top_uid": null,
+      "candidate_uids": [],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [],
+      "matched_support_uids_top_3": [],
+      "top_1_correctness": null,
+      "support_uid_hit": null,
+      "support_uid_hit_top_3": null,
+      "support_uid_recall": null,
+      "evidence_precision": null,
+      "top_uid_match": null,
+      "ambiguity_match": null,
+      "confidence_calibration_match": null,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": true,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": 1.0,
+      "actor_map_coverage": 1.0,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": null,
+      "observed_confidence_label": null,
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "legal-support-004",
+      "bucket": "legal_support_documents",
+      "question": "Does the checklist preserve the expected records-request groups?",
+      "status": "labeled",
+      "source": "captured",
+      "count": 0,
+      "top_uid": null,
+      "candidate_uids": [],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [],
+      "matched_support_uids_top_3": [],
+      "top_1_correctness": null,
+      "support_uid_hit": null,
+      "support_uid_hit_top_3": null,
+      "support_uid_recall": null,
+      "evidence_precision": null,
+      "top_uid_match": null,
+      "ambiguity_match": null,
+      "confidence_calibration_match": null,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": true,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": 1.0,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": null,
+      "observed_confidence_label": null,
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "legal-support-005",
+      "bucket": "legal_support_drafting",
+      "question": "Does the controlled draft respect the allegation ceiling and required sections?",
+      "status": "labeled",
+      "source": "captured",
+      "count": 0,
+      "top_uid": null,
+      "candidate_uids": [],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [],
+      "matched_support_uids_top_3": [],
+      "top_1_correctness": null,
+      "support_uid_hit": null,
+      "support_uid_hit_top_3": null,
+      "support_uid_recall": null,
+      "evidence_precision": null,
+      "top_uid_match": null,
+      "ambiguity_match": null,
+      "confidence_calibration_match": null,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": true,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": true,
+      "draft_section_completeness": true,
+      "expected_ambiguity": null,
+      "observed_confidence_label": null,
+      "observed_ambiguity_reason": null
+    }
+  ],
+  "summary": {
+    "total_cases": 5,
+    "bucket_counts": {
+      "legal_support_comparator": 1,
+      "legal_support_dashboard": 1,
+      "legal_support_documents": 1,
+      "legal_support_drafting": 1,
+      "legal_support_workspace": 1
+    },
+    "top_1_correctness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "support_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "support_uid_hit_top_3": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "support_uid_recall": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "evidence_precision": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "top_uid_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "ambiguity_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "confidence_calibration_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_support_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_answer_success": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_text_evidence_success": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_ocr_text_evidence_success": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "weak_evidence_explained": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "quote_attribution_precision": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "quote_attribution_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "thread_group_id_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "thread_group_source_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "long_thread_answer_present": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "long_thread_structure_preserved": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "case_bundle_present": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "investigation_blocks_present": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "case_bundle_support_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "case_bundle_support_uid_recall": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "multi_source_source_types_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "chronology_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "chronology_uid_recall": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "behavior_tag_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "behavior_tag_precision": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "counter_indicator_quality": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "overclaim_guard_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "report_completeness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "legal_support_product_completeness": {
+      "scorable": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "comparator_matrix_coverage": {
+      "scorable": 1,
+      "average": 1.0
+    },
+    "dashboard_card_coverage": {
+      "scorable": 1,
+      "average": 1.0
+    },
+    "actor_map_coverage": {
+      "scorable": 1,
+      "average": 1.0
+    },
+    "checklist_group_coverage": {
+      "scorable": 1,
+      "average": 1.0
+    },
+    "drafting_ceiling_match": {
+      "scorable": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "draft_section_completeness": {
+      "scorable": 1,
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "failure_taxonomy": {
+    "total_flagged_cases": 5,
+    "categories": {
+      "actor_witness_mapping": {
+        "category": "actor_witness_mapping",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-003"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      "comparator_analysis": {
+        "category": "comparator_analysis",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-002"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      "document_request_quality": {
+        "category": "document_request_quality",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-004"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      "drafting_guard": {
+        "category": "drafting_guard",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-005"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      "legal_support_product_completeness": {
+        "category": "legal_support_product_completeness",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-001"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      }
+    },
+    "ranked_categories": [
+      {
+        "category": "actor_witness_mapping",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-003"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      {
+        "category": "comparator_analysis",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-002"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      {
+        "category": "document_request_quality",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-004"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      {
+        "category": "drafting_guard",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-005"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      },
+      {
+        "category": "legal_support_product_completeness",
+        "flagged_cases": 1,
+        "failed_cases": 1,
+        "weak_cases": 0,
+        "case_ids": [
+          "legal-support-001"
+        ],
+        "drivers": [
+          "no_supported_hit"
+        ]
+      }
+    ]
+  },
+  "source_counts": {
+    "captured": 5
+  },
+  "live_backend": null,
+  "investigation_corpus_readiness": {
+    "live_backend": null,
+    "case_scope_case_count": 0,
+    "expected_case_bundle_uid_count": 0,
+    "corpus_populated": false,
+    "supports_case_analysis": false,
+    "known_blockers": [
+      "no_live_deps"
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "First labeled core evaluation set for email_answer_context, derived from real messages in .example/my-export.olm.",
+  "description": "First labeled core evaluation set for email_answer_context, derived from synthetic fixtures in synthetic-eval-corpus.olm.",
   "cases": [
     {
       "id": "fact-101",
@@ -9,13 +9,13 @@
       "question": "Who sent the HARICA certificate mail?",
       "evidence_mode": "retrieval",
       "filters": {},
-      "expected_answer": "pki@hfmt-koeln.de sent the HARICA certificate reply.",
+      "expected_answer": "cert-admin@example.org sent the HARICA certificate reply.",
       "expected_support_uids": [
         "31692630078d4d3689505120c1b61631"
       ],
       "expected_top_uid": "31692630078d4d3689505120c1b61631",
       "expected_ambiguity": "clear",
-      "notes": "Real reply in _wichtig: subject AW: Zertifikat Harica."
+      "notes": "Synthetic reply in _wichtig: subject AW: Zertifikat Harica."
     },
     {
       "id": "fact-102",
@@ -30,7 +30,7 @@
       ],
       "expected_top_uid": "099aa2e0070e2a4b9d8dfeaf41a68a02",
       "expected_ambiguity": "clear",
-      "notes": "Real original in memo: Notizen und Dateien in die Notizen-App importieren - Apple Support (DE)."
+      "notes": "Synthetic original in memo: Notizen und Dateien in die Notizen-App importieren - Apple Support (DE)."
     },
     {
       "id": "fact-103",
@@ -45,7 +45,7 @@
       ],
       "expected_top_uid": "05cfd57c33128f29ea8ad85c30281dc6",
       "expected_ambiguity": "clear",
-      "notes": "Real original in _wichtig from 2021-10-07."
+      "notes": "Synthetic original in _wichtig from 2021-10-07."
     },
     {
       "id": "fact-104",
@@ -54,13 +54,13 @@
       "question": "Who announced that the Zammad test version was created?",
       "evidence_mode": "retrieval",
       "filters": {},
-      "expected_answer": "lukas.jacobs@hfmt-koeln.de announced the Zammad test version.",
+      "expected_answer": "service-owner@example.org announced the Zammad test version.",
       "expected_support_uids": [
         "addd6fad46c354177e7b59e32bb9b86a"
       ],
       "expected_top_uid": "addd6fad46c354177e7b59e32bb9b86a",
       "expected_ambiguity": "clear",
-      "notes": "Real original in _wichtig: Zammad Testversion."
+      "notes": "Synthetic original in _wichtig: Zammad Testversion."
     },
     {
       "id": "thread-101",

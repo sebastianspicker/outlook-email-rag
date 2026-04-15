@@ -19,14 +19,14 @@ from .validation import parse_iso_date
 from .validation import validate_date_window as ensure_valid_date_window
 
 
-def _validate_output_path(v: str | None) -> str | None:
+def _validate_local_path(v: str | None, *, field_name: str = "path") -> str | None:
     """Reject null bytes, path-traversal, and absolute paths outside safe directories."""
     if v is None:
         return v
     if "\x00" in v:
-        raise ValueError("output_path must not contain null bytes")
+        raise ValueError(f"{field_name} must not contain null bytes")
     if ".." in Path(v).parts:
-        raise ValueError("output_path must not traverse parent directories with '..'")
+        raise ValueError(f"{field_name} must not traverse parent directories with '..'")
     resolved = Path(v).resolve()
     cwd = Path.cwd().resolve()
     if not resolved.is_relative_to(cwd):
@@ -36,8 +36,13 @@ def _validate_output_path(v: str | None) -> str | None:
         tmp = Path("/tmp").resolve()  # nosec B108
         systmp = Path(_tmpmod.gettempdir()).resolve()
         if not (resolved.is_relative_to(home) or resolved.is_relative_to(tmp) or resolved.is_relative_to(systmp)):
-            raise ValueError(f"Output path must be under working directory, home, or /tmp: {v}")
+            raise ValueError(f"{field_name} must be under working directory, home, or /tmp: {v}")
     return v
+
+
+def _validate_output_path(v: str | None) -> str | None:
+    """Reject null bytes, path-traversal, and absolute paths outside safe directories."""
+    return _validate_local_path(v, field_name="Output path")
 
 
 # ── Base Classes ─────────────────────────────────────────────

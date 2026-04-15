@@ -30,8 +30,18 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
             if params.type == "archive":
                 from ..report_generator import ReportGenerator
 
-                ReportGenerator(db).generate(title=params.title, output_path=params.output_path)
-                return json_response({"status": "ok", "output_path": params.output_path})
+                ReportGenerator(db).generate(
+                    title=params.title,
+                    output_path=params.output_path,
+                    privacy_mode=params.privacy_mode,
+                )
+                return json_response(
+                    {
+                        "status": "ok",
+                        "output_path": params.output_path,
+                        "privacy_mode": params.privacy_mode,
+                    }
+                )
 
             if params.type == "network":
                 from ..network_analysis import CommunicationNetwork

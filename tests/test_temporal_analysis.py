@@ -213,6 +213,8 @@ class TestResponseTimes:
         assert len(result) == 1
         assert result[0]["replier"] == "bob@example.com"
         assert result[0]["avg_response_hours"] == 2.0
+        assert result[0]["response_sample_scope"] == "recent_canonical_reply_pairs"
+        assert result[0]["response_sample_pair_limit"] == 500
 
     def test_negative_times_excluded(self):
         db = EmailDatabase(":memory:")

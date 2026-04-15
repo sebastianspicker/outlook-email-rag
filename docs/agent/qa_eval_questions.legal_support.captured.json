@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "legal-support-001",
+      "bucket": "legal_support_workspace",
+      "question": "Do the major legal-support products exist for this matter?",
+      "status": "labeled",
+      "expected_legal_support_products": [
+        "lawyer_issue_matrix",
+        "case_dashboard",
+        "actor_map",
+        "document_request_checklist",
+        "controlled_factual_drafting"
+      ],
+      "triage_tags": ["legal_support_product_completeness"]
+    },
+    {
+      "id": "legal-support-002",
+      "bucket": "legal_support_comparator",
+      "question": "Does the comparator matrix preserve the expected issue rows?",
+      "status": "labeled",
+      "expected_legal_support_products": ["comparative_treatment", "lawyer_issue_matrix"],
+      "expected_comparator_issue_ids": ["control_intensity", "sbv_or_pr_participation"],
+      "triage_tags": ["comparator_analysis"]
+    },
+    {
+      "id": "legal-support-003",
+      "bucket": "legal_support_dashboard",
+      "question": "Does the dashboard keep the expected cards and actor references?",
+      "status": "labeled",
+      "expected_legal_support_products": ["case_dashboard", "actor_map"],
+      "expected_dashboard_cards": [
+        "main_claims_or_issues",
+        "main_actors",
+        "recommended_next_actions"
+      ],
+      "expected_actor_ids": ["actor-manager", "actor-hr"],
+      "triage_tags": ["dashboard_refresh_stability", "actor_witness_mapping"]
+    },
+    {
+      "id": "legal-support-004",
+      "bucket": "legal_support_documents",
+      "question": "Does the checklist preserve the expected records-request groups?",
+      "status": "labeled",
+      "expected_legal_support_products": ["document_request_checklist"],
+      "expected_checklist_group_ids": ["calendar_meeting_records", "comparator_evidence"],
+      "triage_tags": ["document_request_quality"]
+    },
+    {
+      "id": "legal-support-005",
+      "bucket": "legal_support_drafting",
+      "question": "Does the controlled draft respect the allegation ceiling and required sections?",
+      "status": "labeled",
+      "expected_legal_support_products": ["controlled_factual_drafting"],
+      "expected_draft_ceiling_level": "concern_only",
+      "expected_draft_sections": [
+        "established_facts",
+        "requests_for_clarification",
+        "formal_demands"
+      ],
+      "triage_tags": ["drafting_guard"]
+    }
+  ]
+}

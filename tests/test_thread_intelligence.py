@@ -82,6 +82,12 @@ class TestActionItemExtraction:
         items = self.analyzer.extract_action_items(text)
         assert len(items) >= 1
 
+    def test_german_action_patterns(self):
+        text = "Bitte prüfen Sie die Eingruppierung bis Freitag. Wir müssen die SBV heute noch informieren."
+        items = self.analyzer.extract_action_items(text)
+        assert len(items) >= 1
+        assert any("eingruppierung" in a.text.lower() or "sbv" in a.text.lower() for a in items)
+
 
 class TestDecisionExtraction:
     def setup_method(self):
@@ -115,6 +121,11 @@ class TestDecisionExtraction:
 
     def test_go_ahead_pattern(self):
         text = "Let's go with option B for the database migration plan."
+        decisions = self.analyzer.extract_decisions(text)
+        assert len(decisions) >= 1
+
+    def test_german_decision_patterns(self):
+        text = "Wir haben entschieden, die mobile Arbeit vorerst fortzuführen. Die Entscheidung ist damit bestätigt."
         decisions = self.analyzer.extract_decisions(text)
         assert len(decisions) >= 1
 

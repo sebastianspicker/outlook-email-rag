@@ -42,6 +42,17 @@ class MockEmailDB:
             "last_date": "2025-06-01",
         }
 
+    def close(self) -> None:
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 class MockCommunicationNetwork:
     """Stub for CommunicationNetwork used by run_with_network."""

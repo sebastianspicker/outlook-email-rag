@@ -2,6 +2,8 @@
 
 The command-line interface is a standalone way to search and analyze your email archive directly from Terminal. It doesn't require any MCP client — it works entirely on its own.
 
+See [README.md](../README.md) for setup and [README.md](README.md) in this directory for the public docs map. Use the CLI for the full legal-support workflow surface; the Streamlit app is intentionally narrower and exploratory.
+
 ## Starting the CLI
 
 Make sure the virtual environment is active first:
@@ -58,6 +60,230 @@ python -m src.cli admin reset-index --yes
 ```
 
 Run `python -m src.cli <subcommand> --help` for subcommand-specific help.
+
+## Dedicated workplace case analysis
+
+Use `case analyze` when you need a structured workplace-review payload rather than a normal mailbox search result.
+
+```bash
+python -m src.cli case prompt-preflight --input matter.md --output preflight.json
+python -m src.cli case analyze --input case.json --output case-analysis.json
+python -m src.cli case full-pack --prompt matter.md --materials-dir ./matter --output handoff.bundle
+python -m src.cli case counsel-pack --case-scope scope.json --materials-dir ./matter --output handoff.zip
+```
+
+Use `case prompt-preflight` when the operator starts with a long natural-language matter description instead of structured JSON. The output is a conservative scaffold, not a free-form legal analysis. It reports:
+
+- `draft_case_scope`
+- `draft_case_analysis_input`
+- `missing_required_inputs`
+- `recommended_next_inputs`
+- `prompt_limits`
+
+Example:
+
+```bash
+python -m src.cli case prompt-preflight --input matter.md --output preflight.json --output-language de
+```
+
+Use `case full-pack` when the operator has:
+
+- a long natural-language matter prompt
+- a directory of supplied matter files
+- no finalized structured `case_scope` yet
+
+The command now:
+
+- runs prompt preflight
+- builds a conservative `matter_manifest` from `--materials-dir`
+- applies optional JSON overrides
+- stops with explicit blockers when required structured fields are still missing
+- emits `intake_compilation.override_suggestions` so blocked runs are repairable with minimal JSON overrides
+- otherwise runs the downstream exhaustive legal-support workflow
+- optionally writes an export artifact when `--output` is provided
+
+Example:
+
+```bash
+python -m src.cli case full-pack \
+  --prompt matter.md \
+  --materials-dir ./matter \
+  --overrides overrides.json \
+  --output handoff.bundle \
+  --output-language de \
+  --translation-mode translation_aware
+```
+
+Use `--compile-only` when you want the blocker-or-ready payload without running the downstream exhaustive workflow yet.
+
+The case input should stay bounded and structured. At minimum include:
+
+- `target_person`
+- `allegation_focus`
+- `analysis_goal`
+- `date_from`
+- `date_to`
+
+Recommended fields depend on what you are asking:
+
+- add `trigger_events` for retaliation review
+- add `comparator_actors` for unequal-treatment or discrimination-style review
+- add `org_context` for bossing, mobbing, abuse-of-authority, or other power-heavy review
+- add `context_notes` when the record needs neutral background facts to be interpreted fairly
+- add `suspected_actors` when you want the output to stay focused on named actors instead of broad workplace dynamics
+
+Operator intake examples:
+
+Retaliation review:
+
+```json
+{
+  "case_scope": {
+    "target_person": {"name": "Max Mustermann", "email": "max@example.org"},
+    "suspected_actors": [{"name": "Erika Beispiel", "email": "erika@example.org", "role_hint": "manager"}],
+    "allegation_focus": ["retaliation"],
+    "analysis_goal": "hr_review",
+    "trigger_events": [
+      {
+        "trigger_type": "complaint",
+        "date": "2025-03-01",
+        "notes": "Formelle Beschwerde der Zielperson."
+      }
+    ],
+    "context_notes": "Teamkonflikt nach Eskalation zu Arbeitslast und Fristen.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_and_attachments"
+}
+```
+
+Unequal-treatment or discrimination-style review:
+
+```json
+{
+  "case_scope": {
+    "target_person": {"name": "Max Mustermann", "email": "max@example.org"},
+    "suspected_actors": [{"name": "Erika Beispiel", "email": "erika@example.org", "role_hint": "manager"}],
+    "comparator_actors": [{"name": "Pat Vergleich", "email": "pat@example.org", "role_hint": "employee"}],
+    "allegation_focus": ["unequal_treatment", "discrimination"],
+    "analysis_goal": "lawyer_briefing",
+    "org_context": {
+      "reporting_lines": [
+        {
+          "manager": {"name": "Erika Beispiel", "email": "erika@example.org"},
+          "report": {"name": "Max Mustermann", "email": "max@example.org"},
+          "source": "operator"
+        }
+      ]
+    },
+    "context_notes": "Beide Personen hatten vergleichbare Aufgaben im selben Prozessschritt.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_and_attachments"
+}
+```
+
+Mobbing or bossing-style review:
+
+```json
+{
+  "case_scope": {
+    "target_person": {"name": "Max Mustermann", "email": "max@example.org"},
+    "suspected_actors": [{"name": "Erika Beispiel", "email": "erika@example.org", "role_hint": "manager"}],
+    "allegation_focus": ["mobbing", "abuse_of_authority", "exclusion"],
+    "analysis_goal": "formal_complaint",
+    "org_context": {
+      "role_facts": [
+        {
+          "person": {"name": "Erika Beispiel", "email": "erika@example.org"},
+          "role_type": "manager",
+          "title": "Team Lead",
+          "source": "operator"
+        }
+      ]
+    },
+    "context_notes": "Prüfe wiederholte Ausgrenzung, öffentliche Korrektur und hierarchischen Druck im selben Zeitraum.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_only"
+}
+```
+
+Neutral chronology:
+
+```json
+{
+  "case_scope": {
+    "target_person": {"name": "Max Mustermann", "email": "max@example.org"},
+    "allegation_focus": ["hostility", "exclusion"],
+    "analysis_goal": "neutral_chronology",
+    "context_notes": "Nur den Ablauf rekonstruieren, noch keine starke Einordnung erzwingen.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_only"
+}
+```
+
+Mixed-source case files require at least one native mixed-source input:
+
+```json
+{
+  "case_scope": {
+    "target_person": {"name": "Max Mustermann", "email": "max@example.org"},
+    "allegation_focus": ["retaliation"],
+    "analysis_goal": "internal_review",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "mixed_case_file",
+  "chat_exports": [
+    {
+      "source_path": "/absolute/path/to/teams-export.html",
+      "platform": "Teams",
+      "title": "Teams export"
+    }
+  ]
+}
+```
+
+Structured `chat_log_entries` are still supported as a compatibility override. Manifest-backed chat artifacts also satisfy the mixed-source requirement when `matter_manifest.artifacts[*].source_class` is `chat_log` or `chat_export`.
+
+## Counsel-pack workflow
+
+Use `case counsel-pack` when the operator already has a bounded `case_scope` JSON file and a directory of supplied matter files:
+
+```bash
+python -m src.cli case counsel-pack \
+  --case-scope scope.json \
+  --materials-dir ./matter \
+  --output handoff.zip \
+  --delivery-target counsel_handoff_bundle \
+  --delivery-format bundle
+```
+
+The command:
+
+- builds a conservative `matter_manifest` from the materials directory
+- forces manifest-backed `exhaustive_matter_review`
+- routes chat-like files into mixed-source handling where possible
+- writes a portable legal-support artifact through the shared exporter
+
+This remains the correct path for dedicated legal-support deliverables. `case prompt-preflight` does not replace the manifest-backed exhaustive-review requirement for counsel-facing products.
+
+`case full-pack` now bridges that gap for prompt-first operator workflows: it compiles the prompt into a strict manifest-backed exhaustive run, but it still refuses to invent missing trigger events, comparators, or other critical structured inputs.
+
+The output includes machine-readable intake guidance so operators can see when the request is too weak for the claim they asked about:
+
+- `case_scope_quality.warnings`
+- `case_scope_quality.recommended_next_inputs`
+- `analysis_limits.scope_warnings`
+- mirrored warning entries in `investigation_report.sections.missing_information`
+
+Typical downgrade warnings include retaliation without triggers, comparator-based review without comparators, power-heavy review without org context, and high-stakes review without neutral context notes.
 
 ## Interactive mode
 
@@ -209,7 +435,7 @@ python -m src.cli analytics volume month   # monthly
 # Activity heatmap (hour x day-of-week)
 python -m src.cli analytics heatmap
 
-# Average response times per sender
+# Recent-sample response times per sender (canonical reply pairs)
 python -m src.cli analytics response-times
 
 # Most frequently mentioned entities (organizations, URLs, etc.)

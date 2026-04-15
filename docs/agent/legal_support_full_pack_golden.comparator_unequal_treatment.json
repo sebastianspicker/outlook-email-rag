@@ -1,0 +1,658 @@
+{
+  "golden_version": "1",
+  "scenario": "legal_support_full_pack_comparator",
+  "case_id": "comparator_unequal_treatment",
+  "projection": {
+    "workflow": "case_full_pack",
+    "status": "completed",
+    "analysis_query": "workplace case analysis. target Max Mustermann [REDACTED: email]. focus unequal_treatment, discrimination. suspected actors Erika Beispiel [REDACTED: email]; Hanna HR [REDACTED: email]. comparators Pat Vergleich [REDACTED: email]. issue tracks disability_disadvantage, participation_duty_gap. Claimant: Max Mustermann. Compare the claimant's treatment from [REDACTED: phone] to [REDACTED: phone] with comparable colleagues regarding mobile work, control intensity, SBV/PR process, and...",
+    "matter_ingestion_summary": {
+      "total_supplied_artifacts": 7,
+      "parsed_artifacts": 7,
+      "degraded_artifacts": 0,
+      "unsupported_artifacts": 0,
+      "excluded_artifacts": 0,
+      "not_yet_reviewed_artifacts": 0,
+      "accounted_artifacts": 7,
+      "unaccounted_artifacts": 0,
+      "source_class_counts": {
+        "formal_document": 2,
+        "note_record": 1,
+        "calendar_export": 1,
+        "attendance_export": 1,
+        "participation_record": 1,
+        "chat_export": 1
+      },
+      "custodian_counts": {},
+      "review_status_counts": {
+        "parsed": 7
+      }
+    },
+    "matter_ingestion_status": "complete",
+    "coverage_status": "complete",
+    "analysis_limit_notes": [],
+    "evidence_rows": [
+      {
+        "exhibit_id": "EXH-001",
+        "document_type": "chat_export",
+        "main_issue_tags": [],
+        "source_id": "manifest:file:275950e177045921:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-002",
+        "document_type": "attached_document",
+        "main_issue_tags": [
+          "mobile_work_home_office",
+          "comparator_evidence"
+        ],
+        "source_id": "manifest:file:22a99a278a332cf9:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-003",
+        "document_type": "attached_document",
+        "main_issue_tags": [
+          "mobile_work_home_office",
+          "comparator_evidence"
+        ],
+        "source_id": "manifest:file:744199546168e999:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-004",
+        "document_type": "calendar_export",
+        "main_issue_tags": [
+          "mobile_work_home_office"
+        ],
+        "source_id": "manifest:file:da3c78bf042e2002:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-005",
+        "document_type": "attached_note_record",
+        "main_issue_tags": [
+          "mobile_work_home_office",
+          "comparator_evidence"
+        ],
+        "source_id": "manifest:file:edfe01022acf11bd:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-006",
+        "document_type": "attached_participation_record",
+        "main_issue_tags": [
+          "sbv_participation",
+          "comparator_evidence"
+        ],
+        "source_id": "manifest:file:28fbe74e06bc279c:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-007",
+        "document_type": "attendance_export",
+        "main_issue_tags": [
+          "mobile_work_home_office",
+          "comparator_evidence"
+        ],
+        "source_id": "manifest:file:81493163c2a0a6c2:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-008",
+        "document_type": "email_body",
+        "main_issue_tags": [
+          "mobile_work_home_office"
+        ],
+        "source_id": "email:cmp-1",
+        "strength": "strong"
+      }
+    ],
+    "provenance_examples": [
+      {
+        "source_id": "manifest:file:275950e177045921:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:22a99a278a332cf9:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:744199546168e999:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:da3c78bf042e2002:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:edfe01022acf11bd:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      }
+    ],
+    "chronology_entries": [
+      {
+        "chronology_id": "CHR-001",
+        "date": "[REDACTED: phone]",
+        "title": "Mobile work request",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-002",
+        "date": "[REDACTED: phone]",
+        "title": "novatime-attendance.csv",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-003",
+        "date": "2025-02-10T08:30:00",
+        "title": "Mobile work request",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-004",
+        "date": "2025-02-11T11:15:00",
+        "title": "Pat mobile work approved",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-005",
+        "date": "[REDACTED: phone]",
+        "title": "gedaechtnisprotokoll.md",
+        "issue_category": null,
+        "source_id": null
+      }
+    ],
+    "comparator_points": [
+      {
+        "comparator_point_id": "comparator-point-mobile-work",
+        "issue_id": "mobile_work",
+        "comparison_strength": "moderate",
+        "comparison_quality": "high_quality_comparator"
+      }
+    ],
+    "issue_rows": [
+      {
+        "issue_id": "eingruppierung_tarifliche_bewertung",
+        "title": "Eingruppierung / tarifliche Bewertung",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": []
+      },
+      {
+        "issue_id": "agg_disadvantage",
+        "title": "AGG disadvantage",
+        "legal_relevance_status": "supported_relevance",
+        "missing_proof": [
+          "Comparator role description"
+        ]
+      },
+      {
+        "issue_id": "burden_shifting_indicators",
+        "title": "Burden-shifting indicators",
+        "legal_relevance_status": "supported_relevance",
+        "missing_proof": [
+          "Comparator role description"
+        ]
+      },
+      {
+        "issue_id": "retaliation_massregelungsverbot",
+        "title": "Retaliation / Maßregelungsverbot",
+        "legal_relevance_status": "potentially_relevant",
+        "missing_proof": [
+          "Explicit dated trigger events are still missing from the supplied case scope."
+        ]
+      },
+      {
+        "issue_id": "sgb_ix_164",
+        "title": "§164 SGB IX",
+        "legal_relevance_status": "supported_relevance",
+        "missing_proof": [
+          "Comparator role description",
+          "Organization or dependency context is still missing and weakens responsibility and accommodation analysis."
+        ]
+      },
+      {
+        "issue_id": "sgb_ix_167_bem",
+        "title": "§167 SGB IX / BEM",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": [
+          "Organization or dependency context is still missing and weakens responsibility and accommodation analysis."
+        ]
+      },
+      {
+        "issue_id": "sgb_ix_178_sbv",
+        "title": "§178 SGB IX / SBV",
+        "legal_relevance_status": "potentially_relevant",
+        "missing_proof": [
+          "Full PR/SBV email trail"
+        ]
+      },
+      {
+        "issue_id": "pr_lpvg_participation",
+        "title": "PR / LPVG participation",
+        "legal_relevance_status": "potentially_relevant",
+        "missing_proof": [
+          "Full PR/SBV email trail"
+        ]
+      },
+      {
+        "issue_id": "fuersorgepflicht",
+        "title": "Fürsorgepflicht",
+        "legal_relevance_status": "potentially_relevant",
+        "missing_proof": [
+          "Comparator role description",
+          "Full PR/SBV email trail",
+          "Organization or dependency context is still missing and weakens responsibility and accommodation analysis."
+        ]
+      }
+    ],
+    "skeptical_weaknesses": [
+      {
+        "weakness_id": "weakness:alternative_explanation",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:missing_documentation",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:weak_legal_evidence_linkage",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:missing_org_context",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:ordinary_management_explanation",
+        "title": null,
+        "severity": null
+      }
+    ],
+    "memo_sections": {
+      "executive_summary": [
+        "This memo summarizes the current record concerning the target employee for the period [REDACTED: phone] to [REDACTED: phone]. It is intended as a rapid onboarding product for counsel and stays evidence-bound."
+      ],
+      "strongest_evidence": [
+        "EXH-009: Pat mobile work approved: Pat Vergleich may continue mobile work without further paperwork. []",
+        "EXH-002: pr-participation-record.txt: PR process note: - claimant request discussed without PR copy - comparator mobile work extension documented as routine []",
+        "EXH-003: Mobile work request: [REDACTED: phone] | Erika Beispiel -> Max Mustermann Subject: Mobile work request Please provide extra documentation before mobile work can be reco []"
+      ]
+    },
+    "draft_preflight": {
+      "objective_of_draft": "Prepare an evidence-bound professional draft that documents the current concerns, requests clarification, and preserves access to relevant records.",
+      "legal_and_factual_risks": [
+        {
+          "risk_id": "weakness:alternative_explanation",
+          "text": "Employer-side review would foreground this competing explanation: Comparator role differences should still be tested.",
+          "risk_type": "alternative_explanation"
+        },
+        {
+          "risk_id": "weakness:missing_documentation",
+          "text": "Employer-side review would argue that a key documentary gap remains open: Meeting invitations, consultation records, or confirmations.",
+          "risk_type": "missing_documentation"
+        },
+        {
+          "risk_id": "weakness:weak_legal_evidence_linkage",
+          "text": "Employer-side review would say the legal relevance theory for Retaliation / Maßregelungsverbot still outruns the present proof.",
+          "risk_type": "weak_legal_evidence_linkage"
+        },
+        {
+          "risk_id": "weakness:missing_org_context",
+          "text": "Employer-side review would argue that hierarchy, gatekeeping, and power analysis remain under-documented because no org context was supplied.",
+          "risk_type": "missing_documentation"
+        }
+      ],
+      "strongest_framing": [
+        {
+          "finding_id": "finding-comparator-delta",
+          "text": "The available material raises a concern pattern consistent with comparator paperwork asymmetry, but alternative explanations remain viable.",
+          "claim_level": "pattern_concern",
+          "policy_reason": "The available support is suggestive but remains too limited for a stronger interpretation.",
+          "ambiguity_disclosures": [],
+          "alternative_explanations": [
+            "Comparator role differences should still be tested."
+          ],
+          "supporting_source_ids": [
+            "email:cmp-1"
+          ],
+          "supporting_exhibit_ids": [
+            "EXH-008"
+          ],
+          "supporting_chronology_ids": [
+            "CHR-003"
+          ]
+        },
+        {
+          "finding_id": "comparator-point-mobile-work",
+          "text": "Comparator evidence may support unequal-treatment review for Mobile work / home office: Claimant faced extra formal requirements that were not applied to Pat Vergleich.",
+          "claim_level": "pattern_concern",
+          "policy_reason": "Comparator support remains concern-level unless the overall record removes material comparability doubts.",
+          "ambiguity_disclosures": [
+            "Role differences remain a live alternative explanation."
+          ],
+          "alternative_explanations": [
+            "Role differences remain a live alternative explanation."
+          ],
+          "source_ids": [
+            "email:cmp-1",
+            "email:cmp-2"
+          ],
+          "exhibit_ids": [
+            "EXH-008",
+            "EXH-009"
+          ],
+          "chronology_ids": [
+            "CHR-003",
+            "CHR-004"
+          ]
+        }
+      ],
+      "safest_framing": [
+        {
+          "framing_id": "safest:1",
+          "text": "The documented record currently shows: teams-chat.txt: [[REDACTED: phone]:00] Max Mustermann: Why does Pat not need the extra form? [[REDACTED: phone]:06] Erika Beispiel: The situations are different, bu",
+          "basis": "documented_source_or_exhibit",
+          "supporting_exhibit_ids": [
+            "EXH-001"
+          ]
+        },
+        {
+          "framing_id": "safest:2",
+          "text": "The documented record currently shows: pr-participation-record.txt: PR process note: - claimant request discussed without PR copy - comparator mobile work extension documented as routine",
+          "basis": "documented_source_or_exhibit",
+          "supporting_exhibit_ids": [
+            "EXH-002"
+          ]
+        },
+        {
+          "framing_id": "safest:3",
+          "text": "The documented record currently shows: Mobile work request: [REDACTED: phone] | Erika Beispiel -> Max Mustermann Subject: Mobile work request Please provide extra documentation before mobile work can be reco",
+          "basis": "documented_source_or_exhibit",
+          "supporting_exhibit_ids": [
+            "EXH-003"
+          ]
+        }
+      ],
+      "allegation_ceiling": {
+        "ceiling_level": "concern_only",
+        "reasoning": [
+          "The available support is suggestive but remains too limited for a stronger interpretation."
+        ],
+        "allowed_moves": [
+          "state documented facts",
+          "state bounded concerns",
+          "request clarification",
+          "request preservation and production of records"
+        ],
+        "prohibited_moves": [
+          "unsupported motive attribution",
+          "unsupported legal conclusion",
+          "unsupported protected-category inference",
+          "psychiatric labeling of actors",
+          "unsupported character judgment",
+          "invented coordination claim",
+          "certainty beyond the cited record"
+        ],
+        "release_status": "ready_for_controlled_draft"
+      }
+    },
+    "dashboard_cards": {
+      "main_claims_or_issues": [
+        {
+          "entry_id": null,
+          "title": "Eingruppierung / tarifliche Bewertung",
+          "summary": null,
+          "evidence_hint": ""
+        },
+        {
+          "entry_id": null,
+          "title": "AGG disadvantage",
+          "summary": null,
+          "evidence_hint": "['Comparator messages show stricter mobile-work formality for the claimant than for Pat Vergleich.', 'Comparator point supports unequal-treatment review for Mobile work / home office: Claimant faced extra formal requirements that were not applied to Pat Vergleich.']"
+        },
+        {
+          "entry_id": null,
+          "title": "Burden-shifting indicators",
+          "summary": null,
+          "evidence_hint": "['Comparator messages show stricter mobile-work formality for the claimant than for Pat Vergleich.', 'Comparator point supports unequal-treatment review for Mobile work / home office: Claimant faced extra formal requirements that were not applied to Pat Vergleich.']"
+        },
+        {
+          "entry_id": null,
+          "title": "Retaliation / Maßregelungsverbot",
+          "summary": null,
+          "evidence_hint": "['Comparator point supports unequal-treatment review for Mobile work / home office: Claimant faced extra formal requirements that were not applied to Pat Vergleich.']"
+        }
+      ],
+      "key_dates": [
+        {
+          "entry_id": null,
+          "title": "Mobile work request",
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": "novatime-attendance.csv",
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": "Mobile work request",
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": "Pat mobile work approved",
+          "summary": null,
+          "evidence_hint": null
+        }
+      ],
+      "strongest_exhibits": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Pat mobile work approved: Pat Vergleich may continue mobile work without further paperwork.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "pr-participation-record.txt: PR process note: - claimant request discussed without PR copy - comparator mobile work extension documented as routine",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Mobile work request: [REDACTED: phone] | Erika Beispiel -> Max Mustermann Subject: Mobile work request Please provide extra documentation before mobile work can be reco",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "gedaechtnisprotokoll.md: # Comparison note [REDACTED: phone] - Claimant was asked for extra paperwork for mobile work. - Pat Vergleich was not asked for additional paperwor",
+          "evidence_hint": null
+        }
+      ],
+      "open_evidence_gaps": [],
+      "main_actors": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        }
+      ],
+      "comparator_points": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Claimant faced extra formal requirements that were not applied to Pat Vergleich.",
+          "evidence_hint": null
+        }
+      ],
+      "process_irregularities": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "No supported process-irregularity pattern is currently available in the shared behavior review.",
+          "evidence_hint": null
+        }
+      ],
+      "drafting_priorities": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "No source-linked promise, omission, or contradiction pair was confirmed on the current record.",
+          "evidence_hint": null
+        }
+      ],
+      "timing_warnings": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Some selected issue tracks look operationally time-sensitive and should receive prompt counsel review.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Part of the record reaches back 429 day(s), so limitation or deadline review may matter.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Some requested records look preservation-sensitive and should be secured promptly.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Some records appear vulnerable to retention loss, mailbox churn, or rolling overwrite if retrieval is delayed.",
+          "evidence_hint": null
+        }
+      ],
+      "risks_or_weak_spots": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would foreground this competing explanation: Comparator role differences should still be tested.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would argue that a key documentary gap remains open: Meeting invitations, consultation records, or confirmations.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would say the legal relevance theory for Retaliation / Maßregelungsverbot still outruns the present proof.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would argue that hierarchy, gatekeeping, and power analysis remain under-documented because no org context was supplied.",
+          "evidence_hint": null
+        }
+      ],
+      "recommended_next_actions": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Medical recommendation summaries or restrictions actually shared with the employer",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "§167 SGB IX / BEM: Organization or dependency context is still missing and weakens responsibility and accommodation analysis.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Meeting invitations, consultation records, or confirmations",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Role-matched comparator treatment records under the same policy and decision-maker",
+          "evidence_hint": null
+        }
+      ]
+    },
+    "retaliation_points": [],
+    "cross_output_checks": [
+      {
+        "check_id": "chronology_references",
+        "status": "pass"
+      },
+      {
+        "check_id": "retaliation_support_alignment",
+        "status": "pass"
+      },
+      {
+        "check_id": "issue_references",
+        "status": "pass"
+      },
+      {
+        "check_id": "exhibit_rankings_and_strength",
+        "status": "pass"
+      },
+      {
+        "check_id": "chronology_issue_matrix_alignment",
+        "status": "pass"
+      },
+      {
+        "check_id": "actor_role_parity",
+        "status": "pass"
+      },
+      {
+        "check_id": "skeptical_review_parity",
+        "status": "pass"
+      },
+      {
+        "check_id": "draft_preflight_alignment",
+        "status": "pass"
+      }
+    ]
+  }
+}

@@ -12,6 +12,18 @@ Keep user-facing answers consistent, citable, and honest under three states:
 - `ambiguous`
 - `insufficient_evidence`
 
+## Scope boundary for case analysis
+
+This contract governs short mailbox answers built from `email_answer_context`.
+
+It does not govern the dedicated `email_case_analysis` workflow. That workflow must use the case-analysis report contract instead of compressing serious workplace-review output into the AQ10 single-paragraph answer shapes.
+
+For avoidance of doubt:
+
+- `email_case_analysis` must not present high-stakes workplace review as a generic direct-answer paragraph
+- bounded case-review classifications belong to the investigation-style case-analysis report, not to AQ10
+- AQ10 remains valid for ordinary mailbox question answering only
+
 ## Answer format
 
 ### `answer`

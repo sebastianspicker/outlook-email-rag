@@ -1,5 +1,6 @@
 """Tests for entity extraction."""
 
+import src.entity_extractor as entity_extractor_module
 from src.email_db import EmailDatabase
 from src.entity_extractor import extract_entities
 from src.parse_olm import Email
@@ -45,13 +46,23 @@ class TestExtractEntities:
         assert len(orgs) == 1
         assert orgs[0].normalized_form == "acme-corp.com"
 
-    def test_common_providers_excluded(self):
-        entities = extract_entities("Hello", sender_email="john@gmail.com")
+    def test_common_providers_excluded(self, monkeypatch):
+        monkeypatch.setattr(
+            entity_extractor_module,
+            "_COMMON_PROVIDERS",
+            entity_extractor_module._COMMON_PROVIDERS | {"mailbox.synthetic"},
+        )
+        entities = extract_entities("Hello", sender_email="john@mailbox.synthetic")
         orgs = [e for e in entities if e.entity_type == "organization"]
         assert len(orgs) == 0
 
-    def test_gmx_excluded(self):
-        entities = extract_entities("Hello", sender_email="user@gmx.de")
+    def test_gmx_excluded(self, monkeypatch):
+        monkeypatch.setattr(
+            entity_extractor_module,
+            "_COMMON_PROVIDERS",
+            entity_extractor_module._COMMON_PROVIDERS | {"provider.synthetic"},
+        )
+        entities = extract_entities("Hello", sender_email="user@provider.synthetic")
         orgs = [e for e in entities if e.entity_type == "organization"]
         assert len(orgs) == 0
 

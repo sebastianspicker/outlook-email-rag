@@ -29,7 +29,9 @@ def register(mcp: Any, deps: ToolDepsProto) -> None:
                 return json_response(db.emails_in_cluster(params.cluster_id, limit=params.limit))
             results = db.cluster_summary()
             if not results:
-                return json_error("No clusters available. Run ingestion with --cluster.")
+                return json_error(
+                    "No clusters available. Cluster tables are not populated by the default ingest pipeline."
+                )
             return json_response(results)
 
         return await run_with_db(deps, _work)

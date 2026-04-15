@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import sqlite3
@@ -20,6 +21,13 @@ from .db_evidence_queries import (
 logger = logging.getLogger(__name__)
 
 _WS_RE = re.compile(r"[\s\xa0]+")
+_REVIEW_STATES = {
+    "machine_extracted",
+    "human_verified",
+    "disputed",
+    "draft_only",
+    "export_approved",
+}
 
 
 def _normalize_ws(text: str) -> str:
@@ -336,6 +344,151 @@ class EvidenceMixin:
              "by_relevance": [{"relevance": int, "count": int}, ...]}
         """
         return evidence_stats_impl(self, category=category, min_relevance=min_relevance)
+
+    def upsert_matter_review_override(
+        self,
+        *,
+        workspace_id: str,
+        target_type: str,
+        target_id: str,
+        review_state: str,
+        override_payload: dict | None = None,
+        machine_payload: dict | None = None,
+        source_evidence: list[dict] | None = None,
+        reviewer: str = "human",
+        review_notes: str = "",
+        apply_on_refresh: bool = True,
+    ) -> dict:
+        """Persist or replace one human review override for a matter product item."""
+        workspace_id = str(workspace_id or "").strip()
+        target_type = str(target_type or "").strip()
+        target_id = str(target_id or "").strip()
+        review_state = str(review_state or "").strip()
+        if not workspace_id or not target_type or not target_id:
+            raise ValueError("workspace_id, target_type, and target_id are required for review overrides.")
+        if review_state not in _REVIEW_STATES:
+            raise ValueError(f"Unsupported review_state: {review_state}")
+
+        override_payload = override_payload if isinstance(override_payload, dict) else {}
+        machine_payload = machine_payload if isinstance(machine_payload, dict) else {}
+        source_evidence = [item for item in (source_evidence or []) if isinstance(item, dict)]
+        content_hash = self.compute_content_hash(
+            json.dumps(
+                {
+                    "workspace_id": workspace_id,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "review_state": review_state,
+                    "override_payload": override_payload,
+                },
+                sort_keys=True,
+            )
+        )
+
+        try:
+            self.conn.execute(
+                """INSERT INTO matter_review_overrides(
+                       workspace_id, target_type, target_id, review_state,
+                       override_payload_json, machine_payload_json, source_evidence_json,
+                       reviewer, review_notes, apply_on_refresh, updated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                   ON CONFLICT(workspace_id, target_type, target_id) DO UPDATE SET
+                       review_state=excluded.review_state,
+                       override_payload_json=excluded.override_payload_json,
+                       machine_payload_json=excluded.machine_payload_json,
+                       source_evidence_json=excluded.source_evidence_json,
+                       reviewer=excluded.reviewer,
+                       review_notes=excluded.review_notes,
+                       apply_on_refresh=excluded.apply_on_refresh,
+                       updated_at=datetime('now')""",
+                (
+                    workspace_id,
+                    target_type,
+                    target_id,
+                    review_state,
+                    json.dumps(override_payload, sort_keys=True),
+                    json.dumps(machine_payload, sort_keys=True),
+                    json.dumps(source_evidence, sort_keys=True),
+                    reviewer,
+                    review_notes,
+                    int(bool(apply_on_refresh)),
+                ),
+            )
+            row = self.conn.execute(
+                """SELECT * FROM matter_review_overrides
+                   WHERE workspace_id=? AND target_type=? AND target_id=?""",
+                (workspace_id, target_type, target_id),
+            ).fetchone()
+            self.log_custody_event(
+                "review_override_upsert",
+                target_type="matter_review_override",
+                target_id=f"{workspace_id}:{target_type}:{target_id}",
+                details={
+                    "workspace_id": workspace_id,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "review_state": review_state,
+                    "apply_on_refresh": bool(apply_on_refresh),
+                },
+                content_hash=content_hash,
+                commit=False,
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+        return dict(row) if row else {}
+
+    def list_matter_review_overrides(
+        self,
+        *,
+        workspace_id: str,
+        target_type: str | None = None,
+        apply_on_refresh_only: bool = False,
+    ) -> list[dict]:
+        """Return persisted review overrides for one matter workspace."""
+        clauses = ["workspace_id = ?"]
+        params: list[object] = [workspace_id]
+        if target_type:
+            clauses.append("target_type = ?")
+            params.append(target_type)
+        if apply_on_refresh_only:
+            clauses.append("apply_on_refresh = 1")
+        rows = self.conn.execute(
+            f"""SELECT * FROM matter_review_overrides
+                WHERE {" AND ".join(clauses)}
+                ORDER BY target_type, target_id""",  # nosec B608
+            params,
+        ).fetchall()
+        result: list[dict] = []
+        for row in rows:
+            item = dict(row)
+            item["override_payload"] = json.loads(str(item.pop("override_payload_json") or "{}"))
+            item["machine_payload"] = json.loads(str(item.pop("machine_payload_json") or "{}"))
+            item["source_evidence"] = json.loads(str(item.pop("source_evidence_json") or "[]"))
+            item["apply_on_refresh"] = bool(item.get("apply_on_refresh"))
+            result.append(item)
+        return result
+
+    def matter_review_status_summary(self, *, workspace_id: str) -> dict:
+        """Return review-state counts for one matter workspace."""
+        overrides = self.list_matter_review_overrides(workspace_id=workspace_id)
+        counts: dict[str, int] = dict.fromkeys(sorted(_REVIEW_STATES), 0)
+        target_type_counts: dict[str, int] = {}
+        for item in overrides:
+            review_state = str(item.get("review_state") or "")
+            target_type = str(item.get("target_type") or "")
+            if review_state in counts:
+                counts[review_state] += 1
+            if target_type:
+                target_type_counts[target_type] = target_type_counts.get(target_type, 0) + 1
+        return {
+            "workspace_id": workspace_id,
+            "override_count": len(overrides),
+            "review_state_counts": counts,
+            "target_type_counts": target_type_counts,
+        }
 
     # ── Evidence: extended queries ────────────────────────────
 

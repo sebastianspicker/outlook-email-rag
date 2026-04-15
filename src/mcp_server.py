@@ -30,6 +30,7 @@ import os
 import sys
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -38,11 +39,34 @@ from dotenv import load_dotenv
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
     from .retriever import EmailRetriever
-from mcp.server.fastmcp import FastMCP
-from mcp.types import ToolAnnotations
+
+try:
+    from mcp.server.fastmcp import FastMCP as _FastMCP
+    from mcp.types import ToolAnnotations as _MCPToolAnnotations
+
+    _MCP_IMPORT_ERROR: ModuleNotFoundError | None = None
+    FastMCP = _FastMCP
+    ToolAnnotations = _MCPToolAnnotations
+except ModuleNotFoundError as exc:  # pragma: no cover - exercised in interpreter-specific entrypoint tests
+    _MCP_IMPORT_ERROR = exc
+    FastMCP = None
+
+    @dataclass
+    class _FallbackToolAnnotations:
+        title: str
+        readOnlyHint: bool
+        destructiveHint: bool
+        idempotentHint: bool
+        openWorldHint: bool
+
+    ToolAnnotations = _FallbackToolAnnotations
 
 from .config import get_settings
-from .sanitization import sanitize_untrusted_text
+from .sanitization import (
+    apply_privacy_guardrails,
+    privacy_mode_policy,
+    sanitize_untrusted_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +94,8 @@ def _acquire_instance_lock() -> None:
         logger.warning("fcntl not available (Windows?) — skipping instance lock")
         return
 
-    settings = get_settings()
-    data_dir = Path(settings.sqlite_path).parent
+    _chromadb_path, sqlite_path = _resolved_runtime_paths()
+    data_dir = Path(sqlite_path).parent
     data_dir.mkdir(parents=True, exist_ok=True)
     lock_path = data_dir / "mcp_server.lock"
 
@@ -133,9 +157,10 @@ def _release_lock() -> None:
 
 def _log_startup_info() -> None:
     """Log diagnostic info to stderr on startup."""
+    chromadb_path, sqlite_path = _resolved_runtime_paths()
     settings = get_settings()
-    sqlite_exists = os.path.exists(settings.sqlite_path)
-    chromadb_exists = os.path.isdir(settings.chromadb_path)
+    sqlite_exists = os.path.exists(sqlite_path)
+    chromadb_exists = os.path.isdir(chromadb_path)
     logger.info(
         "MCP server starting — PID=%d python=%s cwd=%s",
         os.getpid(),
@@ -144,9 +169,9 @@ def _log_startup_info() -> None:
     )
     logger.info(
         "  sqlite=%s (exists=%s) chromadb=%s (exists=%s)",
-        settings.sqlite_path,
+        sqlite_path,
         sqlite_exists,
-        settings.chromadb_path,
+        chromadb_path,
         chromadb_exists,
     )
     logger.info(
@@ -161,13 +186,52 @@ def _log_startup_info() -> None:
     )
 
 
-mcp = FastMCP("email_mcp")
+def _missing_mcp_runtime_message() -> str:
+    return (
+        "The active Python interpreter does not have the 'mcp' package installed. "
+        "Use '.venv/bin/python -m src.mcp_server' or install this project's dependencies in the current interpreter."
+    )
+
+
+class _MissingFastMCP:
+    """Fallback MCP runtime placeholder when the active interpreter lacks the mcp package."""
+
+    def __init__(self, _name: str):
+        self._name = _name
+
+    def tool(self, *args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+            return fn
+
+        return _decorator
+
+    def run(self) -> None:
+        raise SystemExit(_missing_mcp_runtime_message())
+
+
+mcp = FastMCP("email_mcp") if FastMCP is not None else _MissingFastMCP("email_mcp")
 
 _retriever = None
 _retriever_lock = threading.Lock()
+_runtime_chromadb_path: str | None = None
+_runtime_sqlite_path: str | None = None
 
 
-def _tool_annotations(title: str) -> ToolAnnotations:
+def set_runtime_archive_paths(*, chromadb_path: str | None = None, sqlite_path: str | None = None) -> None:
+    """Persist runtime archive overrides for later read tools in this server process."""
+    global _runtime_chromadb_path, _runtime_sqlite_path
+    if chromadb_path:
+        _runtime_chromadb_path = chromadb_path
+    if sqlite_path:
+        _runtime_sqlite_path = sqlite_path
+
+
+def _resolved_runtime_paths() -> tuple[str, str]:
+    settings = get_settings()
+    return (_runtime_chromadb_path or settings.chromadb_path, _runtime_sqlite_path or settings.sqlite_path)
+
+
+def _tool_annotations(title: str) -> Any:
     """Standardized non-destructive MCP tool annotations."""
     return ToolAnnotations(
         title=title,
@@ -194,7 +258,13 @@ def get_retriever() -> EmailRetriever:
         if _retriever is None:
             from .retriever import EmailRetriever
 
-            _retriever = EmailRetriever()
+            chromadb_path, _sqlite_path = _resolved_runtime_paths()
+            try:
+                _retriever = EmailRetriever(chromadb_path=chromadb_path)
+            except TypeError as exc:
+                if "chromadb_path" not in str(exc):
+                    raise
+                _retriever = EmailRetriever()
     if _retriever is None:
         raise RuntimeError("Retriever initialization failed")
     return _retriever
@@ -224,9 +294,9 @@ def get_email_db() -> EmailDatabase | None:
         if _email_db is None:
             from .email_db import EmailDatabase
 
-            settings = get_settings()
-            if Path(settings.sqlite_path).exists():
-                _email_db = EmailDatabase(settings.sqlite_path)
+            _chromadb_path, sqlite_path = _resolved_runtime_paths()
+            if Path(sqlite_path).exists():
+                _email_db = EmailDatabase(sqlite_path)
     return _email_db
 
 
@@ -244,7 +314,7 @@ async def _offload(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     return await asyncio.to_thread(fn)
 
 
-def _write_tool_annotations(title: str) -> ToolAnnotations:
+def _write_tool_annotations(title: str) -> Any:
     """Tool annotations for write operations."""
     return ToolAnnotations(
         title=title,
@@ -255,7 +325,7 @@ def _write_tool_annotations(title: str) -> ToolAnnotations:
     )
 
 
-def _idempotent_write_annotations(title: str) -> ToolAnnotations:
+def _idempotent_write_annotations(title: str) -> Any:
     """Tool annotations for idempotent write operations (report/export/ingest)."""
     return ToolAnnotations(
         title=title,
@@ -286,11 +356,14 @@ class ToolDeps:
     idempotent_write_annotations = staticmethod(_idempotent_write_annotations)
     DB_UNAVAILABLE = _DB_UNAVAILABLE
     sanitize = staticmethod(sanitize_untrusted_text)
+    apply_privacy_guardrails = staticmethod(apply_privacy_guardrails)
+    privacy_mode_policy = staticmethod(privacy_mode_policy)
 
 
-from .tools import register_all  # noqa: E402
+if FastMCP is not None:
+    from .tools import register_all
 
-register_all(mcp, ToolDeps())
+    register_all(mcp, ToolDeps())
 
 
 # ── Entry Point ────────────────────────────────────────────────
@@ -303,12 +376,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Run the Email RAG MCP server over stdio.",
     )
     parser.add_argument("--version", action="version", version="0.1.0")
+    parser.add_argument("--chromadb-path", default=None, help="Custom ChromaDB path for this MCP server process.")
+    parser.add_argument("--sqlite-path", default=None, help="Custom SQLite metadata path for this MCP server process.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     """Startup routine: acquire lock, log diagnostics, then run the server."""
-    _build_arg_parser().parse_args(argv)
+    args = _build_arg_parser().parse_args(argv)
+    set_runtime_archive_paths(
+        chromadb_path=getattr(args, "chromadb_path", None),
+        sqlite_path=getattr(args, "sqlite_path", None),
+    )
+    if _MCP_IMPORT_ERROR is not None:
+        raise SystemExit(_missing_mcp_runtime_message()) from _MCP_IMPORT_ERROR
     _acquire_instance_lock()
     _log_startup_info()
     mcp.run()

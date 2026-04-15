@@ -8,6 +8,101 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+_LEGAL_SUPPORT_RULES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "chronology",
+        (
+            "chronology",
+            "timeline",
+            "sequence",
+            "before",
+            "after",
+            "date",
+            "dated",
+            "calendar",
+            "meeting",
+            "attendance",
+            "timesheet",
+            "time record",
+            "note",
+        ),
+        ("timeline", "chronology", "meeting note", "calendar record", "time record"),
+    ),
+    (
+        "comparator",
+        (
+            "comparator",
+            "compare",
+            "comparison",
+            "unequal treatment",
+            "similarly situated",
+            "other employee",
+            "peer",
+        ),
+        ("comparator", "peer treatment", "similarly situated", "unequal treatment"),
+    ),
+    (
+        "participation",
+        (
+            "sbv",
+            "personalrat",
+            "betriebsrat",
+            "lpvg",
+            "participation",
+            "consultation",
+            "consult",
+            "bem",
+            "schwerbehindertenvertretung",
+        ),
+        ("sbv", "personalrat", "betriebsrat", "participation record", "consultation"),
+    ),
+    (
+        "contradiction",
+        (
+            "contradiction",
+            "contradict",
+            "discrepancy",
+            "inconsistent",
+            "mismatch",
+            "promise",
+            "omission",
+            "summary",
+            "conflict",
+        ),
+        ("contradiction", "inconsistent summary", "promise", "omission", "discrepancy"),
+    ),
+    (
+        "document_request",
+        (
+            "missing proof",
+            "missing exhibit",
+            "missing record",
+            "document request",
+            "preservation",
+            "custodian",
+        ),
+        ("missing record", "document request", "preservation", "custodian"),
+    ),
+)
+
+
+def legal_support_query_profile(query: str | None) -> dict[str, Any]:
+    """Return deterministic legal-support intent flags for one query."""
+    text = " ".join(str(query or "").lower().split())
+    intents: list[str] = []
+    suggested_terms: list[str] = []
+    for intent_id, triggers, additions in _LEGAL_SUPPORT_RULES:
+        if any(trigger in text for trigger in triggers):
+            intents.append(intent_id)
+            for term in additions:
+                if term not in suggested_terms and not re.search(r"\b" + re.escape(term) + r"\b", text):
+                    suggested_terms.append(term)
+    return {
+        "is_legal_support": bool(intents),
+        "intents": intents,
+        "suggested_terms": suggested_terms,
+    }
+
 
 class QueryExpander:
     """Expand queries with semantically related terms using the embedding model.
@@ -76,12 +171,20 @@ class QueryExpander:
             return query
 
         try:
-            sim_result = self._compute_similarities(query)
-            if sim_result is None:
-                return query
-            _similarities, top_indices = sim_result
             query_lower = query.lower()
             added: list[str] = []
+            profile = legal_support_query_profile(query)
+            for term in profile["suggested_terms"]:
+                if len(added) >= n_terms:
+                    break
+                if re.search(r"\b" + re.escape(term.lower()) + r"\b", query_lower):
+                    continue
+                added.append(term)
+
+            sim_result = self._compute_similarities(query)
+            if sim_result is None:
+                return f"{query} {' '.join(added)}".strip() if added else query
+            _similarities, top_indices = sim_result
             for idx in top_indices:
                 if len(added) >= n_terms:
                     break
@@ -89,6 +192,8 @@ class QueryExpander:
                 if re.search(r"\b" + re.escape(term.lower()) + r"\b", query_lower):
                     continue
                 if len(term) < 3:
+                    continue
+                if term in added:
                     continue
                 added.append(term)
 

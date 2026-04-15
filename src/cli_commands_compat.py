@@ -315,10 +315,10 @@ def render_results_table_impl(console, table_cls, results) -> None:
     console.print(table)
 
 
-def get_email_db_impl(*, get_settings):
+def get_email_db_impl(*, get_settings, sqlite_path_override: str | None = None):
     """Get EmailDatabase instance from settings, or exit with error."""
     settings = get_settings()
-    sqlite_path = settings.sqlite_path
+    sqlite_path = sqlite_path_override or settings.sqlite_path
     if not sqlite_path or not Path(sqlite_path).exists():
         print("SQLite database not found. Run ingestion first:")
         print("  python -m src.ingest data/your-export.olm --extract-entities")

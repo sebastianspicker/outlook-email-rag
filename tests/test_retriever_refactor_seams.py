@@ -10,6 +10,18 @@ def _bare_retriever() -> EmailRetriever:
     return EmailRetriever.__new__(EmailRetriever)
 
 
+def test_bare_retriever_exposes_stable_last_search_debug_seam():
+    """The refactor seam should exist even on lightweight test instances."""
+    retriever = _bare_retriever()
+
+    assert retriever.last_search_debug == {}
+
+    retriever._set_last_search_debug({"used_query_expansion": True})
+
+    assert retriever._last_search_debug == {"used_query_expansion": True}
+    assert retriever.last_search_debug == {"used_query_expansion": True}
+
+
 def test_search_filtered_delegates_to_extracted_helpers(monkeypatch):
     """search_filtered should keep delegating through the stable seam."""
     retriever = _bare_retriever()

@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from .email_db import EmailDatabase
 
+from .sanitization import apply_privacy_guardrails
+
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -78,12 +80,14 @@ class ReportGenerator:
         self,
         title: str = "Email Archive Report",
         output_path: str | None = None,
+        privacy_mode: str = "full_access",
     ) -> str:
         """Generate the HTML report.
 
         Args:
             title: Title for the report header.
             output_path: If provided, write the HTML to this file path.
+            privacy_mode: Output privacy mode for archive rendering.
 
         Returns:
             The rendered HTML string.
@@ -101,11 +105,36 @@ class ReportGenerator:
         monthly_volume = self._gather_monthly_volume()
         top_entities = self._gather_top_entities()
         response_times = self._gather_response_times()
+        render_payload, privacy_guardrails = apply_privacy_guardrails(
+            {
+                "title": title,
+                "overview": overview,
+                "top_senders": top_senders,
+                "folders": folders,
+                "monthly_volume": monthly_volume,
+                "top_entities": top_entities,
+                "response_times": response_times,
+            },
+            privacy_mode=privacy_mode,
+        )
+        render_payload = render_payload if isinstance(render_payload, dict) else {}
 
         # Template uses these as denominators for CSS width percentages
-        top_senders_max = max((s["message_count"] for s in top_senders), default=1)
-        folders_max = max((c for _, c in folders), default=1)
-        monthly_volume_max = max((r["count"] for r in monthly_volume), default=1)
+        top_senders_render = render_payload.get("top_senders") if isinstance(render_payload.get("top_senders"), list) else []
+        folders_render = render_payload.get("folders") if isinstance(render_payload.get("folders"), list) else []
+        monthly_volume_render = (
+            render_payload.get("monthly_volume") if isinstance(render_payload.get("monthly_volume"), list) else []
+        )
+        top_entities_render = render_payload.get("top_entities") if isinstance(render_payload.get("top_entities"), list) else []
+        response_times_render = (
+            render_payload.get("response_times") if isinstance(render_payload.get("response_times"), list) else []
+        )
+        top_senders_max = max((s["message_count"] for s in top_senders_render if isinstance(s, dict)), default=1)
+        folders_max = max((c for _, c in folders_render if isinstance(c, int)), default=1)
+        monthly_volume_max = max(
+            (r["count"] for r in monthly_volume_render if isinstance(r, dict) and isinstance(r.get("count"), int)),
+            default=1,
+        )
 
         env = Environment(
             loader=FileSystemLoader(str(_TEMPLATE_DIR)),
@@ -113,17 +142,18 @@ class ReportGenerator:
         )
         template = env.get_template("report.html")
         html = template.render(
-            title=title,
+            title=render_payload.get("title") or title,
             generated_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
-            overview=overview,
-            top_senders=top_senders,
+            overview=render_payload.get("overview") or overview,
+            top_senders=top_senders_render,
             top_senders_max=top_senders_max,
-            folders=folders,
+            folders=folders_render,
             folders_max=folders_max,
-            monthly_volume=monthly_volume,
+            monthly_volume=monthly_volume_render,
             monthly_volume_max=monthly_volume_max,
-            top_entities=top_entities,
-            response_times=response_times,
+            top_entities=top_entities_render,
+            response_times=response_times_render,
+            privacy_guardrails=privacy_guardrails,
         )
 
         if output_path:

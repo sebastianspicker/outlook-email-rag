@@ -177,8 +177,11 @@ class TestEvidenceTimelineLimit:
         mixin = EvidenceMixin.__new__(EvidenceMixin)
         mixin.conn = conn
 
-        items = mixin.evidence_timeline()
-        assert len(items) == 10
+        try:
+            items = mixin.evidence_timeline()
+            assert len(items) == 10
+        finally:
+            conn.close()
 
     def test_timeline_with_limit(self, tmp_path):
         from src.db_evidence import EvidenceMixin
@@ -187,10 +190,13 @@ class TestEvidenceTimelineLimit:
         mixin = EvidenceMixin.__new__(EvidenceMixin)
         mixin.conn = conn
 
-        items = mixin.evidence_timeline(limit=5)
-        assert len(items) == 5
-        # Should be ordered by date ASC
-        assert items[0]["date"] <= items[4]["date"]
+        try:
+            items = mixin.evidence_timeline(limit=5)
+            assert len(items) == 5
+            # Should be ordered by date ASC
+            assert items[0]["date"] <= items[4]["date"]
+        finally:
+            conn.close()
 
     def test_timeline_limit_with_category_filter(self, tmp_path):
         from src.db_evidence import EvidenceMixin
@@ -199,9 +205,12 @@ class TestEvidenceTimelineLimit:
         mixin = EvidenceMixin.__new__(EvidenceMixin)
         mixin.conn = conn
 
-        items = mixin.evidence_timeline(category="harassment", limit=3)
-        assert len(items) == 3
-        assert all(item["category"] == "harassment" for item in items)
+        try:
+            items = mixin.evidence_timeline(category="harassment", limit=3)
+            assert len(items) == 3
+            assert all(item["category"] == "harassment" for item in items)
+        finally:
+            conn.close()
 
 
 # ── Custody compact mode ──────────────────────────────────────

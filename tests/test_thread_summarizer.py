@@ -26,6 +26,11 @@ class TestSplitSentences:
         for s in sentences:
             assert "   " not in s
 
+    def test_german_sentence_split_supports_umlauts(self):
+        text = "Änderung ist abgestimmt. Übermorgen senden wir die Freigabe. Öffentliche Rückmeldung folgt später."
+        sentences = _split_sentences(text)
+        assert len(sentences) == 3
+
 
 class TestSummarizeEmail:
     def test_empty_text(self):
@@ -131,6 +136,25 @@ class TestSummarizeThread:
         ]
         result = summarize_thread(emails, max_sentences=3)
         assert isinstance(result, str) and result
+
+    def test_german_thread_summary_keeps_informative_sentences(self):
+        emails = [
+            {
+                "clean_body": (
+                    "Bitte prüfen Sie die Eingruppierung erneut. "
+                    "Die medizinische Empfehlung liegt seit gestern vor. "
+                    "Wir benötigen eine schriftliche Rückmeldung bis Freitag."
+                ),
+                "sender_name": "Alex",
+            },
+            {
+                "clean_body": ("Die SBV wurde bislang nicht beteiligt. Bitte bestätigen Sie den weiteren Ablauf schriftlich."),
+                "sender_name": "Morgan",
+            },
+        ]
+
+        result = summarize_thread(emails, max_sentences=3)
+        assert "Eingruppierung" in result or "SBV" in result or "Rückmeldung" in result
 
     def test_thread_with_empty_bodies(self):
         emails = [

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-def get_email_db_safe_impl() -> Any | None:
+def get_email_db_safe_impl(sqlite_path: str | None = None) -> Any | None:
     try:
         from .config import get_settings
         from .email_db import EmailDatabase
@@ -15,8 +15,9 @@ def get_email_db_safe_impl() -> Any | None:
         from src.email_db import EmailDatabase
 
     settings = get_settings()
-    if settings.sqlite_path and Path(settings.sqlite_path).exists():
-        return EmailDatabase(settings.sqlite_path)
+    db_path = sqlite_path or settings.sqlite_path
+    if db_path and Path(db_path).exists():
+        return EmailDatabase(db_path)
     return None
 
 
@@ -68,6 +69,7 @@ def render_dashboard_page_impl(*, st_module: Any, get_email_db_safe_fn: Any) -> 
             st_module.info(f"No contacts found for {email_input}")
 
     st_module.subheader("Response Times")
+    st_module.caption("Based on up to the 500 most recent canonical reply pairs.")
     resp_data = prepare_response_times_data(analyzer, limit=15)
     if resp_data:
         df_resp = pd.DataFrame(resp_data)
@@ -191,6 +193,10 @@ def render_evidence_page_impl(
     type_badge_html_fn: Any,
 ) -> None:
     st_module.markdown("## Evidence Collection")
+    st_module.info(
+        "Exploratory evidence collection only. For lawyer-ready evidence indexes, chronology, and counsel-facing "
+        "matter review, use the CLI or MCP `case full-pack` / `case counsel-pack` workflows."
+    )
 
     db = get_email_db_safe_fn()
     if db is None:

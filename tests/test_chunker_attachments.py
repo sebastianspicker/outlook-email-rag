@@ -72,3 +72,20 @@ def test_chunk_attachment_unique_ids_same_filename():
     assert len(chunks_a) == 1
     assert len(chunks_b) == 1
     assert chunks_a[0].chunk_id != chunks_b[0].chunk_id
+
+
+def test_chunk_attachment_normalizes_parent_metadata_for_chroma():
+    parent_meta = {
+        "uid": "e1",
+        "subject": "Report",
+        "date": "2025-01-01",
+        "to": ["a@example.com", "b@example.com"],
+        "cc": [],
+        "attachments": [{"name": "raw.json"}],
+    }
+    chunks = chunk_attachment("e1", "raw.json", "Content A.", parent_meta, att_index=0)
+    assert len(chunks) == 1
+    metadata = chunks[0].metadata
+    assert metadata["to"] == "a@example.com, b@example.com"
+    assert metadata["cc"] == ""
+    assert metadata["attachments"] == '[{"name": "raw.json"}]'

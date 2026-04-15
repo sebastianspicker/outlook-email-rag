@@ -2,169 +2,188 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-MULTI_SOURCE_CASE_BUNDLE_VERSION = "1"
-_DECLARED_SOURCE_TYPES = ("email", "attachment", "meeting_note", "chat_log", "formal_document")
-_FORMAL_DOCUMENT_EXTENSIONS = {".doc", ".docx", ".md", ".odt", ".pdf", ".rtf", ".txt"}
-_FORMAL_DOCUMENT_MIME_MARKERS = (
-    "application/pdf",
-    "application/msword",
-    "application/rtf",
-    "application/vnd.oasis.opendocument.text",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-    "text/markdown",
-    "text/rtf",
+from .matter_ingestion import source_from_manifest_artifact
+from .multi_source_case_bundle_helpers import (
+    MULTI_SOURCE_CASE_BUNDLE_VERSION,
+    _attachment_document_kind,
+    _attachment_source_type,
+    _calendar_semantics,
+    _chat_log_sources,
+    _chronology_anchor_for_source,
+    _document_locator,
+    _documentary_support_payload,
+    _meeting_note_sources,
+    _source_reliability_for_attachment,
+    _source_reliability_for_email,
+    _spreadsheet_semantics,
+    _string_list,
+    _weighting_metadata,
 )
+from .multi_source_case_bundle_summary import _rebuild_bundle_summary
 
 
-def _is_formal_document(attachment: dict[str, Any]) -> bool:
-    """Return whether an attachment should be surfaced as a formal document source."""
-    filename = str(attachment.get("filename") or "").strip()
-    mime_type = str(attachment.get("mime_type") or "").strip().lower()
-    if Path(filename).suffix.lower() in _FORMAL_DOCUMENT_EXTENSIONS:
-        return True
-    return any(marker in mime_type for marker in _FORMAL_DOCUMENT_MIME_MARKERS)
-
-
-def _source_reliability_for_email(candidate: dict[str, Any]) -> dict[str, Any]:
-    """Return source reliability metadata for one email-body source."""
-    weak_message = candidate.get("weak_message")
-    verification_status = str(candidate.get("verification_status") or "")
-    if weak_message:
-        return {
-            "level": "medium",
-            "basis": "weak_message_semantics",
-            "caveats": ["Email body is available, but the message was already classified as weak evidence."],
-        }
-    if "forensic" in verification_status:
-        return {
-            "level": "high",
-            "basis": "forensic_body_verification",
-            "caveats": [],
-        }
-    return {
-        "level": "high",
-        "basis": "authored_email_body",
-        "caveats": [],
+def append_chat_log_sources(
+    bundle: dict[str, Any] | None,
+    *,
+    chat_log_entries: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(bundle, dict):
+        return bundle
+    bundle_copy = {
+        **bundle,
+        "summary": dict(bundle.get("summary") or {}),
+        "sources": [source for source in bundle.get("sources", []) if isinstance(source, dict)],
+        "source_links": [link for link in bundle.get("source_links", []) if isinstance(link, dict)],
+        "source_type_profiles": [profile for profile in bundle.get("source_type_profiles", []) if isinstance(profile, dict)],
     }
-
-
-def _source_reliability_for_attachment(candidate: dict[str, Any], *, source_type: str) -> dict[str, Any]:
-    """Return source reliability metadata for one attachment-backed source."""
-    raw_attachment = candidate.get("attachment")
-    attachment: dict[str, Any] = raw_attachment if isinstance(raw_attachment, dict) else {}
-    evidence_strength = str(attachment.get("evidence_strength") or "")
-    extraction_state = str(attachment.get("extraction_state") or "")
-    if evidence_strength == "strong_text":
-        basis = "attachment_text_extracted"
-        if source_type == "formal_document":
-            basis = "formal_document_text_extracted"
-        return {
-            "level": "high",
-            "basis": basis,
-            "caveats": [],
-        }
-    return {
-        "level": "low",
-        "basis": extraction_state or "attachment_reference_only",
-        "caveats": ["Attachment is represented as a reference hit without extracted strong-text evidence."],
+    existing_source_ids = {str(source.get("source_id") or "") for source in bundle_copy["sources"]}
+    email_source_ids_by_uid = {
+        str(source.get("uid") or ""): str(source.get("source_id") or "")
+        for source in bundle_copy["sources"]
+        if str(source.get("source_type") or "") == "email" and str(source.get("uid") or "")
     }
+    new_sources, new_links, _new_counts = _chat_log_sources(chat_log_entries, email_source_ids_by_uid=email_source_ids_by_uid)
+    for source in new_sources:
+        if str(source.get("source_id") or "") in existing_source_ids:
+            continue
+        bundle_copy["sources"].append(source)
+        existing_source_ids.add(str(source.get("source_id") or ""))
+    bundle_copy["source_links"].extend(new_links)
+    return _rebuild_bundle_summary(bundle_copy)
 
 
-def _source_reliability_for_meeting(note: dict[str, Any]) -> dict[str, Any]:
-    """Return source reliability metadata for one meeting-note source."""
-    extracted_from = str(note.get("_extracted_from") or "")
-    if extracted_from == "meeting_data":
-        return {
-            "level": "high",
-            "basis": "calendar_meeting_metadata",
-            "caveats": [],
-        }
-    return {
-        "level": "medium",
-        "basis": "exchange_extracted_meeting_reference",
-        "caveats": ["Meeting context was extracted from Exchange metadata rather than authored narrative text."],
+def append_manifest_sources(
+    bundle: dict[str, Any] | None,
+    *,
+    matter_manifest: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    manifest = matter_manifest if isinstance(matter_manifest, dict) else {}
+    artifacts = [item for item in manifest.get("artifacts", []) if isinstance(item, dict)]
+    if not artifacts:
+        return bundle
+    bundle_copy = {
+        **(bundle or {}),
+        "summary": dict((bundle or {}).get("summary") or {}),
+        "sources": [source for source in (bundle or {}).get("sources", []) if isinstance(source, dict)],
+        "source_links": [link for link in (bundle or {}).get("source_links", []) if isinstance(link, dict)],
+        "source_type_profiles": [
+            profile for profile in (bundle or {}).get("source_type_profiles", []) if isinstance(profile, dict)
+        ],
+        "chronology_anchors": [anchor for anchor in (bundle or {}).get("chronology_anchors", []) if isinstance(anchor, dict)],
     }
-
-
-def _weighting_metadata(*, source_type: str, reliability_level: str, text_available: bool) -> dict[str, Any]:
-    """Return simple weighting metadata for downstream evidence consumers."""
-    base_weight = 0.4
-    if reliability_level == "medium":
-        base_weight = 0.7
-    elif reliability_level == "high":
-        base_weight = 1.0
-    return {
-        "weight_label": reliability_level,
-        "base_weight": base_weight,
-        "text_available": text_available,
-        "can_corroborate_or_contradict": text_available and source_type in {"email", "attachment", "formal_document"},
+    existing_source_ids = {str(source.get("source_id") or "") for source in bundle_copy["sources"]}
+    email_source_ids_by_uid = {
+        str(source.get("uid") or ""): str(source.get("source_id") or "")
+        for source in bundle_copy["sources"]
+        if str(source.get("source_type") or "") == "email" and str(source.get("uid") or "")
     }
+    for index, artifact in enumerate(artifacts, start=1):
+        source = source_from_manifest_artifact(artifact, index=index)
+        source_id = str(source.get("source_id") or "")
+        if source_id in existing_source_ids:
+            continue
+        bundle_copy["sources"].append(source)
+        existing_source_ids.add(source_id)
+        uid = str(source.get("uid") or "")
+        if uid and str(source.get("source_type") or "") == "email":
+            email_source_ids_by_uid[uid] = source_id
+        if uid and str(source.get("source_type") or "") != "email":
+            related_email_source_id = email_source_ids_by_uid.get(uid)
+            if related_email_source_id:
+                bundle_copy["source_links"].append(
+                    {
+                        "from_source_id": source_id,
+                        "to_source_id": related_email_source_id,
+                        "link_type": "declared_related_record",
+                        "relationship": "matter_manifest_cross_reference",
+                    }
+                )
+    return _rebuild_bundle_summary(bundle_copy)
 
 
-def _meeting_note_sources(uid: str, full_email: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Return meeting-note sources derivable from the current full email row."""
-    email = full_email or {}
-    sources: list[dict[str, Any]] = []
-    meeting_data = email.get("meeting_data")
-    if isinstance(meeting_data, dict) and meeting_data:
-        note = {
-            "source_id": f"meeting:{uid}:meeting_data",
-            "source_type": "meeting_note",
-            "document_kind": "calendar_metadata",
-            "uid": uid,
-            "parent_source_id": f"email:{uid}",
-            "title": str(email.get("subject") or meeting_data.get("subject") or ""),
-            "snippet": "; ".join(f"{key}={value}" for key, value in sorted(meeting_data.items())[:3]),
-            "date": str(email.get("date") or ""),
-            "provenance": {
-                "uid": uid,
-                "meeting_source": "meeting_data",
-            },
-            "_extracted_from": "meeting_data",
+def compact_multi_source_case_bundle(bundle: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(bundle, dict):
+        return bundle
+    compact_sources: list[dict[str, Any]] = []
+    for source in bundle.get("sources", []):
+        if not isinstance(source, dict):
+            continue
+        compact_source = {
+            "source_id": str(source.get("source_id") or ""),
+            "source_type": str(source.get("source_type") or ""),
+            "document_kind": str(source.get("document_kind") or ""),
+            "source_reliability": dict(source.get("source_reliability") or {}),
         }
-        reliability = _source_reliability_for_meeting(note)
-        note["source_reliability"] = reliability
-        note["source_weighting"] = _weighting_metadata(
-            source_type="meeting_note",
-            reliability_level=str(reliability["level"]),
-            text_available=True,
-        )
-        sources.append(note)
-    exchange_meetings = email.get("exchange_extracted_meetings")
-    if isinstance(exchange_meetings, list):
-        for index, meeting in enumerate(exchange_meetings, start=1):
-            if not isinstance(meeting, dict) or not meeting:
-                continue
-            note = {
-                "source_id": f"meeting:{uid}:exchange:{index}",
-                "source_type": "meeting_note",
-                "document_kind": "exchange_meeting_reference",
-                "uid": uid,
-                "parent_source_id": f"email:{uid}",
-                "title": str(meeting.get("subject") or email.get("subject") or ""),
-                "snippet": "; ".join(f"{key}={value}" for key, value in sorted(meeting.items())[:3]),
-                "date": str(email.get("date") or ""),
-                "provenance": {
-                    "uid": uid,
-                    "meeting_source": "exchange_extracted_meetings",
-                    "index": index,
-                },
-                "_extracted_from": "exchange_extracted_meetings",
+        for key in (
+            "uid",
+            "actor_id",
+            "title",
+            "date",
+            "snippet",
+            "sender_name",
+            "sender_email",
+            "author",
+            "date_context",
+            "operator_summary",
+        ):
+            value = source.get(key)
+            if value not in (None, "", []):
+                compact_source[key] = value
+        for key in ("to", "cc", "bcc", "recipients", "participants"):
+            values = [str(item) for item in source.get(key, []) if item]
+            if values:
+                compact_source[key] = values
+        if source.get("chronology_anchor"):
+            compact_source["chronology_anchor"] = dict(source.get("chronology_anchor") or {})
+        if source.get("provenance"):
+            provenance = dict(source.get("provenance") or {})
+            compact_source["provenance"] = {
+                "evidence_handle": str(provenance.get("evidence_handle") or ""),
+                "chunk_id": str(provenance.get("chunk_id") or ""),
+                "snippet_start": provenance.get("snippet_start"),
+                "snippet_end": provenance.get("snippet_end"),
             }
-            reliability = _source_reliability_for_meeting(note)
-            note["source_reliability"] = reliability
-            note["source_weighting"] = _weighting_metadata(
-                source_type="meeting_note",
-                reliability_level=str(reliability["level"]),
-                text_available=True,
-            )
-            sources.append(note)
-    return sources
+        if source.get("documentary_support"):
+            documentary_support = dict(source.get("documentary_support") or {})
+            compact_source["documentary_support"] = {
+                "extraction_state": str(documentary_support.get("extraction_state") or ""),
+                "evidence_strength": str(documentary_support.get("evidence_strength") or ""),
+                "ocr_used": bool(documentary_support.get("ocr_used")),
+                "failure_reason": str(documentary_support.get("failure_reason") or ""),
+                "text_preview": str(documentary_support.get("text_preview") or ""),
+                "format_profile": dict(documentary_support.get("format_profile") or {}),
+                "extraction_quality": dict(documentary_support.get("extraction_quality") or {}),
+            }
+        if source.get("document_locator"):
+            locator = dict(source.get("document_locator") or {})
+            compact_source["document_locator"] = {
+                "evidence_handle": str(locator.get("evidence_handle") or ""),
+                "chunk_id": str(locator.get("chunk_id") or ""),
+            }
+        compact_sources.append(compact_source)
+    compact_profiles = [
+        dict(profile)
+        for profile in bundle.get("source_type_profiles", [])
+        if isinstance(profile, dict) and bool(profile.get("available"))
+    ]
+    return {
+        "version": str(bundle.get("version") or ""),
+        "summary": dict(bundle.get("summary") or {}),
+        "sources": compact_sources,
+        "source_links": [
+            {
+                "from_source_id": str(link.get("from_source_id") or ""),
+                "to_source_id": str(link.get("to_source_id") or ""),
+                "link_type": str(link.get("link_type") or ""),
+                "relationship": str(link.get("relationship") or ""),
+            }
+            for link in bundle.get("source_links", [])
+            if isinstance(link, dict)
+        ],
+        "source_type_profiles": compact_profiles,
+    }
 
 
 def build_multi_source_case_bundle(
@@ -173,17 +192,14 @@ def build_multi_source_case_bundle(
     candidates: list[dict[str, Any]],
     attachment_candidates: list[dict[str, Any]],
     full_map: dict[str, Any],
+    chat_log_entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """Return a conservative multi-source evidence bundle for case-scoped analysis."""
     scope = (case_bundle or {}).get("scope") if isinstance(case_bundle, dict) else None
     if not isinstance(scope, dict):
         return None
-
     sources: list[dict[str, Any]] = []
     source_links: list[dict[str, Any]] = []
-    source_type_counts: Counter[str] = Counter()
     email_source_ids_by_uid: dict[str, str] = {}
-
     for candidate in candidates:
         uid = str(candidate.get("uid") or "")
         if not uid:
@@ -191,6 +207,7 @@ def build_multi_source_case_bundle(
         source_id = f"email:{uid}"
         email_source_ids_by_uid[uid] = source_id
         reliability = _source_reliability_for_email(candidate)
+        full_email = full_map.get(uid) if isinstance(full_map, dict) else None
         source = {
             "source_id": source_id,
             "source_type": "email",
@@ -200,6 +217,11 @@ def build_multi_source_case_bundle(
             "title": str(candidate.get("subject") or ""),
             "date": str(candidate.get("date") or ""),
             "snippet": str(candidate.get("snippet") or ""),
+            "sender_name": str((full_email or {}).get("sender_name") or candidate.get("sender_name") or ""),
+            "sender_email": str((full_email or {}).get("sender_email") or candidate.get("sender_email") or ""),
+            "to": _string_list((full_email or {}).get("to")),
+            "cc": _string_list((full_email or {}).get("cc")),
+            "bcc": _string_list((full_email or {}).get("bcc")),
             "provenance": dict(candidate.get("provenance") or {}),
             "follow_up": dict(candidate.get("follow_up") or {}),
             "source_reliability": reliability,
@@ -209,13 +231,19 @@ def build_multi_source_case_bundle(
                 text_available=bool(str(candidate.get("snippet") or "").strip()),
             ),
         }
+        chronology_anchor = _chronology_anchor_for_source(source)
+        if chronology_anchor is not None:
+            source["chronology_anchor"] = chronology_anchor
+        spreadsheet_semantics = _spreadsheet_semantics(source)
+        if spreadsheet_semantics is not None:
+            source["spreadsheet_semantics"] = spreadsheet_semantics
+        calendar_semantics = _calendar_semantics(source)
+        if calendar_semantics is not None:
+            source["calendar_semantics"] = calendar_semantics
         sources.append(source)
-        source_type_counts["email"] += 1
-
         for note in _meeting_note_sources(uid, full_map.get(uid) if isinstance(full_map, dict) else None):
             note.pop("_extracted_from", None)
             sources.append(note)
-            source_type_counts["meeting_note"] += 1
             source_links.append(
                 {
                     "from_source_id": note["source_id"],
@@ -224,19 +252,17 @@ def build_multi_source_case_bundle(
                     "relationship": "contextual_metadata",
                 }
             )
-
     for candidate in attachment_candidates:
         uid = str(candidate.get("uid") or "")
-        raw_attachment = candidate.get("attachment")
-        attachment: dict[str, Any] = raw_attachment if isinstance(raw_attachment, dict) else {}
-        source_type = "formal_document" if _is_formal_document(attachment) else "attachment"
+        attachment = cast(dict[str, Any], candidate.get("attachment")) if isinstance(candidate.get("attachment"), dict) else {}
+        source_type = _attachment_source_type(candidate, attachment)
         filename = str(attachment.get("filename") or "attachment")
         source_id = f"{source_type}:{uid}:{filename}"
         reliability = _source_reliability_for_attachment(candidate, source_type=source_type)
         source = {
             "source_id": source_id,
             "source_type": source_type,
-            "document_kind": "attachment" if source_type == "attachment" else "attached_document",
+            "document_kind": _attachment_document_kind(source_type),
             "uid": uid,
             "actor_id": str(candidate.get("sender_actor_id") or ""),
             "title": filename,
@@ -244,6 +270,8 @@ def build_multi_source_case_bundle(
             "snippet": str(candidate.get("snippet") or ""),
             "provenance": dict(candidate.get("provenance") or {}),
             "attachment": dict(attachment),
+            "document_locator": _document_locator(candidate),
+            "documentary_support": _documentary_support_payload(candidate, source_type=source_type) or {},
             "follow_up": dict(candidate.get("follow_up") or {}),
             "source_reliability": reliability,
             "source_weighting": _weighting_metadata(
@@ -252,59 +280,46 @@ def build_multi_source_case_bundle(
                 text_available=bool(attachment.get("text_available")),
             ),
         }
+        if isinstance(attachment.get("spreadsheet_semantics"), dict) and attachment.get("spreadsheet_semantics"):
+            source["spreadsheet_semantics"] = dict(attachment.get("spreadsheet_semantics") or {})
+        if isinstance(attachment.get("calendar_semantics"), dict) and attachment.get("calendar_semantics"):
+            source["calendar_semantics"] = dict(attachment.get("calendar_semantics") or {})
+        if isinstance(attachment.get("weak_format_semantics"), dict) and attachment.get("weak_format_semantics"):
+            source["weak_format_semantics"] = dict(attachment.get("weak_format_semantics") or {})
+        chronology_anchor = _chronology_anchor_for_source(source)
+        if chronology_anchor is not None:
+            source["chronology_anchor"] = chronology_anchor
+        spreadsheet_semantics = _spreadsheet_semantics(source)
+        if spreadsheet_semantics is not None:
+            source["spreadsheet_semantics"] = spreadsheet_semantics
+        calendar_semantics = _calendar_semantics(source)
+        if calendar_semantics is not None:
+            source["calendar_semantics"] = calendar_semantics
         sources.append(source)
-        source_type_counts[source_type] += 1
-        parent_source_id = email_source_ids_by_uid.get(uid) or f"email:{uid}"
+        parent_source_id = email_source_ids_by_uid.get(uid)
         weighting = source["source_weighting"]
-        can_corroborate_or_contradict = isinstance(weighting, dict) and bool(
-            weighting.get("can_corroborate_or_contradict")
-        )
-        source_links.append(
-            {
-                "from_source_id": source_id,
-                "to_source_id": parent_source_id,
-                "link_type": "attached_to_email",
-                "relationship": (
-                    "can_corroborate_or_contradict_message"
+        can_corroborate_or_contradict = isinstance(weighting, dict) and bool(weighting.get("can_corroborate_or_contradict"))
+        if parent_source_id:
+            source_links.append(
+                {
+                    "from_source_id": source_id,
+                    "to_source_id": parent_source_id,
+                    "link_type": "attached_to_email",
+                    "relationship": "can_corroborate_or_contradict_message"
                     if can_corroborate_or_contradict
-                    else "reference_only_attachment"
-                ),
-            }
-        )
-
-    available_source_types = sorted(source_type_counts)
-    missing_source_types = [source_type for source_type in _DECLARED_SOURCE_TYPES if source_type not in source_type_counts]
-    direct_text_source_count = sum(1 for source in sources if source["source_weighting"]["text_available"])
-    contradiction_ready_source_count = sum(
-        1 for source in sources if source["source_weighting"]["can_corroborate_or_contradict"]
-    )
-
-    source_type_profiles = [
+                    else "reference_only_attachment",
+                }
+            )
+    chat_sources, chat_links, _chat_counts = _chat_log_sources(chat_log_entries, email_source_ids_by_uid=email_source_ids_by_uid)
+    sources.extend(chat_sources)
+    source_links.extend(chat_links)
+    return _rebuild_bundle_summary(
         {
-            "source_type": source_type,
-            "available": source_type in source_type_counts,
-            "count": int(source_type_counts.get(source_type, 0)),
-            "availability_reason": (
-                "present_in_current_case_evidence"
-                if source_type in source_type_counts
-                else "not_available_in_current_case_evidence"
-            ),
+            "version": MULTI_SOURCE_CASE_BUNDLE_VERSION,
+            "summary": {},
+            "sources": sources,
+            "source_links": source_links,
+            "source_type_profiles": [],
+            "chronology_anchors": [],
         }
-        for source_type in _DECLARED_SOURCE_TYPES
-    ]
-
-    return {
-        "version": MULTI_SOURCE_CASE_BUNDLE_VERSION,
-        "summary": {
-            "source_count": len(sources),
-            "source_type_counts": dict(source_type_counts),
-            "available_source_types": available_source_types,
-            "missing_source_types": missing_source_types,
-            "link_count": len(source_links),
-            "direct_text_source_count": direct_text_source_count,
-            "contradiction_ready_source_count": contradiction_ready_source_count,
-        },
-        "sources": sources,
-        "source_links": source_links,
-        "source_type_profiles": source_type_profiles,
-    }
+    )

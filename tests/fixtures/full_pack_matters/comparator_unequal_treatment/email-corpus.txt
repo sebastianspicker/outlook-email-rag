@@ -1,0 +1,9 @@
+2025-02-10 | Erika Beispiel -> Max Mustermann
+Subject: Mobile work request
+
+Please provide extra documentation before mobile work can be reconsidered.
+
+2025-02-11 | Erika Beispiel -> Pat Vergleich
+Subject: Mobile work request approved
+
+You may continue mobile work without further paperwork.

@@ -12,6 +12,7 @@ Strategy:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 
@@ -393,13 +394,30 @@ def chunk_attachment(
     if not text or not text.strip():
         return []
 
+    def _normalize_metadata_value(value: object) -> str | int | float | bool:
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        if value is None:
+            return ""
+        if isinstance(value, (list, tuple, set)):
+            items = list(value)
+            if all(isinstance(item, (str, int, float, bool)) or item is None for item in items):
+                return ", ".join(str(item) for item in items if str(item).strip())
+            return json.dumps(items, ensure_ascii=False, sort_keys=True, default=str)
+        if isinstance(value, dict):
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        return str(value)
+
     subject = parent_metadata.get("subject", "")
     date = parent_metadata.get("date", "")
     filename_hash = hashlib.md5(f"{filename}_{att_index}".encode(), usedforsecurity=False).hexdigest()[:16]
     header = f'[Attachment: {filename} from email "{subject}" ({date})]'
+    normalized_parent_metadata = {
+        str(key): _normalize_metadata_value(value) for key, value in parent_metadata.items()
+    }
 
     base_metadata = {
-        **parent_metadata,
+        **normalized_parent_metadata,
         "is_attachment": "True",
         "parent_uid": email_uid,
         "attachment_filename": filename,

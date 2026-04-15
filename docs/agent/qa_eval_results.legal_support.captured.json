@@ -1,0 +1,88 @@
+{
+  "legal-support-001": {
+    "lawyer_issue_matrix": {
+      "row_count": 1,
+      "rows": [{"issue_id": "retaliation_massregelungsverbot"}]
+    },
+    "case_dashboard": {
+      "dashboard_format": "refreshable_case_dashboard",
+      "summary": {"refreshable_from_shared_entities": true},
+      "cards": {
+        "main_claims_or_issues": [{"issue_id": "retaliation_massregelungsverbot"}]
+      }
+    },
+    "actor_map": {
+      "actors": [{"actor_id": "actor-manager"}]
+    },
+    "document_request_checklist": {
+      "groups": [{"group_id": "calendar_meeting_records"}]
+    },
+    "controlled_factual_drafting": {
+      "framing_preflight": {
+        "allegation_ceiling": {"ceiling_level": "concern_only"}
+      },
+      "controlled_draft": {
+        "sections": {
+          "established_facts": [{"item_id": "fact-1"}]
+        }
+      }
+    }
+  },
+  "legal-support-002": {
+    "lawyer_issue_matrix": {
+      "row_count": 1,
+      "rows": [{"issue_id": "retaliation_massregelungsverbot"}]
+    },
+    "comparative_treatment": {
+      "comparator_summaries": [
+        {
+          "comparator_matrix": {
+            "rows": [
+              {"issue_id": "control_intensity"},
+              {"issue_id": "sbv_or_pr_participation"}
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "legal-support-003": {
+    "case_dashboard": {
+      "dashboard_format": "refreshable_case_dashboard",
+      "summary": {"refreshable_from_shared_entities": true},
+      "cards": {
+        "main_claims_or_issues": [{"issue_id": "retaliation_massregelungsverbot"}],
+        "main_actors": [{"actor_id": "actor-manager"}],
+        "recommended_next_actions": [{"group_id": "calendar_meeting_records"}]
+      }
+    },
+    "actor_map": {
+      "actors": [
+        {"actor_id": "actor-manager"},
+        {"actor_id": "actor-hr"}
+      ]
+    }
+  },
+  "legal-support-004": {
+    "document_request_checklist": {
+      "groups": [
+        {"group_id": "calendar_meeting_records"},
+        {"group_id": "comparator_evidence"}
+      ]
+    }
+  },
+  "legal-support-005": {
+    "controlled_factual_drafting": {
+      "framing_preflight": {
+        "allegation_ceiling": {"ceiling_level": "concern_only"}
+      },
+      "controlled_draft": {
+        "sections": {
+          "established_facts": [{"item_id": "fact-1"}],
+          "requests_for_clarification": [{"item_id": "clarify-1"}],
+          "formal_demands": [{"item_id": "demand-1"}]
+        }
+      }
+    }
+  }
+}

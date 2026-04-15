@@ -18,11 +18,7 @@ def score_languages_impl(tokens: list[str]) -> dict[str, float]:
     total_tokens = len(tokens)
 
     return {
-        lang: (
-            sum(token_counts[word] for word in stopwords if word in token_counts) / total_tokens
-            if total_tokens
-            else 0.0
-        )
+        lang: (sum(token_counts[word] for word in stopwords if word in token_counts) / total_tokens if total_tokens else 0.0)
         for lang, stopwords in STOPWORDS.items()
     }
 
@@ -46,4 +42,3 @@ def detect_language_impl(text: str) -> str:
         return "unknown"
 
     return best_lang
-

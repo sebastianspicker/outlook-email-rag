@@ -95,6 +95,9 @@ def _matches_priority(result: SearchResult, priority: int | None) -> bool:
 def _matches_min_score(result: SearchResult, min_score: float | None) -> bool:
     if min_score is None:
         return True
+    calibration = str(result.metadata.get("score_calibration") or "").strip().lower()
+    if calibration == "synthetic":
+        return True
     return result.score >= min_score
 
 

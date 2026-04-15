@@ -13,6 +13,7 @@ from .db_attachments import AttachmentMixin
 from .db_custody import CustodyMixin
 from .db_entities import EntityMixin
 from .db_evidence import EvidenceMixin
+from .db_matter import MatterMixin
 from .db_queries import QueryMixin
 from .db_schema import _escape_like, init_schema
 from .email_db_enrichment import parse_address
@@ -32,6 +33,11 @@ logger = logging.getLogger(__name__)
 
 # Backward-compatible re-export for tests and existing imports.
 _parse_address = parse_address
+
+
+def _int_value(value: object) -> int:
+    return int(value) if isinstance(value, int | float | str) else 0
+
 
 _EMAIL_INSERT_COLUMNS = (
     "uid",
@@ -90,7 +96,7 @@ VALUES ({",".join("?" for _ in _EMAIL_INSERT_COLUMNS)})"""
 _EMAIL_INSERT_OR_IGNORE_SQL = _EMAIL_INSERT_SQL.replace("INSERT INTO", "INSERT OR IGNORE INTO", 1)
 
 
-class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, AttachmentMixin, QueryMixin):
+class EmailDatabase(CustodyMixin, EvidenceMixin, MatterMixin, EntityMixin, AnalyticsMixin, AttachmentMixin, QueryMixin):
     """SQLite-backed relational store for email metadata.
 
     Method groups are organized into mixins for maintainability:
@@ -133,6 +139,13 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    def __del__(self) -> None:
+        """Best-effort close to avoid leaked SQLite handles during teardown."""
+        try:
+            self.close()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Sparse vector storage
@@ -218,6 +231,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
     def update_analytics_batch(
         self,
         rows: list[tuple[str | None, str | None, float | None, str]],
+        *,
+        commit: bool = True,
     ) -> int:
         """Batch-update detected_language, sentiment_label, sentiment_score by uid.
 
@@ -228,7 +243,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
             "UPDATE emails SET detected_language=?, sentiment_label=?, sentiment_score=? WHERE uid=?",
             rows,
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return len(rows)
 
     # ------------------------------------------------------------------
@@ -249,6 +265,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         self,
         emails: list[Email],
         ingestion_run_id: int | None = None,
+        *,
+        commit: bool = True,
     ) -> set[str]:
         """Insert a batch of emails in a single transaction.
 
@@ -260,7 +278,18 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         attachments, contacts, and communication edges to reduce per-row
         execute() overhead.
         """
-        return insert_emails_batch_impl(self, emails, ingestion_run_id=ingestion_run_id)
+        if commit:
+            return insert_emails_batch_impl(
+                self,
+                emails,
+                ingestion_run_id=ingestion_run_id,
+            )
+        return insert_emails_batch_impl(
+            self,
+            emails,
+            ingestion_run_id=ingestion_run_id,
+            commit=commit,
+        )
 
     def _upsert_contact(
         self,
@@ -417,7 +446,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         if cur.rowcount == 0:
             return False
 
-        # Upsert categories
+        # Replace categories so removed categories are no longer query-visible.
+        cur.execute("DELETE FROM email_categories WHERE email_uid = ?", (email.uid,))
         cats = getattr(email, "categories", []) or []
         if cats:
             cur.executemany(
@@ -431,7 +461,8 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         if atts:
             cur.executemany(
                 "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline, "
-                "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview, extracted_text, "
+                "text_source_path, text_locator_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
                         email.uid,
@@ -445,6 +476,9 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
                         int(bool(att.get("ocr_used", False))),
                         att.get("failure_reason", "") or "",
                         att.get("text_preview", "") or "",
+                        att.get("extracted_text", "") or "",
+                        att.get("text_source_path", "") or "",
+                        json.dumps(att.get("text_locator") or {}, ensure_ascii=False),
                     )
                     for att in atts
                 ],
@@ -453,6 +487,107 @@ class EmailDatabase(CustodyMixin, EvidenceMixin, EntityMixin, AnalyticsMixin, At
         if commit:
             self.conn.commit()
         return True
+
+    def mark_ingest_batch_pending(
+        self,
+        rows: list[dict[str, object]],
+        *,
+        commit: bool = True,
+    ) -> None:
+        """Mark one batch as pending vector completion in the ingest ledger."""
+        if not rows:
+            return
+        self.conn.executemany(
+            """INSERT INTO email_ingest_state(
+                   email_uid, body_chunk_count, attachment_chunk_count, image_chunk_count,
+                   vector_chunk_count, vector_status, attachment_status, image_status,
+                   last_error, updated_at
+               ) VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, '', datetime('now'))
+               ON CONFLICT(email_uid) DO UPDATE SET
+                   body_chunk_count=excluded.body_chunk_count,
+                   attachment_chunk_count=excluded.attachment_chunk_count,
+                   image_chunk_count=excluded.image_chunk_count,
+                   vector_chunk_count=excluded.vector_chunk_count,
+                   vector_status='pending',
+                   attachment_status=excluded.attachment_status,
+                   image_status=excluded.image_status,
+                   last_error='',
+                   updated_at=datetime('now')""",
+            [
+                (
+                    str(row.get("email_uid") or ""),
+                    _int_value(row.get("body_chunk_count")),
+                    _int_value(row.get("attachment_chunk_count")),
+                    _int_value(row.get("image_chunk_count")),
+                    _int_value(row.get("vector_chunk_count")),
+                    str(row.get("attachment_status") or "not_requested"),
+                    str(row.get("image_status") or "not_requested"),
+                )
+                for row in rows
+                if str(row.get("email_uid") or "")
+            ],
+        )
+        if commit:
+            self.conn.commit()
+
+    def mark_ingest_batch_completed(
+        self,
+        rows: list[dict[str, object]],
+        *,
+        commit: bool = True,
+    ) -> None:
+        """Mark one batch as fully persisted to the vector store."""
+        if not rows:
+            return
+        self.conn.executemany(
+            """UPDATE email_ingest_state
+               SET body_chunk_count = ?,
+                   attachment_chunk_count = ?,
+                   image_chunk_count = ?,
+                   vector_chunk_count = ?,
+                   vector_status = 'completed',
+                   attachment_status = ?,
+                   image_status = ?,
+                   last_error = '',
+                   updated_at = datetime('now')
+               WHERE email_uid = ?""",
+            [
+                (
+                    _int_value(row.get("body_chunk_count")),
+                    _int_value(row.get("attachment_chunk_count")),
+                    _int_value(row.get("image_chunk_count")),
+                    _int_value(row.get("vector_chunk_count")),
+                    str(row.get("attachment_status") or "not_requested"),
+                    str(row.get("image_status") or "not_requested"),
+                    str(row.get("email_uid") or ""),
+                )
+                for row in rows
+                if str(row.get("email_uid") or "")
+            ],
+        )
+        if commit:
+            self.conn.commit()
+
+    def mark_ingest_batch_failed(
+        self,
+        email_uids: list[str],
+        *,
+        error_message: str,
+        commit: bool = True,
+    ) -> None:
+        """Persist a failed vector-write state for one batch."""
+        if not email_uids:
+            return
+        self.conn.executemany(
+            """UPDATE email_ingest_state
+               SET vector_status = 'failed',
+                   last_error = ?,
+                   updated_at = datetime('now')
+               WHERE email_uid = ?""",
+            [(error_message, uid) for uid in email_uids if uid],
+        )
+        if commit:
+            self.conn.commit()
 
     def all_uids(self) -> set[str]:
         """Return all UIDs in the database."""

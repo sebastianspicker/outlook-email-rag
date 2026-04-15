@@ -1,0 +1,1576 @@
+{
+  "questions_path": "docs/agent/qa_eval_questions.behavioral_analysis_german.captured.json",
+  "results_path": "docs/agent/qa_eval_results.behavioral_analysis_german.captured.json",
+  "total_cases": 9,
+  "cases": [
+    {
+      "id": "de-ba18-201",
+      "bucket": "ordinary_workplace_conflict",
+      "question": "Beurteile, ob der Schriftwechsel eher auf einen gewöhnlichen Arbeitsplatzkonflikt hindeutet.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-conf-1"
+      ],
+      "expected_top_uid": "uid-de-conf-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-ordinary-conflict",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "hostility"
+        ],
+        "analysis_goal": "internal_review",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-conf-1"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-conf-1"
+      ],
+      "expected_behavior_ids": [
+        "escalation"
+      ],
+      "expected_counter_indicator_markers": [
+        "wiederholte Prozessfriktion"
+      ],
+      "expected_max_claim_level": "observed_fact",
+      "expected_report_sections": [
+        "executive_summary",
+        "overall_assessment"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "counter_indicator_handling",
+        "report_completeness"
+      ],
+      "notes": "Deutschsprachiger Referenzfall fuer begrenzten Konflikt ohne belastbare Systematik."
+    },
+    {
+      "id": "de-ba18-202",
+      "bucket": "poor_communication_or_process_noise",
+      "question": "Pruefe, ob die Kommunikation eher schlecht organisiert als gezielt feindselig wirkt.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-noise-1"
+      ],
+      "expected_top_uid": "uid-de-noise-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-process-noise",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "exclusion"
+        ],
+        "analysis_goal": "neutral_chronology",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-noise-1"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-noise-1"
+      ],
+      "expected_behavior_ids": [
+        "withholding"
+      ],
+      "expected_counter_indicator_markers": [
+        "unklarer Prozesszustaendigkeit"
+      ],
+      "expected_max_claim_level": "pattern_concern",
+      "expected_report_sections": [
+        "executive_summary",
+        "overall_assessment",
+        "missing_information"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "counter_indicator_handling",
+        "report_completeness"
+      ],
+      "notes": "Deutschsprachiger Negativfall, in dem Routing- und Prozessfehler die staerkste Erklaerung bleiben."
+    },
+    {
+      "id": "de-ba18-203",
+      "bucket": "repeated_exclusion",
+      "question": "Bewerte, ob die deutschsprachigen Folgemails ein wiederholtes Ausschlussmuster zeigen.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-excl-1",
+        "uid-de-excl-2"
+      ],
+      "expected_top_uid": "uid-de-excl-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-repeated-exclusion",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "exclusion"
+        ],
+        "analysis_goal": "hr_review",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-excl-1",
+        "uid-de-excl-2"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-excl-1",
+        "uid-de-excl-2"
+      ],
+      "expected_behavior_ids": [
+        "exclusion",
+        "withholding"
+      ],
+      "expected_counter_indicator_markers": [
+        "verteilerbedingte Abweichung"
+      ],
+      "expected_max_claim_level": "pattern_concern",
+      "expected_report_sections": [
+        "executive_summary",
+        "chronological_pattern_analysis",
+        "overall_assessment"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "chronology_analysis",
+        "behavioral_tagging"
+      ],
+      "notes": "Deutschsprachiger Ausschlussfall mit wiederholter Sichtbarkeitsasymmetrie."
+    },
+    {
+      "id": "de-ba18-204",
+      "bucket": "selective_non_response",
+      "question": "Pruefe, ob die Akte eher auf selektive Nichtantwort nach direkten Rueckfragen hindeutet.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-nr-1",
+        "uid-de-nr-2"
+      ],
+      "expected_top_uid": "uid-de-nr-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-selective-non-response",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "retaliation",
+          "exclusion"
+        ],
+        "analysis_goal": "internal_review",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-nr-1",
+        "uid-de-nr-2"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-nr-1",
+        "uid-de-nr-2"
+      ],
+      "expected_behavior_ids": [
+        "selective_non_response",
+        "withholding"
+      ],
+      "expected_counter_indicator_markers": [
+        "moegliche Antwort ausserhalb des Threads"
+      ],
+      "expected_max_claim_level": "pattern_concern",
+      "expected_report_sections": [
+        "executive_summary",
+        "chronological_pattern_analysis",
+        "overall_assessment"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "chronology_analysis",
+        "counter_indicator_handling",
+        "behavioral_tagging"
+      ],
+      "notes": "Deutschsprachiger Fall fuer selektive Nichtantwort mit konservativer Alternativerklaerung."
+    },
+    {
+      "id": "de-ba18-205",
+      "bucket": "retaliation_after_trigger",
+      "question": "Ordne ein, ob die deutschsprachigen Nachrichten nach der Beschwerde einen nachteiligen Umschwung zeigen.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-ret-1",
+        "uid-de-ret-2"
+      ],
+      "expected_top_uid": "uid-de-ret-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-retaliation-shift",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "retaliation"
+        ],
+        "analysis_goal": "hr_review",
+        "context_notes": null,
+        "trigger_events": [
+          {
+            "trigger_type": "complaint",
+            "date": "2026-03-02",
+            "actor": null,
+            "notes": "Formelle Beschwerde der Zielperson."
+          }
+        ],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-ret-1",
+        "uid-de-ret-2"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-ret-1",
+        "uid-de-ret-2"
+      ],
+      "expected_behavior_ids": [
+        "escalation",
+        "selective_non_response"
+      ],
+      "expected_counter_indicator_markers": [
+        "unabhaengige betriebliche Entwicklungen"
+      ],
+      "expected_max_claim_level": "pattern_concern",
+      "expected_report_sections": [
+        "executive_summary",
+        "chronological_pattern_analysis",
+        "overall_assessment",
+        "missing_information"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "chronology_analysis",
+        "counter_indicator_handling",
+        "overclaiming_guard"
+      ],
+      "notes": "Deutschsprachiger Vorher-Nachher-Fall mit dokumentiertem Trigger."
+    },
+    {
+      "id": "de-ba18-206",
+      "bucket": "unequal_treatment",
+      "question": "Bewerte, ob die deutschsprachige Vergleichsakte auf ungleiche Behandlung hindeutet.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-cmpr-1"
+      ],
+      "expected_top_uid": "uid-de-cmpr-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-comparator-unequal-treatment",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [
+          {
+            "name": "Pat Kollegin",
+            "email": "pat@example.com",
+            "role_hint": "employee"
+          }
+        ],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "unequal_treatment"
+        ],
+        "analysis_goal": "lawyer_briefing",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-cmpr-1"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-cmpr-1"
+      ],
+      "expected_behavior_ids": [
+        "public_correction"
+      ],
+      "expected_counter_indicator_markers": [
+        "nur teilweise vergleichbar"
+      ],
+      "expected_max_claim_level": "pattern_concern",
+      "expected_report_sections": [
+        "executive_summary",
+        "power_context_analysis",
+        "overall_assessment"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "behavioral_tagging",
+        "counter_indicator_handling",
+        "overclaiming_guard"
+      ],
+      "notes": "Deutschsprachiger Vergleichsfall fuer ungleiche Behandlung ohne Ueberdehnung zu Diskriminierung."
+    },
+    {
+      "id": "de-ba18-207",
+      "bucket": "explicit_hostility",
+      "question": "Pruefe, ob die direkte deutsche Formulierung eine explizit feindselige Ansprache darstellt.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-host-1"
+      ],
+      "expected_top_uid": "uid-de-host-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-explicit-hostility",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "hostility"
+        ],
+        "analysis_goal": "hr_review",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-host-1"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-host-1"
+      ],
+      "expected_behavior_ids": [
+        "escalation",
+        "public_correction",
+        "deadline_pressure"
+      ],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": "observed_fact",
+      "expected_report_sections": [
+        "executive_summary",
+        "behaviour_analysis",
+        "overall_assessment"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "behavioral_tagging",
+        "report_completeness"
+      ],
+      "notes": "Deutschsprachiger Klarfall mit offener Herabsetzung und Druckrahmung."
+    },
+    {
+      "id": "de-ba18-208",
+      "bucket": "mixed_evidence",
+      "question": "Beurteile, ob die deutschsprachige Akte gemischte Hinweise statt eines eindeutigen Musters enthaelt.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-mixed-1",
+        "uid-de-mixed-2"
+      ],
+      "expected_top_uid": "uid-de-mixed-1",
+      "expected_ambiguity": "clear",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-mixed-evidence",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "hostility",
+          "exclusion"
+        ],
+        "analysis_goal": "internal_review",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-mixed-1",
+        "uid-de-mixed-2"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [
+        "uid-de-mixed-1",
+        "uid-de-mixed-2"
+      ],
+      "expected_behavior_ids": [
+        "undermining"
+      ],
+      "expected_counter_indicator_markers": [
+        "teils sachliche Eskalation nach Projektfehler"
+      ],
+      "expected_max_claim_level": "pattern_concern",
+      "expected_report_sections": [
+        "executive_summary",
+        "overall_assessment",
+        "missing_information"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "counter_indicator_handling",
+        "overclaiming_guard",
+        "report_completeness"
+      ],
+      "notes": "Deutschsprachiger Mischfall mit belastenden Signalen und tragfaehigen Gegenargumenten."
+    },
+    {
+      "id": "de-ba18-209",
+      "bucket": "insufficient_evidence",
+      "question": "Pruefe, ob der knappe deutschsprachige Datensatz ueberhaupt eine belastbare Verhaltensbewertung traegt.",
+      "status": "labeled",
+      "evidence_mode": "retrieval",
+      "filters": {},
+      "expected_answer": "",
+      "expected_support_uids": [
+        "uid-de-insuf-1"
+      ],
+      "expected_top_uid": "uid-de-insuf-1",
+      "expected_ambiguity": "insufficient",
+      "expected_quoted_speaker_emails": [],
+      "expected_thread_group_id": null,
+      "expected_thread_group_source": null,
+      "case_scope": {
+        "date_from": null,
+        "date_to": null,
+        "case_label": "de-insufficient-evidence",
+        "target_person": {
+          "name": "Alex Beispiel",
+          "email": "alex@example.com",
+          "role_hint": null
+        },
+        "comparator_actors": [],
+        "suspected_actors": [
+          {
+            "name": "Morgan Leitung",
+            "email": "manager@example.com",
+            "role_hint": "manager"
+          }
+        ],
+        "allegation_focus": [
+          "hostility",
+          "retaliation"
+        ],
+        "analysis_goal": "lawyer_briefing",
+        "context_notes": null,
+        "trigger_events": [],
+        "asserted_rights_timeline": [],
+        "alleged_adverse_actions": [],
+        "org_context": null,
+        "comparator_equivalence_notes": null,
+        "expected_document_collections": [],
+        "known_missing_records": [],
+        "employment_issue_tags": [],
+        "employment_issue_tracks": []
+      },
+      "expected_case_bundle_uids": [
+        "uid-de-insuf-1"
+      ],
+      "expected_source_types": [
+        "email"
+      ],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [
+        "Beleglage bleibt lueckenhaft"
+      ],
+      "expected_max_claim_level": "insufficient_evidence",
+      "expected_report_sections": [
+        "overall_assessment",
+        "missing_information"
+      ],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
+      "triage_tags": [
+        "overclaiming_guard",
+        "report_completeness",
+        "weak_message_handling"
+      ],
+      "notes": "Deutschsprachiger Schutzfall gegen ueberzogene Schlussfolgerungen bei duenner Beleglage."
+    }
+  ],
+  "results": [
+    {
+      "id": "de-ba18-201",
+      "bucket": "ordinary_workplace_conflict",
+      "question": "Beurteile, ob der Schriftwechsel eher auf einen gewöhnlichen Arbeitsplatzkonflikt hindeutet.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 1,
+      "top_uid": "uid-de-conf-1",
+      "candidate_uids": [
+        "uid-de-conf-1"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-conf-1"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-conf-1"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-202",
+      "bucket": "poor_communication_or_process_noise",
+      "question": "Pruefe, ob die Kommunikation eher schlecht organisiert als gezielt feindselig wirkt.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 1,
+      "top_uid": "uid-de-noise-1",
+      "candidate_uids": [
+        "uid-de-noise-1"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-noise-1"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-noise-1"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-203",
+      "bucket": "repeated_exclusion",
+      "question": "Bewerte, ob die deutschsprachigen Folgemails ein wiederholtes Ausschlussmuster zeigen.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 2,
+      "top_uid": "uid-de-excl-1",
+      "candidate_uids": [
+        "uid-de-excl-1",
+        "uid-de-excl-2"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-excl-1",
+        "uid-de-excl-2"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-excl-1",
+        "uid-de-excl-2"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-204",
+      "bucket": "selective_non_response",
+      "question": "Pruefe, ob die Akte eher auf selektive Nichtantwort nach direkten Rueckfragen hindeutet.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 2,
+      "top_uid": "uid-de-nr-1",
+      "candidate_uids": [
+        "uid-de-nr-1",
+        "uid-de-nr-2"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-nr-1",
+        "uid-de-nr-2"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-nr-1",
+        "uid-de-nr-2"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-205",
+      "bucket": "retaliation_after_trigger",
+      "question": "Ordne ein, ob die deutschsprachigen Nachrichten nach der Beschwerde einen nachteiligen Umschwung zeigen.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 2,
+      "top_uid": "uid-de-ret-1",
+      "candidate_uids": [
+        "uid-de-ret-1",
+        "uid-de-ret-2"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-ret-1",
+        "uid-de-ret-2"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-ret-1",
+        "uid-de-ret-2"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-206",
+      "bucket": "unequal_treatment",
+      "question": "Bewerte, ob die deutschsprachige Vergleichsakte auf ungleiche Behandlung hindeutet.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 1,
+      "top_uid": "uid-de-cmpr-1",
+      "candidate_uids": [
+        "uid-de-cmpr-1"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-cmpr-1"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-cmpr-1"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-207",
+      "bucket": "explicit_hostility",
+      "question": "Pruefe, ob die direkte deutsche Formulierung eine explizit feindselige Ansprache darstellt.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 1,
+      "top_uid": "uid-de-host-1",
+      "candidate_uids": [
+        "uid-de-host-1"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-host-1"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-host-1"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "high",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-208",
+      "bucket": "mixed_evidence",
+      "question": "Beurteile, ob die deutschsprachige Akte gemischte Hinweise statt eines eindeutigen Musters enthaelt.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 2,
+      "top_uid": "uid-de-mixed-1",
+      "candidate_uids": [
+        "uid-de-mixed-1",
+        "uid-de-mixed-2"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-mixed-1",
+        "uid-de-mixed-2"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-mixed-1",
+        "uid-de-mixed-2"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": null,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": true,
+      "chronology_uid_recall": 1.0,
+      "behavior_tag_coverage": 1.0,
+      "behavior_tag_precision": 1.0,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "clear",
+      "observed_confidence_label": "medium",
+      "observed_ambiguity_reason": null
+    },
+    {
+      "id": "de-ba18-209",
+      "bucket": "insufficient_evidence",
+      "question": "Pruefe, ob der knappe deutschsprachige Datensatz ueberhaupt eine belastbare Verhaltensbewertung traegt.",
+      "status": "labeled",
+      "source": "captured",
+      "count": 1,
+      "top_uid": "uid-de-insuf-1",
+      "candidate_uids": [
+        "uid-de-insuf-1"
+      ],
+      "attachment_candidate_uids": [],
+      "matched_support_uids": [
+        "uid-de-insuf-1"
+      ],
+      "matched_support_uids_top_3": [
+        "uid-de-insuf-1"
+      ],
+      "top_1_correctness": true,
+      "support_uid_hit": true,
+      "support_uid_hit_top_3": true,
+      "support_uid_recall": 1.0,
+      "evidence_precision": 1.0,
+      "top_uid_match": true,
+      "ambiguity_match": true,
+      "confidence_calibration_match": true,
+      "attachment_support_uid_hit": null,
+      "attachment_answer_success": null,
+      "attachment_text_evidence_success": null,
+      "attachment_ocr_text_evidence_success": null,
+      "weak_evidence_explained": true,
+      "long_thread_answer_present": null,
+      "long_thread_structure_preserved": null,
+      "observed_quoted_speaker_emails": [],
+      "matched_quoted_speaker_emails": [],
+      "quote_attribution_precision": null,
+      "quote_attribution_coverage": null,
+      "observed_thread_group_id": "",
+      "observed_thread_group_source": "",
+      "thread_group_id_match": null,
+      "thread_group_source_match": null,
+      "case_bundle_present": true,
+      "investigation_blocks_present": true,
+      "case_bundle_support_uid_hit": true,
+      "case_bundle_support_uid_recall": 1.0,
+      "multi_source_source_types_match": true,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": 1.0,
+      "overclaim_guard_match": true,
+      "report_completeness": true,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
+      "expected_ambiguity": "insufficient",
+      "observed_confidence_label": "low",
+      "observed_ambiguity_reason": "metadata_only_reply"
+    }
+  ],
+  "summary": {
+    "total_cases": 9,
+    "bucket_counts": {
+      "explicit_hostility": 1,
+      "insufficient_evidence": 1,
+      "mixed_evidence": 1,
+      "ordinary_workplace_conflict": 1,
+      "poor_communication_or_process_noise": 1,
+      "repeated_exclusion": 1,
+      "retaliation_after_trigger": 1,
+      "selective_non_response": 1,
+      "unequal_treatment": 1
+    },
+    "top_1_correctness": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "support_uid_hit": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "support_uid_hit_top_3": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "support_uid_recall": {
+      "scorable": 9,
+      "average": 1.0
+    },
+    "evidence_precision": {
+      "scorable": 9,
+      "average": 1.0
+    },
+    "top_uid_match": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "ambiguity_match": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "confidence_calibration_match": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "attachment_support_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_answer_success": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_text_evidence_success": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "attachment_ocr_text_evidence_success": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "weak_evidence_explained": {
+      "scorable": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "quote_attribution_precision": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "quote_attribution_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "thread_group_id_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "thread_group_source_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "long_thread_answer_present": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "long_thread_structure_preserved": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "case_bundle_present": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "investigation_blocks_present": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "case_bundle_support_uid_hit": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "case_bundle_support_uid_recall": {
+      "scorable": 9,
+      "average": 1.0
+    },
+    "multi_source_source_types_match": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "chronology_uid_hit": {
+      "scorable": 8,
+      "passed": 8,
+      "failed": 0
+    },
+    "chronology_uid_recall": {
+      "scorable": 8,
+      "average": 1.0
+    },
+    "behavior_tag_coverage": {
+      "scorable": 8,
+      "average": 1.0
+    },
+    "behavior_tag_precision": {
+      "scorable": 8,
+      "average": 1.0
+    },
+    "counter_indicator_quality": {
+      "scorable": 8,
+      "average": 1.0
+    },
+    "overclaim_guard_match": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "report_completeness": {
+      "scorable": 9,
+      "passed": 9,
+      "failed": 0
+    },
+    "legal_support_product_completeness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "comparator_matrix_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "dashboard_card_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "actor_map_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "checklist_group_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "drafting_ceiling_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "draft_section_completeness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    }
+  },
+  "failure_taxonomy": {
+    "total_flagged_cases": 0,
+    "categories": {},
+    "ranked_categories": []
+  },
+  "source_counts": {
+    "captured": 9
+  },
+  "live_backend": null,
+  "investigation_corpus_readiness": {
+    "live_backend": null,
+    "case_scope_case_count": 9,
+    "expected_case_bundle_uid_count": 13,
+    "corpus_populated": false,
+    "supports_case_analysis": false,
+    "known_blockers": [
+      "no_live_deps"
+    ]
+  }
+}
