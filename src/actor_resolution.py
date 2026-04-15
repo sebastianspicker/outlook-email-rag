@@ -66,7 +66,7 @@ class _ActorNode:
 def _stable_actor_id(*, primary_email: str, names: set[str]) -> str:
     """Build a deterministic actor id from stable identity material."""
     key = primary_email or "|".join(sorted(names))
-    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
     return f"actor-{digest}"
 
 
@@ -106,9 +106,7 @@ def resolve_actor_graph(
                 candidate_key = next(iter(candidate_keys))
                 candidate_node = actor_nodes.get(candidate_key)
                 if not normalized_email or (
-                    candidate_node and (
-                    not candidate_node.emails or normalized_email in candidate_node.emails
-                    )
+                    candidate_node and (not candidate_node.emails or normalized_email in candidate_node.emails)
                 ):
                     actor_key = candidate_key
             elif len(candidate_keys) > 1 and not normalized_email:

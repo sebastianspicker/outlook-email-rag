@@ -1,0 +1,1021 @@
+{
+  "de-ba18-201": {
+    "count": 1,
+    "candidates": [
+      {
+        "uid": "uid-de-conf-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "escalation"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-conf-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-conf-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-conf-1",
+          "alternative_explanations": [
+            "Die Zuspitzung kann auf wiederholte Prozessfriktion statt auf gezielte Feindseligkeit zurueckgehen."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-conf-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-conf-1"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "observed_fact"
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "observed_fact",
+              "alternative_explanations": [
+                "Die Zuspitzung kann auf wiederholte Prozessfriktion statt auf gezielte Feindseligkeit zurueckgehen."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-conf-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-202": {
+    "count": 1,
+    "candidates": [
+      {
+        "uid": "uid-de-noise-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "withholding"
+              }
+            ],
+            "counter_indicators": [
+              "Die beobachtete Luecke kann aus unklarer Prozesszustaendigkeit entstanden sein."
+            ]
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-noise-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-noise-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-noise-1",
+          "alternative_explanations": [
+            "Die beobachtete Luecke kann aus unklarer Prozesszustaendigkeit entstanden sein."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-noise-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-noise-1"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Die beobachtete Luecke kann aus unklarer Prozesszustaendigkeit entstanden sein."
+              ]
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Die beobachtete Luecke kann aus unklarer Prozesszustaendigkeit entstanden sein."
+              ]
+            }
+          ]
+        },
+        "missing_information": {
+          "status": "supported",
+          "entries": [
+            {
+              "statement": "Es fehlen belastbare Vergleichsdaten zu Verteilerregeln und Eskalationsstufen."
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-noise-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-203": {
+    "count": 2,
+    "candidates": [
+      {
+        "uid": "uid-de-excl-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "exclusion"
+              },
+              {
+                "behavior_id": "withholding"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      },
+      {
+        "uid": "uid-de-excl-2",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "exclusion"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-excl-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-excl-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-excl-1",
+          "alternative_explanations": [
+            "Ein Teil der Verteilerabweichung kann auf verteilerbedingte Abweichung in unterschiedlichen Prozessschritten beruhen."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-excl-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-excl-1"
+        },
+        {
+          "uid": "uid-de-excl-2"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Ein Teil der Verteilerabweichung kann auf verteilerbedingte Abweichung in unterschiedlichen Prozessschritten beruhen."
+              ]
+            }
+          ]
+        },
+        "chronological_pattern_analysis": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern"
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Ein Teil der Verteilerabweichung kann auf verteilerbedingte Abweichung in unterschiedlichen Prozessschritten beruhen."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-excl-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-204": {
+    "count": 2,
+    "candidates": [
+      {
+        "uid": "uid-de-nr-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "selective_non_response"
+              },
+              {
+                "behavior_id": "withholding"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      },
+      {
+        "uid": "uid-de-nr-2",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-nr-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-nr-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-nr-1",
+          "alternative_explanations": [
+            "Die fehlende Reaktion kann moegliche Antwort ausserhalb des Threads widerspiegeln."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-nr-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-nr-1"
+        },
+        {
+          "uid": "uid-de-nr-2"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Die fehlende Reaktion kann moegliche Antwort ausserhalb des Threads widerspiegeln."
+              ]
+            }
+          ]
+        },
+        "chronological_pattern_analysis": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern"
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Die fehlende Reaktion kann moegliche Antwort ausserhalb des Threads widerspiegeln."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-nr-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-205": {
+    "count": 2,
+    "candidates": [
+      {
+        "uid": "uid-de-ret-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "escalation"
+              },
+              {
+                "behavior_id": "selective_non_response"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      },
+      {
+        "uid": "uid-de-ret-2",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-ret-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-ret-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-ret-1",
+          "alternative_explanations": [
+            "Vorher-Nachher-Aenderungen koennen auch durch unabhaengige betriebliche Entwicklungen erklaert werden."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-ret-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-ret-1"
+        },
+        {
+          "uid": "uid-de-ret-2"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Vorher-Nachher-Aenderungen koennen auch durch unabhaengige betriebliche Entwicklungen erklaert werden."
+              ]
+            }
+          ]
+        },
+        "chronological_pattern_analysis": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern"
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Vorher-Nachher-Aenderungen koennen auch durch unabhaengige betriebliche Entwicklungen erklaert werden."
+              ]
+            }
+          ]
+        },
+        "missing_information": {
+          "status": "supported",
+          "entries": [
+            {
+              "statement": "Es fehlen Personal- oder Vorgangsdaten fuer belastbare Vergleichszeiträume."
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-ret-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-206": {
+    "count": 1,
+    "candidates": [
+      {
+        "uid": "uid-de-cmpr-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "public_correction"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-cmpr-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-cmpr-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-cmpr-1",
+          "alternative_explanations": [
+            "Die Vergleichsperson bleibt moeglicherweise nur teilweise vergleichbar."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-cmpr-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-cmpr-1"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Die Vergleichsperson bleibt moeglicherweise nur teilweise vergleichbar."
+              ]
+            }
+          ]
+        },
+        "power_context_analysis": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern"
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Die Vergleichsperson bleibt moeglicherweise nur teilweise vergleichbar."
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-cmpr-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-207": {
+    "count": 1,
+    "candidates": [
+      {
+        "uid": "uid-de-host-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "escalation"
+              },
+              {
+                "behavior_id": "public_correction"
+              },
+              {
+                "behavior_id": "deadline_pressure"
+              }
+            ],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-host-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-host-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": []
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-host-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-host-1"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "observed_fact"
+            }
+          ]
+        },
+        "behaviour_analysis": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "observed_fact"
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "observed_fact"
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-host-1",
+      "confidence_label": "high",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-208": {
+    "count": 2,
+    "candidates": [
+      {
+        "uid": "uid-de-mixed-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [
+              {
+                "behavior_id": "undermining"
+              }
+            ],
+            "counter_indicators": [
+              "Ein Teil der Zuspitzung kann teils sachliche Eskalation nach Projektfehler gewesen sein."
+            ]
+          },
+          "quoted_blocks": []
+        }
+      },
+      {
+        "uid": "uid-de-mixed-2",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [],
+            "counter_indicators": []
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-mixed-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": [
+        {
+          "cluster_id": "de-pattern-mixed-1"
+        }
+      ]
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-mixed-1",
+          "alternative_explanations": [
+            "Ein Teil der Zuspitzung kann teils sachliche Eskalation nach Projektfehler gewesen sein."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-mixed-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": [
+        {
+          "uid": "uid-de-mixed-1"
+        },
+        {
+          "uid": "uid-de-mixed-2"
+        }
+      ]
+    },
+    "investigation_report": {
+      "sections": {
+        "executive_summary": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Ein Teil der Zuspitzung kann teils sachliche Eskalation nach Projektfehler gewesen sein."
+              ],
+              "ambiguity_disclosures": [
+                "Die Akte bleibt in wesentlichen Punkten gemischt."
+              ]
+            }
+          ]
+        },
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "pattern_concern",
+              "alternative_explanations": [
+                "Ein Teil der Zuspitzung kann teils sachliche Eskalation nach Projektfehler gewesen sein."
+              ],
+              "ambiguity_disclosures": [
+                "Die Akte bleibt in wesentlichen Punkten gemischt."
+              ]
+            }
+          ]
+        },
+        "missing_information": {
+          "status": "supported",
+          "entries": [
+            {
+              "statement": "Es fehlen neutrale Vergleichsdaten zum Projektverlauf und zur Empfaengerpraxis."
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-mixed-1",
+      "confidence_label": "medium",
+      "ambiguity_reason": null
+    }
+  },
+  "de-ba18-209": {
+    "count": 1,
+    "candidates": [
+      {
+        "uid": "uid-de-insuf-1",
+        "message_findings": {
+          "authored_text": {
+            "behavior_candidates": [],
+            "counter_indicators": [
+              "Die Beleglage bleibt lueckenhaft und traegt keine belastbare Musterzuordnung."
+            ]
+          },
+          "quoted_blocks": []
+        }
+      }
+    ],
+    "attachment_candidates": [],
+    "case_bundle": {
+      "bundle_id": "de-case-insuf-1"
+    },
+    "actor_identity_graph": {
+      "actors": []
+    },
+    "case_patterns": {
+      "behavior_patterns": []
+    },
+    "finding_evidence_index": {
+      "version": "1",
+      "findings": [
+        {
+          "finding_id": "de-insuf-1",
+          "alternative_explanations": [
+            "Die Beleglage bleibt lueckenhaft und stützt derzeit keine belastbare Alternativ- oder Belastungsthese."
+          ]
+        }
+      ]
+    },
+    "evidence_table": {
+      "version": "1",
+      "rows": [
+        {
+          "finding_id": "de-insuf-1"
+        }
+      ]
+    },
+    "quote_attribution_metrics": {
+      "version": "1"
+    },
+    "multi_source_case_bundle": {
+      "sources": [
+        {
+          "source_type": "email"
+        }
+      ]
+    },
+    "timeline": {
+      "events": []
+    },
+    "investigation_report": {
+      "sections": {
+        "overall_assessment": {
+          "status": "supported",
+          "entries": [
+            {
+              "claim_level": "insufficient_evidence",
+              "alternative_explanations": [
+                "Die Beleglage bleibt lueckenhaft und stützt derzeit keine belastbare Alternativ- oder Belastungsthese."
+              ],
+              "ambiguity_disclosures": [
+                "Die Beleglage bleibt lueckenhaft und traegt keine belastbare Musterzuordnung."
+              ]
+            }
+          ]
+        },
+        "missing_information": {
+          "status": "supported",
+          "entries": [
+            {
+              "statement": "Die Beleglage bleibt lueckenhaft und traegt keine belastbare Musterzuordnung."
+            }
+          ]
+        }
+      }
+    },
+    "answer_quality": {
+      "top_candidate_uid": "uid-de-insuf-1",
+      "confidence_label": "low",
+      "ambiguity_reason": "metadata_only_reply"
+    }
+  }
+}

@@ -93,12 +93,27 @@ class EmailRetriever:
         self._colbert_reranker: ColBERTReranker | None = None
         self._bm25_index: BM25Index | None = None
         self._sparse_index: SparseIndex | None = None
-        self._sparse_build_count: int | None = None
+        self._sparse_build_count: tuple[int, str] | None = None
+        self._bm25_build_revision: tuple[int, str] | None = None
         # Bounded LRU cache — evicts oldest entry when len > _QUERY_CACHE_MAX (128).
         # See _encode_query() for eviction logic.
         self._query_cache: collections.OrderedDict[str, list[list[float]]] = collections.OrderedDict()
+        self._set_last_search_debug()
         self.client = get_chroma_client(self.chromadb_path)
         self.collection = get_collection(self.client, self.collection_name)
+
+    @property
+    def last_search_debug(self) -> dict[str, Any]:
+        """Return the stable per-search diagnostics payload."""
+        debug = getattr(self, "_last_search_debug", None)
+        if isinstance(debug, dict):
+            return debug
+        self._last_search_debug = {}
+        return self._last_search_debug
+
+    def _set_last_search_debug(self, payload: dict[str, Any] | None = None) -> None:
+        """Store the last-search diagnostics in the stable compatibility slot."""
+        self._last_search_debug = dict(payload or {})
 
     @property
     def email_db(self) -> EmailDatabase | None:

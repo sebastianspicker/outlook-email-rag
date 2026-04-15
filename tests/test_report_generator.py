@@ -102,6 +102,15 @@ def test_generate_custom_title():
     assert "My Custom Archive" in html
 
 
+def test_generate_redacted_archive_report_banner_and_contacts():
+    db = _mock_email_db()
+    gen = ReportGenerator(db)
+    html = gen.generate(privacy_mode="witness_sharing")
+    assert "Privacy Mode: witness_sharing" in html
+    assert "[REDACTED: participant_identity]" in html
+    assert "alice@co.com" not in html
+
+
 def test_generate_with_response_times():
     """Report includes response times when available."""
     db = _mock_email_db()

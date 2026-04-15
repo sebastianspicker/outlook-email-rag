@@ -24,11 +24,13 @@ AGENTS.md
 HARNESS_PRINCIPLES.md
 code_review.md
 AUDIT.md
+CLAUDE.md
 docs/source-audit/
 docs/agent/Prompt.md
 docs/agent/Plan.md
 docs/agent/Documentation.md
 docs/agent/Implement.md
+docs/agent/AutonomousHardStops.md
 docs/agent/RunModes.md
 docs/agent/AutonomyPolicy.md
 docs/agent/Goals.md
@@ -39,6 +41,10 @@ docs/agent/Topology.md
 docs/agent/VerificationMatrix.md
 docs/agent/Checkpoint.md
 docs/agent/Decisions.md
+docs/agent/ingestion_optimization_plan.md
+docs/agent/ingestion_optimization_progress.md
+docs/agent/qa_eval_plan.md
+docs/agent/qa_eval_captured_refresh.md
 
 # Stale planning and progress artifacts
 plans/
@@ -59,6 +65,12 @@ data/chromadb/
 data/email_metadata.db
 data/mcp_server.lock
 
+# Private local matter workspaces
+/private/
+/data/private/
+/tests/private/
+/tests/fixtures/private/
+
 # Environment & secrets
 .env
 .env.*
@@ -72,6 +84,7 @@ data/mcp_server.lock
 credentials.json
 service_account.json
 *_secret*.json
+.streamlit/secrets.toml
 
 # IDE
 .vscode/

@@ -112,6 +112,9 @@ def collect_attachment_rows(email: Email) -> list[tuple]:
             int(bool(att.get("ocr_used", False))),
             att.get("failure_reason", "") or "",
             att.get("text_preview", "") or "",
+            att.get("extracted_text", "") or "",
+            att.get("text_source_path", "") or "",
+            json.dumps(att.get("text_locator") or {}, ensure_ascii=False),
         )
         for att in (getattr(email, "attachments", []) or [])
     ]
@@ -142,7 +145,8 @@ def persist_single_related_rows(cur, db, email: Email, *, infer_parent: bool = T
     if attachments:
         cur.executemany(
             "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline, "
-            "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview, extracted_text, "
+            "text_source_path, text_locator_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             attachments,
         )
 
@@ -193,7 +197,13 @@ def insert_email_impl(db, email: Email, *, ingestion_run_id: int | None = None) 
     return True
 
 
-def insert_emails_batch_impl(db, emails: list[Email], *, ingestion_run_id: int | None = None) -> set[str]:
+def insert_emails_batch_impl(
+    db,
+    emails: list[Email],
+    *,
+    ingestion_run_id: int | None = None,
+    commit: bool = True,
+) -> set[str]:
     inserted_uids: set[str] = set()
     cur = db.conn.cursor()
 
@@ -202,10 +212,11 @@ def insert_emails_batch_impl(db, emails: list[Email], *, ingestion_run_id: int |
     attachment_rows: list[tuple] = []
     contact_rows: list[tuple] = []
     edge_rows: list[tuple] = []
-    inferred_edge_rows: list[tuple] = []
     segment_rows: list[tuple] = []
 
     try:
+        if commit:
+            cur.execute("BEGIN IMMEDIATE")
         for email in emails:
             cur.execute(db._email_insert_or_ignore_sql, build_email_insert_row(db, email, ingestion_run_id))
             if cur.rowcount == 0:
@@ -218,8 +229,7 @@ def insert_emails_batch_impl(db, emails: list[Email], *, ingestion_run_id: int |
             segment_rows.extend(segment_rows_for_email(email.uid, getattr(email, "segments", []) or []))
 
             inferred = infer_and_persist_match(cur, email)
-            if inferred is not None:
-                inferred_edge_rows.append((email.uid, inferred[0], "inferred", inferred[2], inferred[3]))
+            _ = inferred
 
             if email.sender_email:
                 contact_rows.append(contact_row(email.sender_email, email.sender_name, email.date, "sender"))
@@ -246,11 +256,6 @@ def insert_emails_batch_impl(db, emails: list[Email], *, ingestion_run_id: int |
                 ) VALUES(?,?,?,?,?,?,?)""",
                 segment_rows,
             )
-        if inferred_edge_rows:
-            cur.executemany(
-                "INSERT INTO conversation_edges(child_uid, parent_uid, edge_type, reason, confidence) VALUES(?,?,?,?,?)",
-                inferred_edge_rows,
-            )
         if category_rows:
             cur.executemany(
                 "INSERT OR IGNORE INTO email_categories(email_uid, category) VALUES(?,?)",
@@ -259,14 +264,17 @@ def insert_emails_batch_impl(db, emails: list[Email], *, ingestion_run_id: int |
         if attachment_rows:
             cur.executemany(
                 "INSERT INTO attachments(email_uid, name, mime_type, size, content_id, is_inline, "
-                "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                "extraction_state, evidence_strength, ocr_used, failure_reason, text_preview, extracted_text, "
+                "text_source_path, text_locator_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 attachment_rows,
             )
 
         execute_contact_upserts(cur, contact_rows)
         execute_edge_upserts(cur, edge_rows)
-        db.conn.commit()
+        if commit:
+            db.conn.commit()
     except Exception:
-        db.conn.rollback()
+        if commit:
+            db.conn.rollback()
         raise
     return inserted_uids

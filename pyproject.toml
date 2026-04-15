@@ -31,12 +31,6 @@ dependencies = [
     "tornado>=6.5.5",  # CVE-2026-31958 (required by streamlit)
 ]
 
-[project.urls]
-Homepage = "https://github.com/sebastianspicker/outlook-email-rag"
-Repository = "https://github.com/sebastianspicker/outlook-email-rag"
-Issues = "https://github.com/sebastianspicker/outlook-email-rag/issues"
-Documentation = "https://github.com/sebastianspicker/outlook-email-rag#readme"
-
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",

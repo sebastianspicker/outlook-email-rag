@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Expanded live evaluation set for email_answer_context, built from real messages in .example/my-export.olm and intended for live runs against a populated SQLite mailbox corpus.",
+  "description": "Expanded live evaluation set for email_answer_context, built from synthetic fixtures in synthetic-eval-corpus.olm and intended for live runs against a populated SQLite mailbox corpus.",
   "cases": [
     {
       "id": "fact-101",
@@ -9,13 +9,13 @@
       "question": "Who sent the HARICA certificate mail?",
       "evidence_mode": "retrieval",
       "filters": {},
-      "expected_answer": "pki@hfmt-koeln.de sent the HARICA certificate reply.",
+      "expected_answer": "cert-admin@example.org sent the HARICA certificate reply.",
       "expected_support_uids": [
         "31692630078d4d3689505120c1b61631"
       ],
       "expected_top_uid": "31692630078d4d3689505120c1b61631",
       "expected_ambiguity": "clear",
-      "notes": "Real reply in _wichtig: subject AW: Zertifikat Harica."
+      "notes": "Synthetic reply in _wichtig: subject AW: Zertifikat Harica."
     },
     {
       "id": "fact-102",
@@ -30,7 +30,7 @@
       ],
       "expected_top_uid": "099aa2e0070e2a4b9d8dfeaf41a68a02",
       "expected_ambiguity": "clear",
-      "notes": "Real original in memo: Notizen und Dateien in die Notizen-App importieren - Apple Support (DE)."
+      "notes": "Synthetic original in memo: Notizen und Dateien in die Notizen-App importieren - Apple Support (DE)."
     },
     {
       "id": "fact-103",
@@ -45,7 +45,7 @@
       ],
       "expected_top_uid": "05cfd57c33128f29ea8ad85c30281dc6",
       "expected_ambiguity": "clear",
-      "notes": "Real original in _wichtig from 2021-10-07."
+      "notes": "Synthetic original in _wichtig from 2021-10-07."
     },
     {
       "id": "fact-104",
@@ -54,13 +54,13 @@
       "question": "Who announced that the Zammad test version was created?",
       "evidence_mode": "retrieval",
       "filters": {},
-      "expected_answer": "lukas.jacobs@hfmt-koeln.de announced the Zammad test version.",
+      "expected_answer": "service-owner@example.org announced the Zammad test version.",
       "expected_support_uids": [
         "addd6fad46c354177e7b59e32bb9b86a"
       ],
       "expected_top_uid": "addd6fad46c354177e7b59e32bb9b86a",
       "expected_ambiguity": "clear",
-      "notes": "Real original in _wichtig: Zammad Testversion."
+      "notes": "Synthetic original in _wichtig: Zammad Testversion."
     },
     {
       "id": "fact-105",
@@ -69,13 +69,13 @@
       "question": "Who sent the IT Besprechnung 07.05.2025 email?",
       "evidence_mode": "retrieval",
       "filters": {},
-      "expected_answer": "atosa.amini@hfmt-koeln.de sent the IT Besprechnung 07.05.2025 email.",
+      "expected_answer": "coordinator.one@example.org sent the IT Besprechnung 07.05.2025 email.",
       "expected_support_uids": [
         "a7ec62d7fd950e1d165cb342c73d5a40"
       ],
       "expected_top_uid": "a7ec62d7fd950e1d165cb342c73d5a40",
       "expected_ambiguity": "clear",
-      "notes": "Real attachment-bearing message in _wichtig from 2025-05-08."
+      "notes": "Synthetic attachment-bearing message in _wichtig from 2025-05-08."
     },
     {
       "id": "fact-106",
@@ -84,13 +84,13 @@
       "question": "Who sent the Workshop KI message?",
       "evidence_mode": "retrieval",
       "filters": {},
-      "expected_answer": "petra.john@hfmt-koeln.de sent the Workshop KI message.",
+      "expected_answer": "trainer.one@example.org sent the Workshop KI message.",
       "expected_support_uids": [
         "6162747c4462d7d3a6378cea35508b11"
       ],
       "expected_top_uid": "6162747c4462d7d3a6378cea35508b11",
       "expected_ambiguity": "clear",
-      "notes": "Real message in _wichtig from 2024-10-22."
+      "notes": "Synthetic message in _wichtig from 2024-10-22."
     },
     {
       "id": "thread-101",
@@ -228,7 +228,7 @@
       "triage_tags": [
         "attachment_extraction"
       ],
-      "notes": "Real attachment-bearing reply from personalrat@hfmt-koeln.de in _wichtig."
+      "notes": "Synthetic attachment-bearing reply from staff-council@example.org in _wichtig."
     },
     {
       "id": "attach-104",
@@ -378,7 +378,7 @@
       ],
       "expected_top_uid": "be2558603b1e4eac1e0ff7d8f894c0ec",
       "expected_quoted_speaker_emails": [
-        "sebastian.spicker@hfmt-koeln.de"
+        "target.person@example.org"
       ],
       "expected_ambiguity": "clear",
       "triage_tags": [
@@ -442,7 +442,7 @@
       ],
       "expected_top_uid": "06a9f338e135c8acd077a57769d0f390",
       "expected_quoted_speaker_emails": [
-        "matthias.richter@hfmt-koeln.de"
+        "manager.one@example.org"
       ],
       "expected_ambiguity": "ambiguous",
       "triage_tags": [

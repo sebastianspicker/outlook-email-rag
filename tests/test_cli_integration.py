@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -66,6 +67,14 @@ def _capture_stdout(func, *args, **kwargs) -> str:
     finally:
         sys.stdout = old_stdout
     return buffer.getvalue()
+
+
+def _parse_legacy_args(argv: list[str]):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        args = parse_args(argv)
+    assert any(issubclass(item.category, DeprecationWarning) for item in caught)
+    return args
 
 
 # ── _run_top_contacts ────────────────────────────────────────────────
@@ -227,56 +236,59 @@ def test_run_export_network_error():
 
 
 def test_parse_args_suggest_flag():
-    args = parse_args(["--suggest"])
+    args = _parse_legacy_args(["--suggest"])
     assert args.suggest is True
 
 
 def test_parse_args_top_contacts_flag():
-    args = parse_args(["--top-contacts", "alice@example.com"])
+    args = _parse_legacy_args(["--top-contacts", "alice@example.com"])
     assert args.top_contacts == "alice@example.com"
 
 
 def test_parse_args_volume_flag():
-    args = parse_args(["--volume", "week"])
+    args = _parse_legacy_args(["--volume", "week"])
     assert args.volume == "week"
 
 
 def test_parse_args_entities_flag():
-    args = parse_args(["--entities"])
+    args = _parse_legacy_args(["--entities"])
     assert args.entities == "all"
 
 
 def test_parse_args_entities_with_type():
-    args = parse_args(["--entities", "organization"])
+    args = _parse_legacy_args(["--entities", "organization"])
     assert args.entities == "organization"
 
 
 def test_parse_args_heatmap_flag():
-    args = parse_args(["--heatmap"])
+    args = _parse_legacy_args(["--heatmap"])
     assert args.heatmap is True
 
 
 def test_parse_args_response_times_flag():
-    args = parse_args(["--response-times"])
+    args = _parse_legacy_args(["--response-times"])
     assert args.response_times is True
 
 
 def test_parse_args_generate_report_default():
-    args = parse_args(["--generate-report"])
+    args = _parse_legacy_args(["--generate-report"])
     assert args.generate_report == "report.html"
 
 
 def test_parse_args_generate_report_custom():
-    args = parse_args(["--generate-report", "custom.html"])
+    args = _parse_legacy_args(["--generate-report", "custom.html"])
     assert args.generate_report == "custom.html"
 
 
 def test_parse_args_export_network_default():
-    args = parse_args(["--export-network"])
+    args = _parse_legacy_args(["--export-network"])
     assert args.export_network == "network.graphml"
 
 
 def test_parse_args_mutually_exclusive_operational():
     """Operational flags are mutually exclusive."""
-    with pytest.raises(SystemExit):
-        parse_args(["--stats", "--suggest"])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises(SystemExit):
+            parse_args(["--stats", "--suggest"])
+    assert any(issubclass(item.category, DeprecationWarning) for item in caught)

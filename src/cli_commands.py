@@ -13,6 +13,7 @@ import logging
 import sys
 from typing import TYPE_CHECKING, Any, Literal
 
+from . import cli_commands_case as case_family
 from . import cli_commands_compat as compat_family
 from . import cli_commands_search as search_family
 from .config import get_settings
@@ -23,6 +24,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 OutputFormat = Literal["text", "json"]
+_CLI_SQLITE_PATH_OVERRIDE: str | None = None
+
+
+def set_cli_sqlite_path_override(sqlite_path: str | None) -> None:
+    """Set a process-local SQLite override for DB-backed CLI commands."""
+    global _CLI_SQLITE_PATH_OVERRIDE
+    _CLI_SQLITE_PATH_OVERRIDE = sqlite_path or None
 
 
 # ── Output format ────────────────────────────────────────────────
@@ -155,6 +163,29 @@ def _cmd_search(args: argparse.Namespace, retriever: EmailRetriever) -> None:
         expand_query=getattr(args, "expand_query", False),
     )
     sys.exit(code)
+
+
+def _cmd_case(args: argparse.Namespace, retriever: EmailRetriever) -> None:
+    """Handle `case` subcommand."""
+    action = getattr(args, "case_action", None)
+    if action == "analyze":
+        case_family.run_case_analyze_impl(retriever, _get_email_db, args)
+    elif action == "prompt-preflight":
+        case_family.run_case_prompt_preflight_impl(args)
+    elif action == "full-pack":
+        sys.exit(case_family.run_case_full_pack_impl(retriever, _get_email_db, args))
+    elif action == "counsel-pack":
+        sys.exit(case_family.run_case_counsel_pack_impl(retriever, _get_email_db, args))
+    elif action == "review-status":
+        case_family.run_case_review_status_impl(_get_email_db, args)
+    elif action == "review-override":
+        case_family.run_case_review_override_impl(_get_email_db, args)
+    elif action == "review-snapshot":
+        case_family.run_case_review_snapshot_impl(_get_email_db, args)
+    else:
+        print("Usage: python -m src.cli case analyze --input case.json")
+        sys.exit(2)
+    sys.exit(0)
 
 
 def _cmd_browse(args: argparse.Namespace) -> None:
@@ -334,7 +365,10 @@ def _render_results_table(console, table_cls, results) -> None:
 
 
 def _get_email_db():
-    return compat_family.get_email_db_impl(get_settings=get_settings)
+    return compat_family.get_email_db_impl(
+        get_settings=get_settings,
+        sqlite_path_override=_CLI_SQLITE_PATH_OVERRIDE,
+    )
 
 
 # ── Run functions (unchanged domain logic) ───────────────────────

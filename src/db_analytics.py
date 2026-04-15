@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import defaultdict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -171,6 +172,24 @@ class AnalyticsMixin:
     # Contact / Communication queries
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _canonical_contact_identity(email_address: str) -> str:
+        """Return a conservative canonical identity for contact aggregation.
+
+        Gmail and Googlemail addresses are normalized into one identity and
+        Gmail-style dots/plus-addressing are ignored so self-traffic does not
+        surface as an external contact.
+        """
+        normalized = str(email_address or "").strip().lower()
+        if "@" not in normalized:
+            return normalized
+        local, domain = normalized.split("@", 1)
+        if domain == "googlemail.com":
+            domain = "gmail.com"
+        if domain == "gmail.com":
+            local = local.split("+", 1)[0].replace(".", "")
+        return f"{local}@{domain}"
+
     def top_contacts(self, email_address: str, limit: int = 20) -> list[dict]:
         """Top communication partners (bidirectional frequency)."""
         rows = self.conn.execute(
@@ -183,9 +202,25 @@ class AnalyticsMixin:
                  FROM communication_edges WHERE recipient_email = ?
                )
                GROUP BY partner ORDER BY total DESC LIMIT ?""",
-            (email_address, email_address, limit),
+            (email_address, email_address, max(limit * 4, limit)),
         ).fetchall()
-        return [dict(r) for r in rows]
+        focal_identity = self._canonical_contact_identity(email_address)
+        totals_by_identity: dict[str, int] = defaultdict(int)
+        display_by_identity: dict[str, str] = {}
+        for row in rows:
+            partner = str(row["partner"] or "").strip().lower()
+            if not partner:
+                continue
+            canonical_partner = self._canonical_contact_identity(partner)
+            if not canonical_partner or canonical_partner == focal_identity:
+                continue
+            totals_by_identity[canonical_partner] += int(row["total"] or 0)
+            display_by_identity.setdefault(canonical_partner, canonical_partner)
+        ranked = sorted(totals_by_identity.items(), key=lambda item: (-item[1], item[0]))
+        return [
+            {"partner": display_by_identity[identity], "total": total}
+            for identity, total in ranked[:limit]
+        ]
 
     def communication_between(self, email_a: str, email_b: str) -> dict:
         """Bidirectional stats between two addresses."""

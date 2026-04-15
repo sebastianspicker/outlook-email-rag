@@ -124,6 +124,24 @@ async def email_search_structured(params: EmailSearchStructuredInput) -> str:
 
             results, scan_meta = filter_seen(params.scan_id, results)
         payload = r.serialize_results(params.query, results)
+        debug = getattr(r, "last_search_debug", getattr(r, "_last_search_debug", None))
+        if isinstance(debug, dict) and debug:
+            retrieval_diagnostics: dict[str, Any] = {}
+            original_query = str(debug.get("original_query") or "").strip()
+            executed_query = str(debug.get("executed_query") or "").strip()
+            if original_query:
+                retrieval_diagnostics["original_query"] = original_query
+            if executed_query:
+                retrieval_diagnostics["executed_query"] = executed_query
+            if "expand_query_requested" in debug:
+                retrieval_diagnostics["expand_query_requested"] = bool(debug.get("expand_query_requested"))
+            if "used_query_expansion" in debug:
+                retrieval_diagnostics["used_query_expansion"] = bool(debug.get("used_query_expansion"))
+            expansion_suffix = str(debug.get("query_expansion_suffix") or "").strip()
+            if expansion_suffix:
+                retrieval_diagnostics["query_expansion_suffix"] = expansion_suffix
+            if retrieval_diagnostics:
+                payload["retrieval_diagnostics"] = retrieval_diagnostics
         payload["top_k"] = effective_top_k
         payload["filters"] = {
             "sender": params.sender,
@@ -197,11 +215,16 @@ async def email_ingest(params: EmailIngestInput) -> str:
         try:
             stats = ingest(
                 olm_path=params.olm_path,
+                chromadb_path=params.chromadb_path,
+                sqlite_path=params.sqlite_path,
+                batch_size=params.batch_size,
                 max_emails=params.max_emails,
                 dry_run=params.dry_run,
                 extract_attachments=params.extract_attachments,
                 extract_entities=params.extract_entities,
                 embed_images=params.embed_images,
+                incremental=params.incremental,
+                timing=params.timing,
             )
         except FileNotFoundError:
             return json_error(f"OLM file not found: {params.olm_path}")
@@ -212,6 +235,12 @@ async def email_ingest(params: EmailIngestInput) -> str:
         # The retriever and email_db singletons may hold stale state
         # (BM25/sparse indices, query caches, etc.) from before ingestion.
         if not params.dry_run:
+            import src.mcp_server as _server
+
+            _server.set_runtime_archive_paths(
+                chromadb_path=params.chromadb_path,
+                sqlite_path=params.sqlite_path,
+            )
             invalidate_mcp_singletons()
 
         return json_response(stats)

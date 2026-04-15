@@ -45,10 +45,16 @@ def _resolve_entity_extractor(extract_entities: bool, dry_run: bool) -> Callable
         from .nlp_entity_extractor import extract_nlp_entities, is_spacy_available
 
         if not is_spacy_available():
-            _auto_download_spacy_models()
-            from .nlp_entity_extractor import reset_model_cache
+            if os.environ.get("SPACY_AUTO_DOWNLOAD_DURING_INGEST", "1") != "0":
+                _auto_download_spacy_models()
+                from .nlp_entity_extractor import reset_model_cache
 
-            reset_model_cache()
+                reset_model_cache()
+            else:
+                logger.info(
+                    "Entity extraction: spaCy models unavailable; automatic download disabled via "
+                    "SPACY_AUTO_DOWNLOAD_DURING_INGEST=0."
+                )
 
         if is_spacy_available():
             logger.info("Entity extraction: spaCy NLP + regex (enhanced)")
@@ -62,6 +68,18 @@ def _resolve_entity_extractor(extract_entities: bool, dry_run: bool) -> Callable
 
         logger.info("Entity extraction: regex-only")
         return _extract_entities
+
+
+def _entity_extractor_provenance(entity_extractor_fn: Callable[[str, str], list[Any]] | None) -> tuple[str, str]:
+    """Return stable provenance labels for the active entity extractor."""
+    if entity_extractor_fn is None:
+        return "", ""
+    module_name = str(getattr(entity_extractor_fn, "__module__", "") or "")
+    if module_name.endswith("nlp_entity_extractor"):
+        return "spacy_regex", "1"
+    if module_name.endswith("entity_extractor"):
+        return "regex_only", "1"
+    return "custom", "1"
 
 
 def _hash_file_sha256(filepath: str) -> str:
@@ -242,6 +260,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Backfill language detection and sentiment analysis for emails missing analytics data.",
     )
     parser.add_argument(
+        "--reextract-entities",
+        action="store_true",
+        help="Re-extract entities from stored email bodies and persist extractor provenance metadata.",
+    )
+    parser.add_argument(
+        "--reprocess-degraded-attachments",
+        action="store_true",
+        help="Re-parse mailbox attachments for degraded/unsupported rows and attempt OCR recovery for images.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-parse all emails (use with --reingest-bodies to overwrite existing body text and headers).",
@@ -285,6 +313,25 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.reingest_analytics:
         result = reingest_analytics(sqlite_path=args.sqlite_path)
+        print(result["message"])
+        raise SystemExit(0)
+
+    if args.reextract_entities:
+        result = reextract_entities(
+            sqlite_path=args.sqlite_path,
+            force=args.force,
+        )
+        print(result["message"])
+        raise SystemExit(0)
+
+    if args.reprocess_degraded_attachments:
+        result = reprocess_degraded_attachments(
+            args.olm_path,
+            chromadb_path=args.chromadb_path,
+            sqlite_path=args.sqlite_path,
+            batch_size=args.batch_size,
+            force=args.force,
+        )
         print(result["message"])
         raise SystemExit(0)
 
@@ -357,6 +404,43 @@ def reingest_analytics(
     sqlite_path: str | None = None,
 ) -> dict[str, Any]:
     return reingest_family.reingest_analytics_impl(sqlite_path=sqlite_path)
+
+
+def reextract_entities(
+    sqlite_path: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    entity_extractor_fn = _resolve_entity_extractor(extract_entities=True, dry_run=False)
+    extractor_key, extraction_version = _entity_extractor_provenance(entity_extractor_fn)
+    return reingest_family.reextract_entities_impl(
+        sqlite_path=sqlite_path,
+        entity_extractor_fn=entity_extractor_fn,
+        extractor_key=extractor_key,
+        extraction_version=extraction_version,
+        force=force,
+    )
+
+
+def reprocess_degraded_attachments(
+    olm_path: str,
+    chromadb_path: str | None = None,
+    sqlite_path: str | None = None,
+    batch_size: int = 100,
+    force: bool = False,
+) -> dict[str, Any]:
+    from .attachment_extractor import extract_image_text_ocr, extract_text
+
+    return reingest_family.reprocess_degraded_attachments_impl(
+        olm_path,
+        chromadb_path=chromadb_path,
+        sqlite_path=sqlite_path,
+        batch_size=batch_size,
+        force=force,
+        parse_olm_fn=parse_olm,
+        chunk_attachment_fn=chunk_attachment,
+        attachment_text_extractor=extract_text,
+        attachment_ocr_extractor=extract_image_text_ocr,
+    )
 
 
 def reembed(

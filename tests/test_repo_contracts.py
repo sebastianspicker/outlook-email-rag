@@ -43,11 +43,34 @@ def test_readme_does_not_hardcode_test_count_badge():
     assert "tests (2147+)" not in readme
 
 
+def test_readme_mcp_tool_badge_matches_documented_tool_count():
+    readme = _read("README.md")
+    assert "badge/MCP_tools-58" in readme
+    assert "Email RAG exposes 58 MCP tools." in readme
+    assert "You should see all 58 tools listed beneath it" in readme
+
+
 def test_readme_privacy_note_matches_first_run_download_boundary():
     readme = _read("README.md")
     assert "No API calls, no data leaves your machine." not in readme
     assert "Email content stays local" in readme
     assert "Hugging Face" in readme
+
+
+def test_readme_routes_real_mailboxes_into_private_workspace():
+    readme = _read("README.md")
+    assert "private/ingest/my-export.olm" in readme
+    assert "`private/` is ignored by Git" in readme
+    assert "Keep tracked `data/` and `tests/fixtures/` content sanitized." in readme
+
+
+def test_gitignore_excludes_private_local_matter_workspaces():
+    gitignore = _read(".gitignore")
+    assert "/private/" in gitignore
+    assert "/data/private/" in gitignore
+    assert "/tests/private/" in gitignore
+    assert "/tests/fixtures/private/" in gitignore
+    assert ".streamlit/secrets.toml" in gitignore
 
 
 def test_topic_surfaces_are_demoted_from_stable_contract():
@@ -80,31 +103,96 @@ def test_diagnostics_docs_describe_resolved_runtime_summary():
     assert "current embedder/backend state" in compatibility
 
 
-def test_source_audit_repo_profile_has_no_stale_open_phase1_followups():
-    repo_profile = _read("docs/source-audit/repo-profile.md")
-    assert "SA-024" not in repo_profile
-    assert "SA-026" not in repo_profile
-    assert "three new phase-1 follow-ups are open" not in repo_profile
-    assert "## Phase-1 rerun note" not in repo_profile
-    assert "no currently open phase-1 follow-ups remain" in repo_profile
+def test_response_time_docs_are_explicitly_sample_scoped():
+    readme = _read("README.md")
+    cli_reference = _read("docs/CLI_REFERENCE.md")
+    mcp_tools = _read("docs/MCP_TOOLS.md")
+    analysis_models = _read("src/mcp_models_analysis.py")
+
+    assert "recent-sample response times per sender based on canonical reply pairs" in readme
+    assert "Recent-sample response times per sender (canonical reply pairs)" in cli_reference
+    assert "recent-sample response times per sender based on canonical reply pairs" in mcp_tools
+    assert "recent-sample response times per sender based on canonical reply pairs" in analysis_models
+    assert "average response times per sender" not in mcp_tools
 
 
-def test_source_audit_workspace_notes_are_synchronized():
-    findings = _read("docs/source-audit/findings-index.md")
-    verification = _read("docs/source-audit/verification-matrix.md")
-    readme_companion = _read("docs/source-audit/files/README.md.md")
-    stale_residual_risk = (
-        "Residual risk: the current workspace still uses a Python 3.13 environment "
-        "whose full coverage suite aborts in an unrelated clustering test"
-    )
+def test_internal_operator_workspace_artifacts_are_not_checked_in():
+    absent_paths = [
+        "AGENTS.md",
+        "HARNESS_PRINCIPLES.md",
+        "code_review.md",
+        "AUDIT.md",
+        "CLAUDE.md",
+        "docs/source-audit",
+        "docs/agent/Prompt.md",
+        "docs/agent/Plan.md",
+        "docs/agent/Documentation.md",
+        "docs/agent/Implement.md",
+        "docs/agent/AutonomousHardStops.md",
+        "docs/agent/RunModes.md",
+        "docs/agent/AutonomyPolicy.md",
+        "docs/agent/Goals.md",
+        "docs/agent/RepoProfile.md",
+        "docs/agent/Findings.md",
+        "docs/agent/Backlog.md",
+        "docs/agent/Topology.md",
+        "docs/agent/VerificationMatrix.md",
+        "docs/agent/Checkpoint.md",
+        "docs/agent/Decisions.md",
+        "docs/agent/ingestion_optimization_plan.md",
+        "docs/agent/ingestion_optimization_progress.md",
+        "docs/agent/qa_eval_plan.md",
+        "docs/agent/qa_eval_captured_refresh.md",
+    ]
+    for relative_path in absent_paths:
+        assert not (REPO_ROOT / relative_path).exists(), relative_path
 
-    assert "| SA-025 | low | high | verified |" in findings
-    assert "| SA-026 | low | high | verified |" in findings
-    assert "| SA-027 | low | high | verified |" in findings
-    assert "condensed README MCP diagnostics summary can still drift" not in verification
-    assert "Remaining drift risk is now concentrated in internal audit-workspace notes" in verification
-    assert stale_residual_risk not in readme_companion
-    assert "Later remediation rounds completed the full local acceptance matrix successfully" in readme_companion
+
+def test_gitignore_keeps_internal_operator_artifacts_out_of_future_commits():
+    gitignore = _read(".gitignore")
+    expected_entries = [
+        "AGENTS.md",
+        "HARNESS_PRINCIPLES.md",
+        "code_review.md",
+        "AUDIT.md",
+        "CLAUDE.md",
+        "docs/source-audit/",
+        "docs/agent/Prompt.md",
+        "docs/agent/Plan.md",
+        "docs/agent/Documentation.md",
+        "docs/agent/Implement.md",
+        "docs/agent/AutonomousHardStops.md",
+        "docs/agent/RunModes.md",
+        "docs/agent/AutonomyPolicy.md",
+        "docs/agent/Goals.md",
+        "docs/agent/RepoProfile.md",
+        "docs/agent/Findings.md",
+        "docs/agent/Backlog.md",
+        "docs/agent/Topology.md",
+        "docs/agent/VerificationMatrix.md",
+        "docs/agent/Checkpoint.md",
+        "docs/agent/Decisions.md",
+        "docs/agent/ingestion_optimization_plan.md",
+        "docs/agent/ingestion_optimization_progress.md",
+        "docs/agent/qa_eval_plan.md",
+        "docs/agent/qa_eval_captured_refresh.md",
+    ]
+    for entry in expected_entries:
+        assert entry in gitignore
+
+
+def test_readme_and_docs_index_reflect_public_documentation_surface():
+    readme = _read("README.md")
+    docs_index = _read("docs/README.md")
+
+    assert "[docs/README.md](docs/README.md)" in readme
+    assert "Available MCP Tool Families (58 tools)" in readme
+    assert "A visual search interface that runs in your browser. This is the exploratory GUI" in readme
+    assert "private/ingest/latest-export.olm" in readme
+    assert "├── private/" in readme
+    assert "[CLI_REFERENCE.md](CLI_REFERENCE.md)" in docs_index
+    assert "[MCP_TOOLS.md](MCP_TOOLS.md)" in docs_index
+    assert "The legal-support system ships with dedicated contract docs under [`agent/`](agent/)." in docs_index
 
 
 def test_acceptance_matrix_tracks_ci_contracts():
@@ -135,3 +223,12 @@ def test_acceptance_matrix_tracks_ci_contracts():
         assert check in ci
 
     assert "Skipping in local profile because pypi.org is unreachable from this environment." in acceptance
+
+
+def test_acceptance_matrix_exposes_release_profile_with_required_dependency_audit():
+    acceptance = _read("scripts/run_acceptance_matrix.sh")
+
+    assert "Usage: bash scripts/run_acceptance_matrix.sh [local|ci|release]" in acceptance
+    assert "Running release profile. Dependency audit is required and may not be skipped." in acceptance
+    expected = "Release profile requires a real dependency-audit result, but pypi.org is unreachable from this environment."
+    assert expected in acceptance

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from src.query_expander import QueryExpander
+from src.query_expander import QueryExpander, legal_support_query_profile
 
 
 class _FakeModel:
@@ -19,6 +19,15 @@ class _FakeModel:
 
 
 class TestQueryExpander:
+    def test_legal_support_query_profile_detects_participation_and_contradiction(self):
+        profile = legal_support_query_profile("Need SBV participation contradiction timeline after the complaint")
+
+        assert profile["is_legal_support"] is True
+        assert "participation" in profile["intents"]
+        assert "contradiction" in profile["intents"]
+        assert "chronology" in profile["intents"]
+        assert "personalrat" in profile["suggested_terms"]
+
     def test_expand_adds_terms(self):
         vocab = ["quarterly report", "budget review", "team meeting", "project deadline", "sales forecast"]
         expander = QueryExpander(model=_FakeModel(), vocabulary=vocab)
@@ -98,6 +107,14 @@ class TestQueryExpander:
         # "artificial intelligence" should not be skipped just because "art" is a substring
         # At minimum, the result should expand beyond just "art"
         assert len(result) > len("art")
+
+    def test_expand_adds_deterministic_legal_support_terms_before_semantic_vocab(self):
+        vocab = ["calendar invite", "attendance table", "peer review"]
+        expander = QueryExpander(model=_FakeModel(), vocabulary=vocab)
+        result = expander.expand("Need SBV participation contradiction review", n_terms=4)
+
+        assert "personalrat" in result or "betriebsrat" in result
+        assert "contradiction" in result
 
 
 class TestMCPSmartSearch:

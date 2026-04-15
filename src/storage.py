@@ -68,7 +68,9 @@ def get_collection(
     search_ef = metadata.get("hnsw:search_ef")
     if search_ef is not None:
         try:
-            collection.modify(metadata={"hnsw:search_ef": search_ef})
+            merged_metadata = dict(getattr(collection, "metadata", {}) or {})
+            merged_metadata["hnsw:search_ef"] = search_ef
+            collection.modify(metadata=merged_metadata)
         except Exception:
             import logging as _logging
 

@@ -126,6 +126,17 @@ class MockEmailDB:
     def top_contacts(self, email, limit=5):
         return [{"email": "bob@example.com", "count": 5}]
 
+    def close(self) -> None:
+        if self.conn is not None:
+            self.conn.close()
+            self.conn = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 class MockDeps:
     _email_db = MockEmailDB()

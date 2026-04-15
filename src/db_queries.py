@@ -20,6 +20,7 @@ from .db_schema import _escape_like
 if TYPE_CHECKING:
     pass  # conn declared below for mypy
 
+
 class QueryMixin:
     """Read queries, full-body retrieval, browsing, and consistency checks."""
 
@@ -68,6 +69,23 @@ class QueryMixin:
         """Check whether an email with the given UID exists."""
         row = self.conn.execute("SELECT 1 FROM emails WHERE uid = ?", (uid,)).fetchone()
         return row is not None
+
+    def completed_ingest_uids(
+        self,
+        *,
+        attachment_required: bool = False,
+    ) -> set[str]:
+        """Return UIDs whose relational and vector ingest state is complete enough to skip."""
+        clauses = ["state.vector_status = 'completed'"]
+        if attachment_required:
+            clauses.append("(state.attachment_status = 'completed' OR emails.has_attachments = 0)")
+        rows = self.conn.execute(
+            f"""SELECT state.email_uid
+                FROM email_ingest_state AS state
+                JOIN emails ON emails.uid = state.email_uid
+                WHERE {" AND ".join(clauses)}""",  # nosec B608
+        ).fetchall()
+        return {str(row["email_uid"]) for row in rows if str(row["email_uid"] or "")}
 
     def emails_by_sender(self, sender_email: str, limit: int = 100) -> list[dict]:
         """Get emails from a specific sender.

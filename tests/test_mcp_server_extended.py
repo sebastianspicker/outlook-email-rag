@@ -115,6 +115,54 @@ class TestGetEmailDb:
             mcp_server._email_db = original_db
             mcp_server._email_db_lock = original_lock
 
+    def test_get_email_db_uses_runtime_sqlite_override(self, tmp_path):
+        """get_email_db prefers the active runtime SQLite override when present."""
+        from src import mcp_server
+
+        original_db = mcp_server._email_db
+        original_lock = mcp_server._email_db_lock
+        original_runtime = mcp_server._runtime_sqlite_path
+        db_path = tmp_path / "runtime-email.db"
+        db_path.touch()
+
+        try:
+            mcp_server._email_db = None
+            mcp_server._email_db_lock = threading.Lock()
+            mcp_server._runtime_sqlite_path = str(db_path)
+
+            with patch("src.email_db.EmailDatabase") as mock_db:
+                result = mcp_server.get_email_db()
+                mock_db.assert_called_once_with(str(db_path))
+                assert result is mock_db.return_value
+        finally:
+            mcp_server._email_db = original_db
+            mcp_server._email_db_lock = original_lock
+            mcp_server._runtime_sqlite_path = original_runtime
+
+
+class TestGetRetrieverCaching:
+    def test_get_retriever_uses_runtime_chromadb_override(self):
+        """get_retriever prefers the active runtime Chroma override when present."""
+        from src import mcp_server
+
+        original_retriever = mcp_server._retriever
+        original_lock = mcp_server._retriever_lock
+        original_runtime = mcp_server._runtime_chromadb_path
+
+        try:
+            mcp_server._retriever = None
+            mcp_server._retriever_lock = threading.Lock()
+            mcp_server._runtime_chromadb_path = "/tmp/runtime-chroma"
+
+            with patch("src.retriever.EmailRetriever") as mock_retriever:
+                result = mcp_server.get_retriever()
+                mock_retriever.assert_called_once_with(chromadb_path="/tmp/runtime-chroma")
+                assert result is mock_retriever.return_value
+        finally:
+            mcp_server._retriever = original_retriever
+            mcp_server._retriever_lock = original_lock
+            mcp_server._runtime_chromadb_path = original_runtime
+
 
 # ── ToolDeps ──────────────────────────────────────────────────────
 
@@ -142,6 +190,18 @@ class TestToolDeps:
 
         result = ToolDeps.sanitize("hello")
         assert isinstance(result, str)
+
+    def test_tool_deps_privacy_helpers(self):
+        """ToolDeps exposes shared privacy helpers to outward tools."""
+        from src.mcp_server import ToolDeps
+
+        payload, guardrails = ToolDeps.apply_privacy_guardrails(
+            {"sender_email": "max@example.org"},
+            privacy_mode="external_counsel_export",
+        )
+        assert payload["sender_email"] == "[REDACTED: email]"
+        assert ToolDeps.privacy_mode_policy("witness_sharing")["privacy_mode"] == "witness_sharing"
+        assert guardrails["privacy_mode"] == "external_counsel_export"
 
 
 # ── _tool_annotations helpers ──────────────────────────────────────
@@ -236,6 +296,22 @@ class TestMain:
         ):
             mcp_server.main([])
 
+        mock_lock.assert_called_once()
+        mock_log.assert_called_once()
+        mock_run.assert_called_once()
+
+    def test_main_applies_runtime_archive_overrides(self):
+        from src import mcp_server
+
+        with (
+            patch.object(mcp_server, "_acquire_instance_lock") as mock_lock,
+            patch.object(mcp_server, "_log_startup_info") as mock_log,
+            patch.object(mcp_server, "set_runtime_archive_paths") as mock_paths,
+            patch.object(mcp_server.mcp, "run") as mock_run,
+        ):
+            mcp_server.main(["--chromadb-path", "/tmp/chroma", "--sqlite-path", "/tmp/email.db"])
+
+        mock_paths.assert_called_once_with(chromadb_path="/tmp/chroma", sqlite_path="/tmp/email.db")
         mock_lock.assert_called_once()
         mock_log.assert_called_once()
         mock_run.assert_called_once()

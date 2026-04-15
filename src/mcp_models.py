@@ -12,6 +12,7 @@ Sub-modules:
 
 from .mcp_models_analysis import (
     ActionItemsInput,
+    AdverseActionInput,
     BehavioralCaseScopeInput,
     BehavioralOrgContextInput,
     CasePartyInput,
@@ -47,6 +48,17 @@ from .mcp_models_base import (
     StrictInput,
     _validate_output_path,
 )
+from .mcp_models_case_analysis import (
+    CaseChatExportInput,
+    CaseChatLogEntryInput,
+    EmailCaseAnalysisInput,
+    EmailCaseFullPackInput,
+    EmailCasePromptPreflightInput,
+    EmailLegalSupportExportInput,
+    EmailLegalSupportInput,
+    MatterArtifactInput,
+    MatterManifestInput,
+)
 from .mcp_models_evidence import (
     CustodyChainInput,
     EmailDossierInput,
@@ -77,9 +89,12 @@ from .mcp_models_search import (
 
 __all__ = [
     "ActionItemsInput",
+    "AdverseActionInput",
     "BehavioralCaseScopeInput",
     "BehavioralOrgContextInput",
     "BrowseInput",
+    "CaseChatExportInput",
+    "CaseChatLogEntryInput",
     "CasePartyInput",
     "CoordinatedTimingInput",
     "CustodyChainInput",
@@ -89,6 +104,9 @@ __all__ = [
     "EmailAdminInput",
     "EmailAnswerContextInput",
     "EmailAttachmentsInput",
+    "EmailCaseAnalysisInput",
+    "EmailCaseFullPackInput",
+    "EmailCasePromptPreflightInput",
     "EmailClustersInput",
     "EmailContactsInput",
     "EmailDeepContextInput",
@@ -96,6 +114,8 @@ __all__ = [
     "EmailDossierInput",
     "EmailExportInput",
     "EmailIngestInput",
+    "EmailLegalSupportExportInput",
+    "EmailLegalSupportInput",
     "EmailProvenanceInput",
     "EmailQualityInput",
     "EmailReportInput",
@@ -120,6 +140,8 @@ __all__ = [
     "FindSimilarInput",
     "ListEntitiesInput",
     "ListSendersInput",
+    "MatterArtifactInput",
+    "MatterManifestInput",
     "NetworkAnalysisInput",
     "PlainInput",
     "RelationshipPathsInput",

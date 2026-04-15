@@ -68,3 +68,36 @@ def test_insert_email_persists_inferred_parent_and_edge():
     assert edge["edge_type"] == "inferred"
     assert edge["confidence"] >= 0.8
     db.close()
+
+
+def test_insert_emails_batch_does_not_duplicate_inferred_edges() -> None:
+    db = EmailDatabase(":memory:")
+    parent = _make_email(
+        message_id="<parent-batch@example.com>",
+        date="2024-01-15T10:00:00",
+        conversation_id="conv-batch-1",
+    )
+    child = _make_email(
+        message_id="<child-batch@example.com>",
+        subject="RE: Budget Review",
+        sender_name="Bob",
+        sender_email="bob@example.com",
+        to=["Alice <alice@example.com>"],
+        to_identities=["alice@example.com"],
+        date="2024-01-15T10:30:00",
+        reply_context_from="alice@example.com",
+        reply_context_to=["bob@example.com"],
+        reply_context_subject="Budget Review",
+    )
+
+    db.insert_emails_batch([parent, child])
+
+    row = db.conn.execute(
+        """SELECT COUNT(*) AS c
+           FROM conversation_edges
+           WHERE child_uid = ? AND parent_uid = ? AND edge_type = 'inferred'""",
+        (child.uid, parent.uid),
+    ).fetchone()
+    assert row is not None
+    assert row["c"] == 1
+    db.close()

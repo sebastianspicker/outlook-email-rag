@@ -19,7 +19,13 @@ def test_build_case_patterns_summarizes_recurrence_by_behavior_taxonomy_and_thre
                                 "confidence": "medium",
                                 "taxonomy_ids": ["escalation_pressure"],
                             }
-                        ]
+                        ],
+                        "relevant_wording": [{"text": "for the record"}],
+                        "communication_classification": {
+                            "primary_class": "controlling",
+                            "applied_classes": ["controlling", "tense"],
+                        },
+                        "excluded_actors": ["alex@example.com"],
                     }
                 },
             },
@@ -36,7 +42,13 @@ def test_build_case_patterns_summarizes_recurrence_by_behavior_taxonomy_and_thre
                                 "confidence": "high",
                                 "taxonomy_ids": ["escalation_pressure", "unequal_demands"],
                             }
-                        ]
+                        ],
+                        "relevant_wording": [{"text": "for the record"}],
+                        "communication_classification": {
+                            "primary_class": "controlling",
+                            "applied_classes": ["controlling", "tense"],
+                        },
+                        "excluded_actors": ["alex@example.com"],
                     }
                 },
             },
@@ -53,7 +65,13 @@ def test_build_case_patterns_summarizes_recurrence_by_behavior_taxonomy_and_thre
                                 "confidence": "high",
                                 "taxonomy_ids": ["escalation_pressure"],
                             }
-                        ]
+                        ],
+                        "relevant_wording": [{"text": "for the record"}],
+                        "communication_classification": {
+                            "primary_class": "controlling",
+                            "applied_classes": ["controlling", "tense"],
+                        },
+                        "excluded_actors": ["alex@example.com"],
                     }
                 },
             },
@@ -74,6 +92,12 @@ def test_build_case_patterns_summarizes_recurrence_by_behavior_taxonomy_and_thre
     assert patterns["directional_summaries"][0]["sender_actor_id"] == "actor-manager"
     assert patterns["directional_summaries"][0]["target_actor_id"] == "actor-target"
     assert patterns["directional_summaries"][0]["behavior_counts"]["escalation"] == 2
+    corpus_review = patterns["corpus_behavioral_review"]
+    assert corpus_review["message_count_reviewed"] == 3
+    assert corpus_review["coverage_scope"] == "retrieved_candidate_slice"
+    assert corpus_review["communication_class_counts"]["controlling"] >= 2
+    assert corpus_review["recurring_phrases"][0]["phrase"] == "for the record"
+    assert corpus_review["escalation_points"][0]["uid"] == "u1"
 
 
 def test_build_case_patterns_keeps_one_off_events_isolated():
@@ -101,3 +125,170 @@ def test_build_case_patterns_keeps_one_off_events_isolated():
 
     assert patterns["behavior_patterns"][0]["primary_recurrence"] == "isolated"
     assert patterns["behavior_patterns"][0]["recurrence_flags"] == []
+
+
+def test_build_case_patterns_adds_corpus_level_response_and_coordination_reviews():
+    patterns = build_case_patterns(
+        candidates=[
+            {
+                "uid": "u1",
+                "date": "2026-03-01T09:00:00",
+                "sender_actor_id": "actor-target",
+                "thread_group_id": "thread-a",
+                "recipients_summary": {
+                    "status": "available",
+                    "cc_count": 0,
+                    "visible_recipient_count": 1,
+                    "visible_recipient_emails": ["manager@example.com"],
+                    "signature": "manager@example.com",
+                },
+                "message_findings": {
+                    "authored_text": {
+                        "behavior_candidates": [],
+                        "communication_classification": {"primary_class": "neutral", "applied_classes": ["neutral"]},
+                    }
+                },
+                "reply_pairing": {
+                    "target_authored_request": True,
+                    "response_status": "direct_reply",
+                    "response_delay_hours": 4,
+                },
+            },
+            {
+                "uid": "u2",
+                "date": "2026-03-03T09:00:00",
+                "sender_actor_id": "actor-target",
+                "thread_group_id": "thread-b",
+                "recipients_summary": {
+                    "status": "available",
+                    "cc_count": 0,
+                    "visible_recipient_count": 1,
+                    "visible_recipient_emails": ["manager@example.com"],
+                    "signature": "manager@example.com",
+                },
+                "message_findings": {
+                    "authored_text": {
+                        "behavior_candidates": [],
+                        "communication_classification": {"primary_class": "neutral", "applied_classes": ["neutral"]},
+                    }
+                },
+                "reply_pairing": {
+                    "target_authored_request": True,
+                    "response_status": "indirect_activity_without_direct_reply",
+                    "response_delay_hours": 49,
+                    "supports_selective_non_response_inference": True,
+                },
+            },
+            {
+                "uid": "u3",
+                "date": "2026-03-03T11:00:00",
+                "sender_actor_id": "actor-manager",
+                "thread_group_id": "thread-c",
+                "recipients_summary": {
+                    "status": "available",
+                    "cc_count": 0,
+                    "visible_recipient_count": 1,
+                    "visible_recipient_emails": ["alex@example.com"],
+                    "signature": "alex@example.com",
+                },
+                "message_findings": {
+                    "authored_text": {
+                        "behavior_candidates": [
+                            {"behavior_id": "deadline_pressure", "confidence": "medium", "taxonomy_ids": ["unequal_demands"]},
+                        ],
+                        "communication_classification": {
+                            "primary_class": "controlling",
+                            "applied_classes": ["controlling"],
+                        },
+                    }
+                },
+            },
+            {
+                "uid": "u4",
+                "date": "2026-03-03T18:00:00",
+                "sender_actor_id": "actor-director",
+                "thread_group_id": "thread-d",
+                "recipients_summary": {
+                    "status": "available",
+                    "cc_count": 1,
+                    "visible_recipient_count": 2,
+                    "visible_recipient_emails": ["hr@example.com", "alex@example.com"],
+                    "signature": "hr@example.com|alex@example.com",
+                },
+                "message_findings": {
+                    "authored_text": {
+                        "behavior_candidates": [
+                            {"behavior_id": "escalation", "confidence": "medium", "taxonomy_ids": ["escalation_pressure"]},
+                        ],
+                        "communication_classification": {
+                            "primary_class": "controlling",
+                            "applied_classes": ["controlling", "tense"],
+                        },
+                    }
+                },
+            },
+            {
+                "uid": "u5",
+                "date": "2026-03-04T09:00:00",
+                "sender_actor_id": "actor-manager",
+                "thread_group_id": "thread-e",
+                "recipients_summary": {
+                    "status": "available",
+                    "cc_count": 1,
+                    "visible_recipient_count": 2,
+                    "visible_recipient_emails": ["alex@example.com", "hr@example.com"],
+                    "signature": "alex@example.com|hr@example.com",
+                },
+                "message_findings": {
+                    "authored_text": {
+                        "behavior_candidates": [
+                            {
+                                "behavior_id": "selective_accountability",
+                                "confidence": "medium",
+                                "taxonomy_ids": ["unequal_demands"],
+                            }
+                        ],
+                        "omissions_or_process_signals": [
+                            {"signal": "target_absent_from_visible_recipients", "summary": "placeholder"}
+                        ],
+                        "communication_classification": {
+                            "primary_class": "controlling",
+                            "applied_classes": ["controlling"],
+                        },
+                    }
+                },
+            },
+            {
+                "uid": "u6",
+                "date": "2026-03-05T09:00:00",
+                "sender_actor_id": "actor-manager",
+                "thread_group_id": "thread-f",
+                "recipients_summary": {
+                    "status": "available",
+                    "cc_count": 0,
+                    "visible_recipient_count": 1,
+                    "visible_recipient_emails": ["colleague@example.com"],
+                    "signature": "colleague@example.com",
+                },
+                "message_findings": {
+                    "authored_text": {
+                        "behavior_candidates": [],
+                        "communication_classification": {
+                            "primary_class": "neutral",
+                            "applied_classes": ["neutral"],
+                        },
+                    }
+                },
+            },
+        ],
+        target_actor_id="actor-target",
+    )
+
+    corpus_review = patterns["corpus_behavioral_review"]
+
+    assert corpus_review["response_timing_shifts"][0]["shift_label"] == "worsened_response"
+    assert corpus_review["response_timing_shifts"][0]["comparability_basis"] == "same_visible_recipient_signature"
+    assert corpus_review["cc_behavior_changes"][0]["change_types"] == ["visible_recipient_signature_changed", "cc_count_increase"]
+    assert corpus_review["coordination_windows"][0]["actor_ids"] == ["actor-director", "actor-manager"]
+    assert corpus_review["coordination_windows"][0]["shared_context_types"] == ["shared_visible_recipient_signature"]
+    assert corpus_review["double_standards"][0]["sender_actor_id"] == "actor-manager"

@@ -86,7 +86,7 @@
       "id": "fact-007",
       "bucket": "fact_lookup",
       "status": "todo",
-      "question": "Which message asked to add a user to HFMT-V?",
+      "question": "Which message asked to add a user to ORG-VPN?",
       "evidence_mode": "retrieval",
       "filters": {},
       "expected_answer": "TODO(human): fill after live corpus review",

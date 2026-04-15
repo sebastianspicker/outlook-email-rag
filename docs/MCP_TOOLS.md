@@ -1,6 +1,8 @@
-# Email RAG — Full MCP Tool Reference (46 tools)
+# Email RAG — Full MCP Tool Reference
 
 > This file is the detailed MCP tool reference for the built-in server.
+>
+> Start with [README.md](../README.md) for setup, [README.md](README.md) in this directory for the docs map, and use this file when you need the exact MCP surface and legal-support workflow boundaries.
 
 ## How to Search
 
@@ -34,6 +36,23 @@ Pass `scan_id` to `email_triage`, `email_search_structured`, or `email_find_simi
 
 Once you find relevant emails, dig deeper:
 
+- `email_case_analysis` — dedicated workplace case analysis: structured intake for target person, alleged actors, time window, allegation focus, source scope, optional `chat_log_entries`, optional native `chat_exports`, and optional `matter_manifest`; returns a case bundle, chronology, language/behaviour findings, power/context analysis, evidence table, message appendix, and investigation-style report
+- `email_case_prompt_preflight` — convert a long natural-language matter prompt into a conservative draft intake plus missing-field guidance; this does not bypass exhaustive-review requirements
+- `email_case_full_pack` — compile a long natural-language matter prompt plus a materials directory into a strict manifest-backed full legal-support workflow; returns explicit blockers when required structured inputs are missing and otherwise runs the downstream exhaustive case-analysis path with optional export
+- `email_case_evidence_index` — return the standalone exhibit-centric evidence index only
+- `email_case_master_chronology` — return the standalone master chronology only
+- `email_case_comparator_matrix` — return the standalone comparator matrix only
+- `email_case_issue_matrix` — return the lawyer-usable German employment issue matrix only
+- `email_case_skeptical_review` — return the employer-side stress test plus repair guidance only
+- `email_case_document_request_checklist` — return the concrete records-request and preservation checklist only
+- `email_case_actor_witness_map` — return the actor map and witness map only
+- `email_case_promise_contradictions` — return the promise-versus-action, omission, and contradiction layer only
+- `email_case_lawyer_briefing_memo` — return the compact lawyer onboarding memo only
+- `email_case_draft_preflight` — return the framing preflight and allegation-ceiling review only
+- `email_case_controlled_draft` — return the controlled factual draft only
+- `email_case_retaliation_timeline` — return the structured retaliation timeline assessment only
+- `email_case_dashboard` — return the compact refreshable case dashboard only
+- `email_case_export` — write portable legal-support artifacts for counsel handoff, exhibit-register delivery, dashboard delivery, or a zipped handoff bundle
 - `email_deep_context` — one-call deep analysis: full body + thread summary + evidence + sender profile
 - `email_thread_summary` — summarize a conversation thread
 - `email_action_items` — extract action items and assignments from threads
@@ -47,7 +66,7 @@ Once you find relevant emails, dig deeper:
 - `email_temporal` — temporal analysis:
   - `analysis='volume'`: email volume trends (day/week/month)
   - `analysis='activity'`: activity heatmap (hour vs day-of-week)
-  - `analysis='response_times'`: average response times per sender
+  - `analysis='response_times'`: recent-sample response times per sender based on canonical reply pairs
 - `email_entity_timeline` — track how often an entity appears over time
 
 ## How to Collect Evidence
@@ -108,3 +127,58 @@ Every action is logged with SHA-256 hashes and timestamps:
   - `action='reingest_metadata'`: backfill v7 metadata (requires olm_path)
   - `action='reingest_analytics'`: backfill language detection and sentiment analysis
 - `email_ingest` — trigger ingestion of an .olm file
+
+## Legal-Support Refresh Behavior
+
+The dedicated `email_case_*` legal-support tools all use the same structured intake as `email_case_analysis`.
+
+Dedicated legal-support product tools require:
+
+- `review_mode='exhaustive_matter_review'`
+- `matter_manifest` with at least one supplied artifact
+
+`email_case_prompt_preflight` is the prompt-only entry lane. It can derive bounded intake hints, but it does not fabricate structured `trigger_events`, comparator actors, or a `matter_manifest`, and it does not turn raw prose into a counsel-grade exhaustive review automatically.
+
+`email_case_full_pack` is the prompt-plus-materials execution lane. It:
+
+- runs prompt preflight internally
+- builds a conservative `matter_manifest` from the supplied materials directory
+- merges optional structured overrides
+- blocks on missing mandatory inputs such as target person, bounded dates, retaliation triggers, or comparators where required
+- when no blockers remain, runs the downstream exhaustive legal-support workflow
+- can optionally write an export artifact when `output_path` is supplied
+
+Native mixed-source chat intake can now be supplied through either:
+
+- `chat_log_entries`
+- `chat_exports`
+- `matter_manifest.artifacts[*]` with `source_class='chat_log'` or `source_class='chat_export'`
+
+`email_case_export` uses the same intake plus:
+
+- `delivery_target`
+  - `counsel_handoff`
+  - `exhibit_register`
+  - `dashboard`
+  - `counsel_handoff_bundle`
+- `delivery_format`
+  - `html`
+  - `pdf`
+  - `json`
+  - `csv`
+  - `bundle`
+- `output_path`
+
+- rerun the same tool with the same `case_scope` and `source_scope` to refresh that product from the shared matter entities
+- the dedicated product tools force an internal full case-analysis pass so their contract stays stable even if the caller requested `report_only`
+- controlled drafting stays constrained by the framing preflight and allegation ceiling rather than by free-form adversarial prompting
+
+## MCP Runtime
+
+Use the repository virtual environment when starting the MCP server:
+
+```bash
+.venv/bin/python -m src.mcp_server
+```
+
+If the active interpreter does not have the `mcp` package installed, startup now fails with an actionable message pointing back to the venv-backed command above instead of raising a raw import traceback during module import.

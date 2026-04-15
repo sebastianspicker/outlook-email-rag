@@ -24,7 +24,7 @@ def _table_columns(cur: sqlite3.Cursor, table: str) -> set[str]:
     return {row[1] for row in cur.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
-_SCHEMA_VERSION = 18
+_SCHEMA_VERSION = 23
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -108,6 +108,8 @@ CREATE INDEX IF NOT EXISTS idx_emails_base_subject ON emails(base_subject);
 CREATE INDEX IF NOT EXISTS idx_message_segments_email_uid ON message_segments(email_uid, ordinal);
 CREATE INDEX IF NOT EXISTS idx_conversation_edges_child ON conversation_edges(child_uid);
 CREATE INDEX IF NOT EXISTS idx_conversation_edges_parent ON conversation_edges(parent_uid);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_edges_unique
+    ON conversation_edges(child_uid, parent_uid, edge_type);
 
 CREATE TABLE IF NOT EXISTS recipients (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,6 +158,9 @@ CREATE TABLE IF NOT EXISTS entity_mentions (
     entity_id INTEGER NOT NULL REFERENCES entities(id),
     email_uid TEXT NOT NULL REFERENCES emails(uid),
     mention_count INTEGER DEFAULT 1,
+    extractor_key TEXT DEFAULT '',
+    extraction_version TEXT DEFAULT '',
+    extracted_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (entity_id, email_uid)
 );
 
@@ -215,6 +220,20 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     status          TEXT DEFAULT 'running'
 );
 CREATE INDEX IF NOT EXISTS idx_ingestion_status ON ingestion_runs(status);
+
+CREATE TABLE IF NOT EXISTS email_ingest_state (
+    email_uid TEXT PRIMARY KEY REFERENCES emails(uid) ON DELETE CASCADE,
+    body_chunk_count INTEGER DEFAULT 0,
+    attachment_chunk_count INTEGER DEFAULT 0,
+    image_chunk_count INTEGER DEFAULT 0,
+    vector_chunk_count INTEGER DEFAULT 0,
+    vector_status TEXT DEFAULT 'pending',
+    attachment_status TEXT DEFAULT 'not_requested',
+    image_status TEXT DEFAULT 'not_requested',
+    last_error TEXT DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_email_ingest_state_vector_status ON email_ingest_state(vector_status);
 """
 
 _EVIDENCE_SCHEMA_SQL = """\
@@ -241,6 +260,28 @@ CREATE INDEX IF NOT EXISTS idx_evidence_category ON evidence_items(category);
 CREATE INDEX IF NOT EXISTS idx_evidence_relevance ON evidence_items(relevance);
 CREATE INDEX IF NOT EXISTS idx_evidence_date ON evidence_items(date);
 CREATE INDEX IF NOT EXISTS idx_evidence_verified ON evidence_items(verified);
+"""
+
+_REVIEW_GOVERNANCE_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS matter_review_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    review_state TEXT NOT NULL DEFAULT 'machine_extracted',
+    override_payload_json TEXT DEFAULT '{}',
+    machine_payload_json TEXT DEFAULT '{}',
+    source_evidence_json TEXT DEFAULT '[]',
+    reviewer TEXT DEFAULT 'human',
+    review_notes TEXT DEFAULT '',
+    apply_on_refresh INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(workspace_id, target_type, target_id)
+);
+CREATE INDEX IF NOT EXISTS idx_review_workspace ON matter_review_overrides(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_review_target ON matter_review_overrides(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_review_state ON matter_review_overrides(review_state);
 """
 
 _CUSTODY_SCHEMA_SQL = """\
@@ -282,7 +323,10 @@ CREATE TABLE IF NOT EXISTS attachments (
     evidence_strength TEXT DEFAULT '',
     ocr_used INTEGER DEFAULT 0,
     failure_reason TEXT DEFAULT '',
-    text_preview TEXT DEFAULT ''
+    text_preview TEXT DEFAULT '',
+    extracted_text TEXT DEFAULT '',
+    text_source_path TEXT DEFAULT '',
+    text_locator_json TEXT DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_attachments_uid ON attachments(email_uid);
 CREATE INDEX IF NOT EXISTS idx_attachments_inline ON attachments(is_inline);
@@ -298,6 +342,156 @@ CREATE TABLE IF NOT EXISTS email_categories (
 CREATE INDEX IF NOT EXISTS idx_categories_name ON email_categories(category);
 """
 
+_MATTER_SCHEMA_SQL = """\
+CREATE TABLE IF NOT EXISTS matters (
+    matter_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL UNIQUE,
+    case_label TEXT DEFAULT '',
+    analysis_goal TEXT DEFAULT '',
+    date_from TEXT DEFAULT '',
+    date_to TEXT DEFAULT '',
+    target_person_entity_id TEXT DEFAULT '',
+    latest_snapshot_id TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_matters_workspace_id ON matters(workspace_id);
+
+CREATE TABLE IF NOT EXISTS matter_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    matter_id TEXT NOT NULL,
+    review_mode TEXT NOT NULL DEFAULT 'retrieval_only',
+    source_scope TEXT NOT NULL DEFAULT '',
+    review_state TEXT NOT NULL DEFAULT 'machine_extracted',
+    payload_json TEXT NOT NULL,
+    coverage_summary_json TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (matter_id) REFERENCES matters(matter_id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id) REFERENCES matters(workspace_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_snapshots_workspace_id ON matter_snapshots(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_matter_snapshots_matter_id ON matter_snapshots(matter_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS matter_sources (
+    snapshot_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    source_type TEXT DEFAULT '',
+    document_kind TEXT DEFAULT '',
+    source_date TEXT DEFAULT '',
+    actor_id TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    support_level TEXT DEFAULT '',
+    quality_rank TEXT DEFAULT '',
+    text_available INTEGER DEFAULT 0,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, source_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_sources_snapshot_id ON matter_sources(snapshot_id, source_type);
+
+CREATE TABLE IF NOT EXISTS matter_exhibits (
+    snapshot_id TEXT NOT NULL,
+    exhibit_id TEXT NOT NULL,
+    source_id TEXT DEFAULT '',
+    exhibit_date TEXT DEFAULT '',
+    strength TEXT DEFAULT '',
+    readiness TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, exhibit_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_exhibits_snapshot_id ON matter_exhibits(snapshot_id, source_id);
+
+CREATE TABLE IF NOT EXISTS matter_chronology_entries (
+    snapshot_id TEXT NOT NULL,
+    chronology_id TEXT NOT NULL,
+    chronology_date TEXT DEFAULT '',
+    entry_type TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    primary_read TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, chronology_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_chronology_snapshot_id ON matter_chronology_entries(snapshot_id, chronology_date);
+
+CREATE TABLE IF NOT EXISTS matter_actors (
+    snapshot_id TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    name TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    role_hint TEXT DEFAULT '',
+    classification TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, actor_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_actors_snapshot_id ON matter_actors(snapshot_id, email);
+
+CREATE TABLE IF NOT EXISTS matter_witnesses (
+    snapshot_id TEXT NOT NULL,
+    witness_id TEXT NOT NULL,
+    actor_id TEXT DEFAULT '',
+    witness_kind TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, witness_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_witnesses_snapshot_id ON matter_witnesses(snapshot_id, actor_id);
+
+CREATE TABLE IF NOT EXISTS matter_comparator_points (
+    snapshot_id TEXT NOT NULL,
+    comparator_point_id TEXT NOT NULL,
+    comparator_issue TEXT DEFAULT '',
+    comparison_strength TEXT DEFAULT '',
+    claimant_treatment TEXT DEFAULT '',
+    comparator_treatment TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, comparator_point_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_comparator_points_snapshot_id ON matter_comparator_points(snapshot_id, comparator_issue);
+
+CREATE TABLE IF NOT EXISTS matter_issue_rows (
+    snapshot_id TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+    title TEXT DEFAULT '',
+    legal_relevance_status TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, issue_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_issue_rows_snapshot_id ON matter_issue_rows(snapshot_id, legal_relevance_status);
+
+CREATE TABLE IF NOT EXISTS matter_dashboard_cards (
+    snapshot_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    card_group TEXT DEFAULT '',
+    title TEXT DEFAULT '',
+    summary TEXT DEFAULT '',
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY (snapshot_id, card_id),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_dashboard_cards_snapshot_id ON matter_dashboard_cards(snapshot_id, card_group);
+
+CREATE TABLE IF NOT EXISTS matter_exports (
+    export_id TEXT PRIMARY KEY,
+    snapshot_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    delivery_target TEXT DEFAULT '',
+    delivery_format TEXT DEFAULT '',
+    output_path TEXT DEFAULT '',
+    review_state TEXT DEFAULT 'machine_extracted',
+    details_json TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (snapshot_id) REFERENCES matter_snapshots(snapshot_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_matter_exports_snapshot_id ON matter_exports(snapshot_id, created_at DESC);
+"""
+
 
 def init_schema(conn: sqlite3.Connection) -> None:
     """Create all tables and run pending migrations."""
@@ -308,10 +502,12 @@ def init_schema(conn: sqlite3.Connection) -> None:
     cur.executescript(_CLUSTER_SCHEMA_SQL)
     cur.executescript(_INGESTION_SCHEMA_SQL)
     cur.executescript(_EVIDENCE_SCHEMA_SQL)
+    cur.executescript(_REVIEW_GOVERNANCE_SCHEMA_SQL)
     cur.executescript(_CUSTODY_SCHEMA_SQL)
     cur.executescript(_SPARSE_SCHEMA_SQL)
     cur.executescript(_ATTACHMENTS_SCHEMA_SQL)
     cur.executescript(_CATEGORIES_SCHEMA_SQL)
+    cur.executescript(_MATTER_SCHEMA_SQL)
     migration_family.apply_pending_migrations_impl(
         conn,
         cur,

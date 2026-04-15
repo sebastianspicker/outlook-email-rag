@@ -19,6 +19,21 @@
       "expected_quoted_speaker_emails": [],
       "expected_thread_group_id": "thread-inferred-1",
       "expected_thread_group_source": "inferred",
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
       "triage_tags": [
         "inferred_threading"
       ],
@@ -41,6 +56,21 @@
       "expected_quoted_speaker_emails": [],
       "expected_thread_group_id": "thread-inferred-1",
       "expected_thread_group_source": "inferred",
+      "case_scope": null,
+      "expected_case_bundle_uids": [],
+      "expected_source_types": [],
+      "expected_timeline_uids": [],
+      "expected_behavior_ids": [],
+      "expected_counter_indicator_markers": [],
+      "expected_max_claim_level": null,
+      "expected_report_sections": [],
+      "expected_legal_support_products": [],
+      "expected_comparator_issue_ids": [],
+      "expected_dashboard_cards": [],
+      "expected_actor_ids": [],
+      "expected_checklist_group_ids": [],
+      "expected_draft_ceiling_level": null,
+      "expected_draft_sections": [],
       "triage_tags": [
         "inferred_threading"
       ],
@@ -90,6 +120,25 @@
       "observed_thread_group_source": "inferred",
       "thread_group_id_match": true,
       "thread_group_source_match": true,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
       "expected_ambiguity": "clear",
       "observed_confidence_label": "high",
       "observed_ambiguity_reason": null
@@ -138,6 +187,25 @@
       "observed_thread_group_source": "inferred",
       "thread_group_id_match": true,
       "thread_group_source_match": true,
+      "case_bundle_present": null,
+      "investigation_blocks_present": null,
+      "case_bundle_support_uid_hit": null,
+      "case_bundle_support_uid_recall": null,
+      "multi_source_source_types_match": null,
+      "chronology_uid_hit": null,
+      "chronology_uid_recall": null,
+      "behavior_tag_coverage": null,
+      "behavior_tag_precision": null,
+      "counter_indicator_quality": null,
+      "overclaim_guard_match": null,
+      "report_completeness": null,
+      "legal_support_product_completeness": null,
+      "comparator_matrix_coverage": null,
+      "dashboard_card_coverage": null,
+      "actor_map_coverage": null,
+      "checklist_group_coverage": null,
+      "drafting_ceiling_match": null,
+      "draft_section_completeness": null,
       "expected_ambiguity": "clear",
       "observed_confidence_label": "high",
       "observed_ambiguity_reason": null
@@ -238,6 +306,92 @@
       "scorable": 0,
       "passed": 0,
       "failed": 0
+    },
+    "case_bundle_present": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "investigation_blocks_present": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "case_bundle_support_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "case_bundle_support_uid_recall": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "multi_source_source_types_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "chronology_uid_hit": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "chronology_uid_recall": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "behavior_tag_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "behavior_tag_precision": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "counter_indicator_quality": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "overclaim_guard_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "report_completeness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "legal_support_product_completeness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "comparator_matrix_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "dashboard_card_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "actor_map_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "checklist_group_coverage": {
+      "scorable": 0,
+      "average": 0.0
+    },
+    "drafting_ceiling_match": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
+    },
+    "draft_section_completeness": {
+      "scorable": 0,
+      "passed": 0,
+      "failed": 0
     }
   },
   "failure_taxonomy": {
@@ -274,5 +428,15 @@
   "source_counts": {
     "captured": 2
   },
-  "live_backend": null
+  "live_backend": null,
+  "investigation_corpus_readiness": {
+    "live_backend": null,
+    "case_scope_case_count": 0,
+    "expected_case_bundle_uid_count": 0,
+    "corpus_populated": false,
+    "supports_case_analysis": false,
+    "known_blockers": [
+      "no_live_deps"
+    ]
+  }
 }

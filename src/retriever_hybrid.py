@@ -5,10 +5,93 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from .query_expander import legal_support_query_profile
+
 if TYPE_CHECKING:
     from .retriever import EmailRetriever, SearchResult
 
 logger = logging.getLogger(__name__)
+
+
+def _collection_revision(instance: EmailRetriever) -> tuple[int, str]:
+    collection = getattr(instance, "collection", None)
+    if collection is None:
+        return (0, "")
+    try:
+        count = int(collection.count())
+    except Exception:
+        count = -1
+    metadata = dict(getattr(collection, "metadata", {}) or {})
+    return (count, str(metadata.get("index_revision") or ""))
+
+
+def _result_text(result: SearchResult) -> str:
+    metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    return " ".join(
+        part
+        for part in (
+            str(result.text or ""),
+            str(metadata.get("subject") or ""),
+            str(metadata.get("attachment_name") or ""),
+            str(metadata.get("attachment_filename") or ""),
+            str(metadata.get("attachment_type") or ""),
+        )
+        if part
+    ).lower()
+
+
+def _legal_support_result_boost(query: str, result: SearchResult) -> int:
+    """Return a bounded legal-support retrieval boost for one result."""
+    profile = legal_support_query_profile(query)
+    if not profile["is_legal_support"]:
+        return 0
+    text = _result_text(result)
+    metadata = result.metadata if isinstance(result.metadata, dict) else {}
+    boost = 0
+    if "chronology" in profile["intents"]:
+        chronology_terms = (
+            "meeting",
+            "calendar",
+            "timeline",
+            "chronology",
+            "attendance",
+            "time record",
+            "timesheet",
+        )
+        if any(term in text for term in chronology_terms):
+            boost += 4
+        if str(metadata.get("is_calendar_message") or "").lower() in {"true", "1"}:
+            boost += 3
+    if "participation" in profile["intents"] and any(
+        term in text for term in ("sbv", "personalrat", "betriebsrat", "participation", "consultation", "bem")
+    ):
+        boost += 5
+    if "contradiction" in profile["intents"] and any(
+        term in text
+        for term in (
+            " not ",
+            " without ",
+            " didn't ",
+            " kein ",
+            " keine ",
+            " nicht ",
+            "summary",
+            "promise",
+            "agreed",
+        )
+    ):
+        boost += 4
+    if "comparator" in profile["intents"] and any(
+        term in text for term in ("comparator", "peer", "unequal", "similarly situated", "other employee", "vergleich")
+    ):
+        boost += 4
+    if "document_request" in profile["intents"] and any(
+        term in text for term in ("record", "document", "attachment", "file", "custodian", "preserve")
+    ):
+        boost += 2
+    if metadata.get("attachment_filename") or metadata.get("attachment_name"):
+        boost += 1
+    return boost
 
 
 def merge_hybrid_impl(
@@ -48,6 +131,13 @@ def merge_hybrid_impl(
 
                     doc = fetched_docs[index] if index < len(fetched_docs) else ""
                     meta = fetched_metas[index] if index < len(fetched_metas) else {}
+                    if isinstance(meta, dict):
+                        meta = {
+                            **meta,
+                            "score_kind": "keyword_fused",
+                            "score_calibration": "synthetic",
+                            "hybrid_source": "keyword_only",
+                        }
                     result_map[chunk_id] = SearchResult(
                         chunk_id=chunk_id,
                         text=doc or "",
@@ -61,7 +151,15 @@ def merge_hybrid_impl(
                     exc_info=True,
                 )
 
+        fused_rank = {chunk_id: index for index, chunk_id in enumerate(fused_ids)}
         merged = [result_map[chunk_id] for chunk_id in fused_ids if chunk_id in result_map]
+        merged.sort(
+            key=lambda result: (
+                -_legal_support_result_boost(query, result),
+                fused_rank.get(result.chunk_id, len(fused_ids)),
+                result.distance,
+            )
+        )
         seen = set(fused_ids)
         for result in semantic_results:
             if result.chunk_id not in seen:
@@ -90,21 +188,26 @@ def get_sparse_results_impl(instance: EmailRetriever, query: str, top_k: int) ->
 
             instance._sparse_index = SparseIndex()
             instance._sparse_index.build_from_db(db)
-            try:
-                instance._sparse_build_count = instance.collection.count()
-            except Exception:
-                instance._sparse_build_count = -1
+            instance._sparse_build_count = _collection_revision(instance)
         else:
             try:
-                collection_count = instance.collection.count()
+                collection_count, collection_revision = _collection_revision(instance)
                 last_count = getattr(instance, "_sparse_build_count", None)
-                if last_count != collection_count:
+                if last_count != (collection_count, collection_revision):
                     instance._sparse_index.build_from_db(db)
-                    instance._sparse_build_count = collection_count
+                    instance._sparse_build_count = (collection_count, collection_revision)
             except Exception:
                 logger.debug("Skipping sparse index staleness check", exc_info=True)
 
         if not instance._sparse_index.is_built or instance._sparse_index.doc_count == 0:
+            return None
+        collection_count, _collection_revision_value = _collection_revision(instance)
+        if collection_count > 0 and instance._sparse_index.doc_count != collection_count:
+            logger.debug(
+                "Sparse coverage incomplete (%d/%d); falling back to BM25",
+                instance._sparse_index.doc_count,
+                collection_count,
+            )
             return None
 
         query_sparse = instance.embedder.encode_sparse([query])
@@ -126,11 +229,13 @@ def get_bm25_results_impl(instance: EmailRetriever, query: str, top_k: int) -> l
 
             instance._bm25_index = BM25Index()
             instance._bm25_index.build_from_collection(instance.collection)
+            instance._bm25_build_revision = _collection_revision(instance)
         else:
             try:
-                collection_count = instance.collection.count()
-                if len(instance._bm25_index._chunk_ids) != collection_count:
+                current_revision = _collection_revision(instance)
+                if getattr(instance, "_bm25_build_revision", None) != current_revision:
                     instance._bm25_index.build_from_collection(instance.collection)
+                    instance._bm25_build_revision = current_revision
             except Exception:
                 logger.debug("Skipping BM25 staleness check", exc_info=True)
 

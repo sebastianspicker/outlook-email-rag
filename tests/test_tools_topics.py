@@ -194,6 +194,7 @@ class TestEmailClusters:
             result = await fn(params)
             data = json.loads(result)
             assert "error" in data
+            assert "default ingest pipeline" in data["error"]
         finally:
             MockDeps._email_db = old_db
 

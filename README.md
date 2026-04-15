@@ -1,6 +1,6 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![MCP Tools](https://img.shields.io/badge/MCP_tools-46-purple)
+![MCP Tools](https://img.shields.io/badge/MCP_tools-58-purple)
 ![Tests](https://img.shields.io/badge/tests-pytest-brightgreen)
 
 # Email RAG
@@ -34,104 +34,27 @@ Your client reads the indexed emails and gives you precise, sourced answers — 
 
 ```mermaid
 flowchart LR
-    A["Outlook .olm\nexport file"] --> B["Parse XML\nsafely"]
-    B --> B1["SHA-256\nfile hash"]
-    B --> C["Split into\nchunks"]
-    C --> D{"Already\nindexed?"}
-    D -- yes --> E["Skip"]
-    D -- no --> F["Embed with\nBGE-M3"]
-    F --> F1["Dense vectors\n1024-d"]
-    F --> F2["Sparse vectors\nlearned weights"]
-    F1 --> G[("ChromaDB\nvector store")]
-    F2 --> H[("SQLite\nmetadata")]
-    B1 --> H
-    B --> H
+    OLM["Outlook .olm export"] --> PARSE["Parse and normalize mail + attachments"]
+    PARSE --> HASH["SHA-256 provenance"]
+    PARSE --> CHUNK["Chunk text and recover attachment text"]
+    CHUNK --> EMBED["BGE-M3 dense + sparse embedding"]
+    EMBED --> CHROMA[("ChromaDB vectors")]
+    PARSE --> SQLITE[("SQLite metadata, evidence, analytics")]
+    HASH --> SQLITE
 
-    B --> ATT{"Image\nattachment?"}
-    ATT -- yes --> IMG["Visualized-BGE-M3\npre-computed embedding"]
-    IMG --> G
-    ATT -- no --> C
-
-    H --> NLP["NLP Pipeline"]
-    NLP --> N1["Entity\nextraction"]
-    NLP --> N2["Topic\nmodeling"]
-    NLP --> N3["Email\nclustering"]
-
-    I["You ask\nyour client"] --> J["46 MCP tools\ncalled by the client"]
-    J --> G
-    J --> H
-    G --> K["Ranked\nresults"]
-    H --> K
-    K --> R["ColBERT / cross-encoder\nreranking"]
-    R --> J
-    J --> L["Client\nanswer"]
+    QUERY["CLI / MCP / Streamlit query"] --> RETRIEVE["Search + filters + reranking"]
+    RETRIEVE --> CHROMA
+    RETRIEVE --> SQLITE
+    RETRIEVE --> ANSWER["Results, exports, or legal-support products"]
 ```
-
-```mermaid
-sequenceDiagram
-    participant You
-    participant Client as MCP Client
-    participant MCP as MCP Server (46 tools)
-    participant VDB as ChromaDB (vectors)
-    participant SQL as SQLite (metadata)
-
-    You->>Client: "Summarize the thread about Q3 budget"
-    Client->>MCP: email_thread_summary(query, ...)
-    MCP->>VDB: vector similarity search
-    MCP->>SQL: metadata + analytics queries
-    VDB-->>MCP: ranked email chunks
-    SQL-->>MCP: thread context + stats
-    MCP-->>Client: formatted results + metadata
-    Client-->>You: answer with sources
-```
-
-### Multi-vector embedding pipeline
 
 ```mermaid
 flowchart LR
-    subgraph BGE-M3["BGE-M3 Model"]
-        D["Dense\n1024-d vectors"]
-        S["Sparse\nlearned weights"]
-        C["ColBERT\ntoken embeddings"]
-    end
-
-    INPUT["Email text"] --> BGE-M3
-    D --> CHROMA[("ChromaDB\ncosine similarity")]
-    S --> SPARSE[("SQLite\ninverted index")]
-    C --> RERANK["MaxSim\nreranking"]
-
-    QUERY["Search query"] --> BGE-M3
-    CHROMA --> FUSE["Score fusion"]
-    SPARSE --> FUSE
-    FUSE --> RERANK
-    RERANK --> RESULTS["Final results"]
-```
-
-### Evidence collection workflow
-
-```mermaid
-flowchart LR
-    SEARCH["Search emails"] --> SELECT["Select evidence"]
-    SELECT --> ADD["evidence_add\n+ auto-verify quote"]
-    ADD --> CUSTODY["SHA-256 hash\ncustody log"]
-    CUSTODY --> REVIEW["evidence_list\nevidence_timeline"]
-    REVIEW --> EXPORT["evidence_export\ndossier_generate"]
-    EXPORT --> OUTPUT["HTML / PDF / CSV\nfor legal review"]
-```
-
-### Chunk embedding pipeline
-
-```mermaid
-flowchart TB
-    CHUNKS["Email chunks\n(batch)"] --> SPLIT{"Pre-computed\nembedding?"}
-    SPLIT -- "yes (images)" --> PRE["Use existing\n1024-d vector"]
-    SPLIT -- "no (text)" --> ENCODE["BGE-M3\nencode_all()"]
-    ENCODE --> DENSE["Dense embeddings"]
-    ENCODE --> SPARSE["Sparse vectors"]
-    PRE --> MERGE["Merge results"]
-    DENSE --> MERGE
-    MERGE --> CHROMA[("ChromaDB\nadd()")]
-    SPARSE --> SQLITE[("SQLite\nsparse_vectors")]
+    PROMPT["Matter prompt and materials"] --> PREFLIGHT["prompt-preflight\nbounded intake draft"]
+    PREFLIGHT --> FULLPACK["full-pack\nmanifest-backed exhaustive review"]
+    FULLPACK --> PRODUCTS["evidence index, chronology,\nissue matrix, memo, dashboard"]
+    PRODUCTS --> REVIEW["review governance\nhuman verification"]
+    REVIEW --> EXPORT["counsel-pack / export\nHTML, PDF, JSON, CSV, bundle"]
 ```
 
 **Key properties:**
@@ -140,6 +63,15 @@ flowchart TB
 - Re-indexing is safe and idempotent — already-indexed emails are skipped automatically
 - Semantic search finds relevant emails even when you don't remember the exact words
 - NLP pipeline provides clustering, entity extraction, and thread intelligence
+
+## Documentation Map
+
+- [docs/README.md](docs/README.md) for the public docs index
+- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for terminal usage
+- [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md) for the full MCP tool surface
+- [docs/RUNTIME_TUNING.md](docs/RUNTIME_TUNING.md) for performance and model-loading guidance
+- [docs/API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) for stability expectations
+- [docs/agent/](docs/agent) for the shipped legal-support contract docs
 
 ---
 
@@ -164,7 +96,7 @@ If you don't have Python 3.11+, download it from [python.org](https://python.org
 Open Terminal and run:
 
 ```bash
-git clone https://github.com/sebastianspicker/outlook-email-rag.git
+git clone <repository-url>
 cd outlook-email-rag
 ```
 
@@ -189,24 +121,29 @@ You should see packages being installed. This takes a few minutes the first time
 2. Go to **File > Export...** (or **Tools > Export** depending on your version)
 3. Choose **Outlook for Mac Data File (.olm)**
 4. Select the folders you want to export (or all folders)
-5. Save the `.olm` file into the `data/` folder inside the project
+5. Save the `.olm` file into the local-only `private/ingest/` folder inside the project
 
 ```
 outlook-email-rag/
-└── data/
-    └── my-export.olm   <- put it here
+└── private/
+    └── ingest/
+        └── my-export.olm   <- put it here
 ```
+
+`private/` is ignored by Git and is meant for real mailbox exports, case files, and local smoke inputs that must not be published.
+
+Keep tracked `data/` and `tests/fixtures/` content sanitized. Do not put real mailboxes, personnel records, or live matter files there.
 
 ### Step 4 — Index your emails
 
 ```bash
-python -m src.ingest data/my-export.olm
+python -m src.ingest private/ingest/my-export.olm
 ```
 
 This reads every email, splits them into searchable chunks, and stores them in local databases. You'll see progress output like:
 
 ```
-[INFO] Parsing: data/my-export.olm
+[INFO] Parsing: private/ingest/my-export.olm
 [INFO] Found 1 842 emails
 [INFO] Warming up embedding model …
 [INFO] Loaded SentenceTransformer from cache: BAAI/bge-m3 (device=mps)
@@ -225,7 +162,7 @@ Elapsed:         14m 22s
 ```
 
 > **Large mailboxes:** For a quick test first, you can limit to the first 200 emails:
-> `python -m src.ingest data/my-export.olm --max-emails 200`
+> `python -m src.ingest private/ingest/my-export.olm --max-emails 200`
 
 > **Re-running is safe:** If you export an updated `.olm` later, running ingest again skips emails that are already indexed.
 
@@ -243,7 +180,7 @@ Point your MCP client at the same command if you want tool access from an extern
 
 ## Using with an MCP Client
 
-Email RAG exposes 46 MCP tools. Any compatible client can talk to your local email index in plain English.
+Email RAG exposes 58 MCP tools. Any compatible client can talk to your local email index in plain English.
 
 ### How it connects
 
@@ -269,7 +206,7 @@ After connecting your client, verify that the tools loaded:
 
 1. Open your client's MCP server/status view
 2. Look for `email_search` in the server list — it should show as **connected**
-3. You should see all 46 tools listed beneath it
+3. You should see all 58 tools listed beneath it
 
 If it shows as disconnected:
 - Make sure the virtual environment exists: `ls .venv/bin/python`
@@ -279,6 +216,245 @@ If it shows as disconnected:
 ### Asking questions
 
 Just talk to your MCP client naturally. It should pick the right tool automatically based on your question. Here are examples organized by what you can do:
+
+**Dedicated workplace case analysis:**
+
+Use the dedicated `email_case_analysis` workflow when you need a structured review of potentially hostile, exclusionary, retaliatory, discriminatory, manipulative, or mobbing-like communication patterns.
+
+When the shared matter products are stable enough for handoff, use `email_case_export` to write portable counsel-handoff HTML/PDF, exhibit-register CSV/JSON, dashboard CSV/JSON, or a zipped handoff bundle from the same case-analysis payload.
+
+This workflow is meant for conservative evidence review, not for free-form prompting and not for legal conclusions. The final report is designed to distinguish among:
+
+- ordinary workplace conflict
+- poor communication or process noise
+- targeted hostility concern
+- unequal-treatment concern
+- retaliation concern
+- discrimination concern
+- mobbing-like pattern concern
+- insufficient evidence
+
+The workflow is intentionally conservative:
+
+- it separates authored text, quoted text, and metadata/omission evidence
+- it should surface strongest indicators and strongest counterarguments together
+- it should say `insufficient evidence` clearly when the record does not justify a stronger read
+- it should not infer motive, legal liability, or protected-category discrimination from weak evidence alone
+
+CLI example:
+
+```bash
+python -m src.cli case prompt-preflight --input matter.md --output preflight.json
+python -m src.cli case analyze --input case.json --output case-analysis.json
+python -m src.cli case full-pack --prompt matter.md --materials-dir ./matter --output handoff.bundle
+python -m src.cli case counsel-pack --case-scope scope.json --materials-dir ./matter --output handoff.zip
+```
+
+Use `case prompt-preflight` when the operator only has a long natural-language matter description. It extracts a conservative draft intake, identifies missing structured fields such as `trigger_events` or `comparator_actors`, and stays explicitly below the threshold for counsel-grade exhaustive review.
+
+Use `case full-pack` when the operator has a long matter prompt plus a directory of supplied materials but does not want to hand-build the full structured intake first. The command now:
+
+- runs prompt preflight
+- builds a conservative `matter_manifest` from the materials directory
+- merges optional structured overrides
+- stops with explicit blockers when the matter is still underspecified
+- otherwise runs the downstream exhaustive legal-support workflow and can write an export artifact
+
+Use `--compile-only` when you only want the blocker-or-ready compiled intake and do not want to run the downstream exhaustive workflow yet.
+
+Minimal intake example:
+
+```json
+{
+  "case_scope": {
+    "target_person": {
+      "name": "Max Mustermann",
+      "email": "max@example.org"
+    },
+    "suspected_actors": [
+      {
+        "name": "Erika Beispiel",
+        "email": "erika@example.org"
+      }
+    ],
+    "allegation_focus": ["retaliation", "exclusion"],
+    "analysis_goal": "hr_review",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_and_attachments"
+}
+```
+
+When `source_scope` is `mixed_case_file`, the intake can include:
+
+- `chat_log_entries`
+- native `chat_exports`
+- manifest-backed chat artifacts in `matter_manifest`
+
+For operator workflows that already have a bounded case scope plus a directory of supplied files, use `case counsel-pack`. That command builds a conservative manifest from the materials directory, forces an exhaustive manifest-backed legal-support review, and writes a portable counsel-facing artifact through the shared export pipeline.
+
+The dedicated legal-support tools remain strict about exhaustive review:
+
+- prompt preflight drafts intake only
+- `case analyze` can run retrieval-bounded exploratory review
+- `case counsel-pack` and the dedicated `email_case_*` legal-support product tools still require manifest-backed `exhaustive_matter_review`
+
+For serious retaliation, discrimination, or unequal-treatment review, a stronger intake is recommended:
+
+- `trigger_events` for retaliation-style analysis
+- `comparator_actors` for unequal-treatment or discrimination-style analysis
+- `org_context` for power and dependency analysis
+- `context_notes` for neutral background facts that affect interpretation
+
+Common operator patterns:
+
+Retaliation review:
+
+```json
+{
+  "case_scope": {
+    "target_person": {
+      "name": "Max Mustermann",
+      "email": "max@example.org"
+    },
+    "suspected_actors": [
+      {
+        "name": "Erika Beispiel",
+        "email": "erika@example.org",
+        "role_hint": "manager"
+      }
+    ],
+    "allegation_focus": ["retaliation"],
+    "analysis_goal": "hr_review",
+    "trigger_events": [
+      {
+        "trigger_type": "complaint",
+        "date": "2025-03-01",
+        "notes": "Formal complaint submitted by the target person."
+      }
+    ],
+    "context_notes": "Team conflict after escalation about workload and deadlines.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_and_attachments"
+}
+```
+
+Unequal-treatment or discrimination-style review:
+
+```json
+{
+  "case_scope": {
+    "target_person": {
+      "name": "Max Mustermann",
+      "email": "max@example.org"
+    },
+    "suspected_actors": [
+      {
+        "name": "Erika Beispiel",
+        "email": "erika@example.org",
+        "role_hint": "manager"
+      }
+    ],
+    "comparator_actors": [
+      {
+        "name": "Pat Vergleich",
+        "email": "pat@example.org",
+        "role_hint": "employee"
+      }
+    ],
+    "allegation_focus": ["unequal_treatment", "discrimination"],
+    "analysis_goal": "lawyer_briefing",
+    "org_context": {
+      "reporting_lines": [
+        {
+          "manager": {"name": "Erika Beispiel", "email": "erika@example.org"},
+          "report": {"name": "Max Mustermann", "email": "max@example.org"},
+          "source": "operator"
+        }
+      ]
+    },
+    "context_notes": "Both employees were assigned comparable tasks in the same process stage.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_and_attachments"
+}
+```
+
+Mobbing or bossing-style review:
+
+```json
+{
+  "case_scope": {
+    "target_person": {
+      "name": "Max Mustermann",
+      "email": "max@example.org"
+    },
+    "suspected_actors": [
+      {
+        "name": "Erika Beispiel",
+        "email": "erika@example.org",
+        "role_hint": "manager"
+      }
+    ],
+    "allegation_focus": ["mobbing", "abuse_of_authority", "exclusion"],
+    "analysis_goal": "formal_complaint",
+    "org_context": {
+      "role_facts": [
+        {
+          "person": {"name": "Erika Beispiel", "email": "erika@example.org"},
+          "role_type": "manager",
+          "title": "Team Lead",
+          "source": "operator"
+        }
+      ],
+      "reporting_lines": [
+        {
+          "manager": {"name": "Erika Beispiel", "email": "erika@example.org"},
+          "report": {"name": "Max Mustermann", "email": "max@example.org"},
+          "source": "operator"
+        }
+      ]
+    },
+    "context_notes": "Review repeated exclusion, public correction, and hierarchy-based pressure in the same period.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_only"
+}
+```
+
+Neutral chronology:
+
+```json
+{
+  "case_scope": {
+    "target_person": {
+      "name": "Max Mustermann",
+      "email": "max@example.org"
+    },
+    "allegation_focus": ["hostility", "exclusion"],
+    "analysis_goal": "neutral_chronology",
+    "context_notes": "Summarize what happened before any HR or legal interpretation.",
+    "date_from": "2025-01-01",
+    "date_to": "2025-06-30"
+  },
+  "source_scope": "emails_only"
+}
+```
+
+The workflow also emits machine-readable intake warnings when the request is under-specified. Typical downgrade cases are:
+
+- retaliation focus without `trigger_events`
+- unequal-treatment or discrimination focus without `comparator_actors`
+- power-heavy review without `org_context`
+- high-stakes review without `context_notes`
+- broad actor analysis without `suspected_actors`
+
+These warnings appear in `case_scope_quality.warnings`, `case_scope_quality.recommended_next_inputs`, and the report's `missing_information` section.
 
 **Searching emails:**
 
@@ -385,7 +561,7 @@ Export my communication network as a graph file I can open in Gephi.
 **Re-ingesting from an MCP client:**
 
 ```
-Ingest my new export at data/latest-export.olm
+Ingest my new export at private/ingest/latest-export.olm
 ```
 
 ### What happens under the hood
@@ -399,9 +575,9 @@ When you ask a question like *"Find emails about the Q3 budget from finance"*, y
 
 You never need to remember tool names or parameters — the client handles that automatically.
 
-### Available MCP Tools (46)
+### Available MCP Tool Families (58 tools)
 
-For detailed parameter reference, see [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
+For detailed parameters, examples, and legal-support refresh behavior, see [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
 
 #### Search & Triage (6)
 
@@ -464,7 +640,7 @@ For detailed parameter reference, see [docs/MCP_TOOLS.md](docs/MCP_TOOLS.md).
 
 | Tool | What it does |
 |------|-------------|
-| `email_temporal` | `analysis='volume'` for trends (day/week/month); `analysis='activity'` for hour×day heatmap; `analysis='response_times'` for average response times per sender |
+| `email_temporal` | `analysis='volume'` for trends (day/week/month); `analysis='activity'` for hour×day heatmap; `analysis='response_times'` for recent-sample response times per sender based on canonical reply pairs |
 
 #### Data Quality (1)
 
@@ -554,7 +730,7 @@ python -m src.cli analytics volume month
 python -m src.cli --log-level INFO analytics heatmap
 ```
 
-Supports 7 subcommand groups (`search`, `browse`, `export`, `evidence`, `analytics`, `training`, `admin`) with 58+ flags. See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the full reference.
+Supports 8 subcommand groups (`search`, `browse`, `export`, `case`, `evidence`, `analytics`, `training`, `admin`). See [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) for the full reference.
 Temporal analytics bucket timestamps in `ANALYTICS_TIMEZONE` (default: local system timezone). Set an IANA zone such as `Europe/Berlin` to make charts and heatmaps use one explicit display timezone.
 Topic filters and `email_topics` remain present in the codebase, but the default ingest workflow does not populate topic tables yet.
 
@@ -562,7 +738,7 @@ Topic filters and `email_topics` remain present in the codebase, but the default
 
 ## Streamlit Web UI
 
-A visual search interface that runs in your browser. This is a good option if you want a GUI but don't use an MCP client.
+A visual search interface that runs in your browser. This is the exploratory GUI for search, analytics, network, and evidence browsing. Counsel-ready legal-support review still belongs to the CLI or MCP `case full-pack` / `case counsel-pack` workflows.
 
 ![Streamlit search interface with sidebar navigation, archive overview, and empty-state guidance](docs/screenshots/streamlit-search-ui.png)
 
@@ -642,7 +818,7 @@ python -m src.cli --stats
 If total is 0, try re-running ingest with verbose output:
 
 ```bash
-LOG_LEVEL=DEBUG python -m src.ingest data/my-export.olm --max-emails 50
+LOG_LEVEL=DEBUG python -m src.ingest private/ingest/my-export.olm --max-emails 50
 ```
 
 ### MCP tools not appearing in your client
@@ -683,7 +859,7 @@ Stored 500 chunks (102.3s total: encode=78.1s, chromadb=24.2s, 5 chunks/s)
 Use `--timing` for a full phase breakdown (parse, embed, sqlite, entities, analytics):
 
 ```bash
-python -m src.ingest data/my-export.olm --timing
+python -m src.ingest private/ingest/my-export.olm --timing
 ```
 
 See [Performance & Hardware](#performance--hardware) for detailed benchmarks and tuning options.
@@ -694,77 +870,42 @@ See [Performance & Hardware](#performance--hardware) for detailed benchmarks and
 block-beta
     columns 4
 
-    block:ingestion["Ingestion"]:1
-        parse["parse_olm.py\nXML → Email objects"]
-        chunk["chunker.py\n1 500-char chunks\n200-char overlap"]
-        embed["multi_vector_embedder.py\nBGE-M3 dense + sparse\n(MPS/CUDA/CPU)"]
-        hash["SHA-256 hashing\ncustody chain"]
+    block:inputs["Inputs"]:1
+        olm["Outlook .olm"]
+        files["Supplied matter files"]
+    end
+
+    block:processing["Processing"]:1
+        parse["Parse + normalize"]
+        enrich["Entities, threads,\nanalytics, evidence"]
+        legal["Manifest-backed\nlegal-support products"]
     end
 
     block:storage["Storage"]:1
-        chromadb[("ChromaDB\nvector store\ncosine similarity")]
-        sqlite[("SQLite\nmetadata + evidence\n+ custody chain")]
-    end
-
-    block:nlp["NLP & Search"]:1
-        entities["nlp_entity_extractor.py\nspaCy NER"]
-        topics["topic_modeler.py\nNMF topics"]
-        clusters["email_clusterer.py\nKMeans + hybrid"]
-        threads["thread_intelligence.py\nsummarization"]
-        keywords["keyword_extractor.py\nTF-IDF"]
-        sparse["sparse_index.py\nlearned sparse vectors"]
-        colbert["colbert_reranker.py\nMaxSim reranking"]
+        chromadb[("ChromaDB vectors")]
+        sqlite[("SQLite metadata,\nevidence, custody")]
     end
 
     block:interfaces["Interfaces"]:1
-        mcp["mcp_server.py + tools/\n46 MCP tools\n(primary)"]
-        cli["cli.py\n7 subcommand groups"]
-        ui["web_app.py\nStreamlit UI"]
+        cli["CLI"]
+        mcp["MCP server\n58 tools"]
+        ui["Streamlit\nexploratory UI"]
+        export["HTML / PDF / CSV /\nJSON / bundle exports"]
     end
 
-    parse --> chunk
-    chunk --> embed
-    embed --> chromadb
-    embed --> sqlite
-    chromadb --> mcp
-    sqlite --> mcp
+    olm --> parse
+    files --> legal
+    parse --> enrich
+    parse --> chromadb
+    parse --> sqlite
+    enrich --> sqlite
+    sqlite --> legal
     chromadb --> cli
     sqlite --> cli
-    chromadb --> ui
+    chromadb --> mcp
+    sqlite --> mcp
     sqlite --> ui
-```
-
-### MCP tool modules (46 tools)
-
-```mermaid
-block-beta
-    columns 4
-
-    block:search_tools["Search & Discovery"]:1
-        s1["search.py\n6 tools"]
-        s2["threads.py\n4 tools"]
-        s3["topics.py\n4 tools"]
-        s4["scan.py\n1 tool"]
-    end
-
-    block:analysis_tools["Analysis"]:1
-        a1["network.py\n6 tools"]
-        a2["temporal.py\n1 tool"]
-        a3["entities.py\n4 tools"]
-        a4["data_quality.py\n1 tool"]
-    end
-
-    block:evidence_tools["Evidence & Export"]:1
-        e1["evidence.py\n13 tools"]
-        e2["reporting.py\n1 tool"]
-        e3["browse.py\n3 tools"]
-        e4["attachments.py\n1 tool"]
-    end
-
-    block:admin_tools["Admin"]:1
-        d1["diagnostics.py\n1 tool"]
-        d2["utils.py\nshared helpers"]
-    end
+    legal --> export
 ```
 
 **Component responsibilities:**
@@ -786,10 +927,10 @@ block-beta
 | `src/evidence_exporter.py` | Export evidence reports as HTML, CSV, or PDF for legal review |
 | `src/dossier_generator.py` | Proof dossier combining evidence, emails, relationships, and custody chain |
 | `src/mcp_models.py` | Pydantic input models for all MCP tool parameters |
-| `src/mcp_server.py` | FastMCP server exposing 46 tools to MCP clients |
-| `src/tools/` | MCP tool subpackage — 46 tools across 13 domain modules (search, browse, evidence, entities, network, scan, attachments, diagnostics, etc.) |
+| `src/mcp_server.py` | FastMCP server exposing 58 tools to MCP clients |
+| `src/tools/` | MCP tool subpackage — 58 tools across 15 domain modules, including dedicated workplace case analysis and legal-support surfaces |
 | `src/ingest.py` | Orchestrates parse -> chunk -> embed -> store pipeline |
-| `src/cli.py` | Rich terminal interface with 7 subcommand groups and 58 flags — legacy flat-flag syntax still supported |
+| `src/cli.py` | Rich terminal interface with 8 subcommand groups — legacy flat-flag syntax still supported |
 | `src/web_app.py` | Streamlit search UI with filters, thread view, CSV export |
 | `src/web_ui.py` | Streamlit UI helpers and formatting |
 | `src/config.py` | Settings from environment (`.env` support) |
@@ -972,6 +1113,8 @@ mypy src
 pytest -q --tb=short --cov=src --cov-report=term-missing --cov-fail-under=80
 python scripts/streamlit_smoke.py
 bandit -r src -q -ll -ii
+bash scripts/run_acceptance_matrix.sh local    # developer-local verification; may skip pip_audit if offline
+bash scripts/run_acceptance_matrix.sh release  # go-live verification; requires a real pip_audit result
 ```
 
 See [docs/API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) for the interface stability policy.
@@ -985,7 +1128,7 @@ outlook-email-rag/
 ├── src/
 │   ├── __init__.py              # package marker
 │   ├── __main__.py              # python -m src -> MCP server
-│   ├── mcp_server.py            # 46 MCP tools for MCP clients
+│   ├── mcp_server.py            # 58 MCP tools for MCP clients
 │   ├── retriever.py             # search, filters, hybrid, reranking
 │   ├── ingest.py                # ingestion pipeline
 │   ├── parse_olm.py             # OLM XML parser
@@ -1040,9 +1183,10 @@ outlook-email-rag/
 │   ├── mcp_models.py            # Pydantic input models for MCP tools
 │   ├── dossier_generator.py     # proof dossier (evidence + context)
 │   ├── scan_session.py          # scan session state management
-│   ├── tools/                   # MCP tool modules (46 tools in 13 domain modules)
+│   ├── tools/                   # MCP tool modules (58 tools in 15 domain modules)
 │   │   ├── __init__.py          # register_all() dispatcher
 │   │   ├── utils.py             # shared helpers (ToolDeps, formatters)
+│   │   ├── case_analysis.py     # dedicated workplace case analysis (1 tool)
 │   │   ├── search.py            # core search + triage (6 tools)
 │   │   ├── browse.py            # email reading & export (3 tools)
 │   │   ├── attachments.py       # attachment discovery (1 tool)
@@ -1062,10 +1206,15 @@ outlook-email-rag/
 │       ├── evidence_report.html # evidence report template
 │       └── dossier.html         # proof dossier template
 ├── tests/                       # 1360+ tests
-├── data/                        # put your .olm file here
+├── private/                     # ignored local-only mailbox exports and live matter files
+│   └── ingest/                  # put real .olm exports here
+├── data/                        # local runtime databases and sanitized examples
 ├── docs/
+│   ├── README.md
 │   ├── API_COMPATIBILITY.md
-│   └── CLI_REFERENCE.md
+│   ├── CLI_REFERENCE.md
+│   ├── MCP_TOOLS.md
+│   └── RUNTIME_TUNING.md
 ├── .env.example
 ├── requirements.txt
 ├── requirements-dev.txt

@@ -29,9 +29,11 @@ def test_render_dashboard_page_delegates_to_impl(monkeypatch):
 
     monkeypatch.setattr(web_app, "render_dashboard_page_impl", fake_impl)
 
-    web_app.render_dashboard_page()
+    web_app.render_dashboard_page("/tmp/email.db")
 
-    assert calls == [(web_app.st, web_app._get_email_db_safe)]
+    assert len(calls) == 1
+    assert calls[0][0] is web_app.st
+    assert callable(calls[0][1])
 
 
 def test_render_search_page_delegates_with_callbacks(monkeypatch):
@@ -68,9 +70,35 @@ def test_main_routes_search_to_render_search_page(monkeypatch):
     fake_streamlit = SimpleNamespace(
         sidebar=fake_sidebar,
         markdown=lambda *args, **kwargs: None,
+        info=lambda *args, **kwargs: None,
     )
     monkeypatch.setattr(web_app, "st", fake_streamlit)
 
     web_app.main()
 
     assert calls == ["retriever"]
+
+
+def test_main_routes_dashboard_with_sqlite_path(monkeypatch):
+    calls: list[object] = []
+
+    monkeypatch.setattr(web_app, "inject_styles", lambda: None)
+    monkeypatch.setattr(web_app, "render_sidebar", lambda retriever: None)
+    monkeypatch.setattr(web_app, "render_dashboard_page", lambda sqlite_path=None: calls.append(sqlite_path))
+    monkeypatch.setattr(web_app, "get_retriever", lambda _path: "retriever")
+
+    sidebar_inputs = iter(["", "/tmp/archive.db"])
+    fake_sidebar = SimpleNamespace(
+        radio=lambda *args, **kwargs: "Dashboard",
+        text_input=lambda *args, **kwargs: next(sidebar_inputs),
+    )
+    fake_streamlit = SimpleNamespace(
+        sidebar=fake_sidebar,
+        markdown=lambda *args, **kwargs: None,
+        info=lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(web_app, "st", fake_streamlit)
+
+    web_app.main()
+
+    assert calls == ["/tmp/archive.db"]

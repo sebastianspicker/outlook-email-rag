@@ -1,0 +1,12 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+DTSTART:20250212T110000
+DTEND:20250212T113000
+SUMMARY:Mobile work status and control review
+LOCATION:Video Call
+ORGANIZER:mailto:erika@example.org
+ATTENDEE:mailto:max@example.org
+ATTENDEE:mailto:pat@example.org
+END:VEVENT
+END:VCALENDAR

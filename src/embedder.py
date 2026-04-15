@@ -93,11 +93,22 @@ class EmailEmbedder:
         """
         self.embedder.warmup()
 
+    def _touch_collection_revision(self) -> None:
+        """Bump a collection-level revision marker after successful writes."""
+        try:
+            metadata = dict(getattr(self.collection, "metadata", {}) or {})
+            metadata["index_revision"] = str(time.time_ns())
+            self.collection.modify(metadata=metadata)
+        except Exception:
+            logger.debug("Could not update collection revision metadata", exc_info=True)
+
     def add_chunks(
         self,
         chunks: list[EmailChunk],
         show_progress: bool = True,
         batch_size: int = 500,
+        *,
+        skip_existing_check: bool = False,
     ) -> int:
         """Embed and store chunks in ChromaDB and return number of inserted chunks.
 
@@ -110,13 +121,14 @@ class EmailEmbedder:
         if not chunks:
             return 0
 
-        existing = self.get_existing_ids(refresh=False)
-
         # Deduplicate: skip chunks already in DB *and* duplicates within this batch
         seen: set[str] = set()
         new_chunks: list[EmailChunk] = []
+        existing: set[str] = set()
+        if not skip_existing_check:
+            existing = self.get_existing_ids(refresh=False)
         for chunk in chunks:
-            if chunk.chunk_id not in existing and chunk.chunk_id not in seen:
+            if (skip_existing_check or chunk.chunk_id not in existing) and chunk.chunk_id not in seen:
                 seen.add(chunk.chunk_id)
                 new_chunks.append(chunk)
 
@@ -125,12 +137,14 @@ class EmailEmbedder:
                 logger.info("All %s chunks already in database, skipping.", len(chunks))
             return 0
 
-        if show_progress:
+        if show_progress and not skip_existing_check:
             logger.info(
                 "Embedding %s new chunks (%s already stored).",
                 len(new_chunks),
                 len(chunks) - len(new_chunks),
             )
+        elif show_progress:
+            logger.info("Embedding %s chunks with SQLite-ledger/upsert dedupe.", len(new_chunks))
 
         t_start = time.monotonic()
 
@@ -144,12 +158,8 @@ class EmailEmbedder:
             texts = [c.text for c in needs_encoding]
             result: MultiVectorResult = self.embedder.encode_all(texts)
             encoded_embeddings = to_builtin_list(result.dense)
-
-            if result.sparse is not None:
-                self._store_sparse(
-                    [c.chunk_id for c in needs_encoding],
-                    result.sparse,
-                )
+        else:
+            result = None
         dt_encode = time.monotonic() - t_encode_start
 
         # Build merged lists: encoded chunks + pre-embedded chunks
@@ -177,16 +187,31 @@ class EmailEmbedder:
         t_write_start = time.monotonic()
         for batch_start in range(0, len(all_ids), batch_size):
             batch_end = batch_start + batch_size
-            self.collection.add(
-                ids=all_ids[batch_start:batch_end],
-                embeddings=all_embeddings[batch_start:batch_end],
-                documents=all_texts[batch_start:batch_end],
-                metadatas=all_metadatas[batch_start:batch_end],
-            )
+            if skip_existing_check:
+                self.collection.upsert(
+                    ids=all_ids[batch_start:batch_end],
+                    embeddings=all_embeddings[batch_start:batch_end],
+                    documents=all_texts[batch_start:batch_end],
+                    metadatas=all_metadatas[batch_start:batch_end],
+                )
+            else:
+                self.collection.add(
+                    ids=all_ids[batch_start:batch_end],
+                    embeddings=all_embeddings[batch_start:batch_end],
+                    documents=all_texts[batch_start:batch_end],
+                    metadatas=all_metadatas[batch_start:batch_end],
+                )
             batch_count = min(batch_size, len(all_ids) - batch_start)
             existing.update(all_ids[batch_start:batch_end])
             added += batch_count
         dt_write = time.monotonic() - t_write_start
+
+        if result is not None and result.sparse is not None:
+            self._store_sparse(
+                [c.chunk_id for c in needs_encoding],
+                result.sparse,
+            )
+        self._touch_collection_revision()
 
         if show_progress:
             elapsed = time.monotonic() - t_start
@@ -231,6 +256,7 @@ class EmailEmbedder:
             return 0
         self.collection.delete(ids=chunk_ids)
         existing.difference_update(chunk_ids)
+        self._touch_collection_revision()
         return len(chunk_ids)
 
     def upsert_chunks(
@@ -250,9 +276,6 @@ class EmailEmbedder:
         result: MultiVectorResult = self.embedder.encode_all(texts)
         embeddings = to_builtin_list(result.dense)
 
-        if result.sparse is not None:
-            self._store_sparse(ids, result.sparse)
-
         # Upsert to ChromaDB in batches
         for batch_start in range(0, len(ids), batch_size):
             batch_end = batch_start + batch_size
@@ -263,8 +286,12 @@ class EmailEmbedder:
                 metadatas=metadatas[batch_start:batch_end],
             )
 
+        if result.sparse is not None:
+            self._store_sparse(ids, result.sparse)
+
         existing = self.get_existing_ids(refresh=False)
         existing.update(ids)
+        self._touch_collection_revision()
         return len(chunks)
 
     def count(self) -> int:

@@ -34,15 +34,15 @@ def test_strip_signature_sent_from_outlook():
 
 
 def test_strip_signature_closing_phrase():
-    body = "I'll handle it.\n\nBest regards,\nAlice Smith\nManager"
+    body = "I'll handle it.\n\nBest regards,\nAlice Example\nManager"
     stripped, had_sig = strip_signature(body)
     assert had_sig is True
     assert "I'll handle it" in stripped
-    assert "Alice Smith" not in stripped
+    assert "Alice Example" not in stripped
 
 
 def test_strip_signature_closing_german():
-    body = "Alles erledigt.\n\nMit freundlichen Grüßen,\nHans Müller"
+    body = "Alles erledigt.\n\nMit freundlichen Grüßen,\nHans Beispiel"
     stripped, had_sig = strip_signature(body)
     assert had_sig is True
     assert "Alles erledigt" in stripped

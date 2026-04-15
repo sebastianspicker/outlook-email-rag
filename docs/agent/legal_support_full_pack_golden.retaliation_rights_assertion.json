@@ -1,0 +1,634 @@
+{
+  "golden_version": "1",
+  "scenario": "legal_support_full_pack_retaliation",
+  "case_id": "retaliation_rights_assertion",
+  "projection": {
+    "workflow": "case_full_pack",
+    "status": "completed",
+    "analysis_query": "workplace case analysis. target Max Mustermann [REDACTED: email]. focus retaliation, exclusion. suspected actors Erika Beispiel [REDACTED: email]; Hanna HR [REDACTED: email]. trigger events complaint. issue tracks retaliation_after_protected_event. Claimant: Max Mustermann. Prepare a lawyer briefing from [REDACTED: phone] to [REDACTED: phone] on retaliation after disability-related rights assertions, project withdrawal, tighter controls...",
+    "matter_ingestion_summary": {
+      "total_supplied_artifacts": 7,
+      "parsed_artifacts": 6,
+      "degraded_artifacts": 1,
+      "unsupported_artifacts": 0,
+      "excluded_artifacts": 0,
+      "not_yet_reviewed_artifacts": 0,
+      "accounted_artifacts": 7,
+      "unaccounted_artifacts": 0,
+      "source_class_counts": {
+        "formal_document": 2,
+        "note_record": 1,
+        "attendance_export": 1,
+        "calendar_export": 1,
+        "screenshot": 1,
+        "chat_export": 1
+      },
+      "custodian_counts": {},
+      "review_status_counts": {
+        "parsed": 6,
+        "degraded": 1
+      }
+    },
+    "matter_ingestion_status": "complete",
+    "coverage_status": "complete",
+    "analysis_limit_notes": [],
+    "evidence_rows": [
+      {
+        "exhibit_id": "EXH-001",
+        "document_type": "image_attachment",
+        "main_issue_tags": [
+          "eingruppierung"
+        ],
+        "source_id": "manifest:file:09ce4345b12e5647:1",
+        "strength": "moderate"
+      },
+      {
+        "exhibit_id": "EXH-002",
+        "document_type": "chat_export",
+        "main_issue_tags": [
+          "sbv_participation"
+        ],
+        "source_id": "manifest:file:f59cb5abfcca724d:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-003",
+        "document_type": "attached_document",
+        "main_issue_tags": [
+          "eingruppierung"
+        ],
+        "source_id": "manifest:file:2dbf390d6b4a4817:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-004",
+        "document_type": "attached_document",
+        "main_issue_tags": [
+          "retaliation_massregelung",
+          "sbv_participation"
+        ],
+        "source_id": "manifest:file:514d822a4570fe21:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-005",
+        "document_type": "calendar_export",
+        "main_issue_tags": [],
+        "source_id": "manifest:file:a1a37672d4a7a4f6:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-006",
+        "document_type": "attached_note_record",
+        "main_issue_tags": [
+          "retaliation_massregelung",
+          "sbv_participation"
+        ],
+        "source_id": "manifest:file:df7c2b87336540ae:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-007",
+        "document_type": "attendance_export",
+        "main_issue_tags": [
+          "retaliation_massregelung"
+        ],
+        "source_id": "manifest:file:74132b186bb038da:1",
+        "strength": "strong"
+      },
+      {
+        "exhibit_id": "EXH-008",
+        "document_type": "email_body",
+        "main_issue_tags": [
+          "retaliation_massregelung",
+          "sbv_participation"
+        ],
+        "source_id": "email:ret-1",
+        "strength": "strong"
+      }
+    ],
+    "provenance_examples": [
+      {
+        "source_id": "manifest:file:09ce4345b12e5647:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:f59cb5abfcca724d:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:2dbf390d6b4a4817:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:514d822a4570fe21:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      },
+      {
+        "source_id": "manifest:file:a1a37672d4a7a4f6:1",
+        "source_conflict_status": "stable",
+        "source_language": "en"
+      }
+    ],
+    "chronology_entries": [
+      {
+        "chronology_id": "CHR-001",
+        "date": "[REDACTED: phone]",
+        "title": "Complaint and request for SBV involvement",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-002",
+        "date": "[REDACTED: phone]",
+        "title": "novatime-attendance.csv",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-003",
+        "date": "2025-03-01T09:00:00",
+        "title": "Complaint to HR",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-004",
+        "date": "[REDACTED: phone]",
+        "title": "gedaechtnisprotokoll.md",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-005",
+        "date": "[REDACTED: phone]",
+        "title": "task-board.ocr.txt",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-006",
+        "date": "[REDACTED: phone]",
+        "title": "task-board.png",
+        "issue_category": null,
+        "source_id": null
+      },
+      {
+        "chronology_id": "CHR-007",
+        "date": "2025-03-05T15:10:00",
+        "title": "Project reassignment",
+        "issue_category": null,
+        "source_id": null
+      }
+    ],
+    "comparator_points": [],
+    "issue_rows": [
+      {
+        "issue_id": "eingruppierung_tarifliche_bewertung",
+        "title": "Eingruppierung / tarifliche Bewertung",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": []
+      },
+      {
+        "issue_id": "agg_disadvantage",
+        "title": "AGG disadvantage",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": [
+          "Role-matched comparator actors and treatment records are still missing from the supplied case scope."
+        ]
+      },
+      {
+        "issue_id": "burden_shifting_indicators",
+        "title": "Burden-shifting indicators",
+        "legal_relevance_status": "supported_relevance",
+        "missing_proof": [
+          "Formal restructuring records",
+          "Role-matched comparator actors and treatment records are still missing from the supplied case scope."
+        ]
+      },
+      {
+        "issue_id": "retaliation_massregelungsverbot",
+        "title": "Retaliation / Maßregelungsverbot",
+        "legal_relevance_status": "supported_relevance",
+        "missing_proof": [
+          "Formal restructuring records"
+        ]
+      },
+      {
+        "issue_id": "sgb_ix_164",
+        "title": "§164 SGB IX",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": [
+          "Organization or dependency context is still missing and weakens responsibility and accommodation analysis."
+        ]
+      },
+      {
+        "issue_id": "sgb_ix_167_bem",
+        "title": "§167 SGB IX / BEM",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": [
+          "Organization or dependency context is still missing and weakens responsibility and accommodation analysis."
+        ]
+      },
+      {
+        "issue_id": "sgb_ix_178_sbv",
+        "title": "§178 SGB IX / SBV",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": []
+      },
+      {
+        "issue_id": "pr_lpvg_participation",
+        "title": "PR / LPVG participation",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": []
+      },
+      {
+        "issue_id": "fuersorgepflicht",
+        "title": "Fürsorgepflicht",
+        "legal_relevance_status": "currently_under_supported",
+        "missing_proof": [
+          "Organization or dependency context is still missing and weakens responsibility and accommodation analysis."
+        ]
+      }
+    ],
+    "skeptical_weaknesses": [
+      {
+        "weakness_id": "weakness:alternative_explanation",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:missing_documentation",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:weak_legal_evidence_linkage",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:missing_comparator_scope",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:missing_org_context",
+        "title": null,
+        "severity": null
+      },
+      {
+        "weakness_id": "weakness:ordinary_management_explanation",
+        "title": null,
+        "severity": null
+      }
+    ],
+    "memo_sections": {
+      "executive_summary": [
+        "This memo summarizes the current record concerning the target employee for the period [REDACTED: phone] to 2025-03-05T15:10:00. It is intended as a rapid onboarding product for counsel and stays evidence-bound."
+      ],
+      "strongest_evidence": [
+        "EXH-008: Complaint to HR: I request SBV participation and review of the accommodation denial. []",
+        "EXH-004: Complaint and request for SBV involvement: [REDACTED: phone] | Max Mustermann -> Hanna HR Subject: Complaint and request for SBV involvement I request review of the accommodation denial and []",
+        "EXH-006: gedaechtnisprotokoll.md: # Meeting note [REDACTED: phone] - HR confirmed receipt of the complaint. - Max Mustermann repeated the request for SBV participation. - Erika Beis []"
+      ]
+    },
+    "draft_preflight": {
+      "objective_of_draft": "Prepare an evidence-bound professional draft that documents the current concerns, requests clarification, and preserves access to relevant records.",
+      "legal_and_factual_risks": [
+        {
+          "risk_id": "weakness:alternative_explanation",
+          "text": "Employer-side review would foreground this competing explanation: Reported restructuring may partly explain the timing.",
+          "risk_type": "alternative_explanation"
+        },
+        {
+          "risk_id": "weakness:missing_documentation",
+          "text": "Employer-side review would argue that a key documentary gap remains open: Neutral context about workflow changes or incidents in the same period.",
+          "risk_type": "missing_documentation"
+        },
+        {
+          "risk_id": "weakness:weak_legal_evidence_linkage",
+          "text": "Employer-side review would say the legal relevance theory for AGG disadvantage still outruns the present proof.",
+          "risk_type": "weak_legal_evidence_linkage"
+        },
+        {
+          "risk_id": "weakness:missing_comparator_scope",
+          "text": "Employer-side review would argue that comparator analysis remains underdeveloped because no comparator actors were supplied.",
+          "risk_type": "overstated_comparison"
+        }
+      ],
+      "strongest_framing": [
+        {
+          "finding_id": "finding-retaliation-timing",
+          "text": "The available material raises a concern pattern consistent with temporal escalation after complaint, but alternative explanations remain viable.",
+          "claim_level": "pattern_concern",
+          "policy_reason": "The available support is suggestive but remains too limited for a stronger interpretation.",
+          "ambiguity_disclosures": [],
+          "alternative_explanations": [
+            "Reported restructuring may partly explain the timing."
+          ],
+          "supporting_source_ids": [
+            "email:ret-2"
+          ],
+          "supporting_exhibit_ids": [
+            "EXH-009"
+          ],
+          "supporting_chronology_ids": [
+            "CHR-007"
+          ]
+        }
+      ],
+      "safest_framing": [
+        {
+          "framing_id": "safest:1",
+          "text": "The documented record currently shows: task-board.png: Screenshot transcript: Task board entry removed the claimant from TD coordination on [REDACTED: phone].",
+          "basis": "documented_source_or_exhibit",
+          "supporting_exhibit_ids": [
+            "EXH-001"
+          ]
+        },
+        {
+          "framing_id": "safest:2",
+          "text": "The documented record currently shows: teams-chat.txt: [[REDACTED: phone]:10] Erika Beispiel: Please do not escalate this again before tomorrow's meeting. [[REDACTED: phone]:12] Max Mustermann: I already",
+          "basis": "documented_source_or_exhibit",
+          "supporting_exhibit_ids": [
+            "EXH-002"
+          ]
+        },
+        {
+          "framing_id": "safest:3",
+          "text": "The documented record currently shows: task-board.ocr.txt: Screenshot transcript: Task board entry removed the claimant from TD coordination on [REDACTED: phone].",
+          "basis": "documented_source_or_exhibit",
+          "supporting_exhibit_ids": [
+            "EXH-003"
+          ]
+        }
+      ],
+      "allegation_ceiling": {
+        "ceiling_level": "concern_only",
+        "reasoning": [
+          "The available support is suggestive but remains too limited for a stronger interpretation."
+        ],
+        "allowed_moves": [
+          "state documented facts",
+          "state bounded concerns",
+          "request clarification",
+          "request preservation and production of records"
+        ],
+        "prohibited_moves": [
+          "unsupported motive attribution",
+          "unsupported legal conclusion",
+          "unsupported protected-category inference",
+          "psychiatric labeling of actors",
+          "unsupported character judgment",
+          "invented coordination claim",
+          "certainty beyond the cited record"
+        ],
+        "release_status": "ready_for_controlled_draft"
+      }
+    },
+    "dashboard_cards": {
+      "main_claims_or_issues": [
+        {
+          "entry_id": null,
+          "title": "Eingruppierung / tarifliche Bewertung",
+          "summary": null,
+          "evidence_hint": ""
+        },
+        {
+          "entry_id": null,
+          "title": "AGG disadvantage",
+          "summary": null,
+          "evidence_hint": "['Role-matched comparator actors and treatment records are still missing from the supplied case scope.']"
+        },
+        {
+          "entry_id": null,
+          "title": "Burden-shifting indicators",
+          "summary": null,
+          "evidence_hint": "['Protected complaint was followed by project withdrawal and tighter controls within days.', 'Comparator asymmetry is not yet strong enough for a fuller burden-shifting read.']"
+        },
+        {
+          "entry_id": null,
+          "title": "Retaliation / Maßregelungsverbot",
+          "summary": null,
+          "evidence_hint": "['Protected complaint was followed by project withdrawal and tighter controls within days.']"
+        }
+      ],
+      "key_dates": [
+        {
+          "entry_id": null,
+          "title": "Complaint and request for SBV involvement",
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": "novatime-attendance.csv",
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": "Complaint to HR",
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": "gedaechtnisprotokoll.md",
+          "summary": null,
+          "evidence_hint": null
+        }
+      ],
+      "strongest_exhibits": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Complaint to HR: I request SBV participation and review of the accommodation denial.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Complaint and request for SBV involvement: [REDACTED: phone] | Max Mustermann -> Hanna HR Subject: Complaint and request for SBV involvement I request review of the accommodation denial and",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "gedaechtnisprotokoll.md: # Meeting note [REDACTED: phone] - HR confirmed receipt of the complaint. - Max Mustermann repeated the request for SBV participation. - Erika Beis",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "task-board.ocr.txt: Screenshot transcript: Task board entry removed the claimant from TD coordination on [REDACTED: phone].",
+          "evidence_hint": null
+        }
+      ],
+      "open_evidence_gaps": [],
+      "main_actors": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": null,
+          "evidence_hint": null
+        }
+      ],
+      "comparator_points": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Comparator analysis is not yet supported on the current record.",
+          "evidence_hint": null
+        }
+      ],
+      "process_irregularities": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "No supported process-irregularity pattern is currently available in the shared behavior review.",
+          "evidence_hint": null
+        }
+      ],
+      "drafting_priorities": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "No source-linked promise, omission, or contradiction pair was confirmed on the current record.",
+          "evidence_hint": null
+        }
+      ],
+      "timing_warnings": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Some selected issue tracks look operationally time-sensitive and should receive prompt counsel review.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Part of the record reaches back 410 day(s), so limitation or deadline review may matter.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Some requested records look preservation-sensitive and should be secured promptly.",
+          "evidence_hint": null
+        }
+      ],
+      "risks_or_weak_spots": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would foreground this competing explanation: Reported restructuring may partly explain the timing.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would argue that a key documentary gap remains open: Neutral context about workflow changes or incidents in the same period.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would say the legal relevance theory for AGG disadvantage still outruns the present proof.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Employer-side review would argue that comparator analysis remains underdeveloped because no comparator actors were supplied.",
+          "evidence_hint": null
+        }
+      ],
+      "recommended_next_actions": [
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "§164 SGB IX: Organization or dependency context is still missing and weakens responsibility and accommodation analysis.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "§167 SGB IX / BEM: Organization or dependency context is still missing and weakens responsibility and accommodation analysis.",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Role-matched comparator identities and their treatment records under the same manager or policy",
+          "evidence_hint": null
+        },
+        {
+          "entry_id": null,
+          "title": null,
+          "summary": "Retaliation / Maßregelungsverbot: Formal restructuring records",
+          "evidence_hint": null
+        }
+      ]
+    },
+    "retaliation_points": [
+      {
+        "retaliation_point_id": "retaliation-point-1",
+        "support_strength": "moderate_indicator",
+        "analysis_quality": "medium",
+        "counterargument": "Management also referenced restructuring in the same period."
+      }
+    ],
+    "cross_output_checks": [
+      {
+        "check_id": "chronology_references",
+        "status": "pass"
+      },
+      {
+        "check_id": "retaliation_support_alignment",
+        "status": "pass"
+      },
+      {
+        "check_id": "issue_references",
+        "status": "pass"
+      },
+      {
+        "check_id": "exhibit_rankings_and_strength",
+        "status": "pass"
+      },
+      {
+        "check_id": "chronology_issue_matrix_alignment",
+        "status": "pass"
+      },
+      {
+        "check_id": "actor_role_parity",
+        "status": "pass"
+      },
+      {
+        "check_id": "skeptical_review_parity",
+        "status": "pass"
+      },
+      {
+        "check_id": "draft_preflight_alignment",
+        "status": "pass"
+      }
+    ]
+  }
+}

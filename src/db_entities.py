@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .db_schema import _escape_like
 
@@ -14,7 +14,28 @@ class EntityMixin:
     if TYPE_CHECKING:
         conn: sqlite3.Connection
 
-    def insert_entities_batch(self, email_uid: str, entities: list[tuple[str, str, str]], *, commit: bool = True) -> None:
+    @staticmethod
+    def _coerce_entity_row(entity: tuple[str, str, str] | Any) -> tuple[str, str, str]:
+        """Accept tuple-based or object-based extracted entities."""
+        if isinstance(entity, tuple) and len(entity) == 3:
+            text, entity_type, normalized_form = entity
+            return str(text), str(entity_type), str(normalized_form)
+        text = getattr(entity, "text", None)
+        entity_type = getattr(entity, "entity_type", None)
+        normalized_form = getattr(entity, "normalized_form", None)
+        if text is None or entity_type is None or normalized_form is None:
+            raise TypeError(f"Unsupported entity row: {entity!r}")
+        return str(text), str(entity_type), str(normalized_form)
+
+    def insert_entities_batch(
+        self,
+        email_uid: str,
+        entities: list[tuple[str, str, str]],
+        *,
+        extractor_key: str = "",
+        extraction_version: str = "",
+        commit: bool = True,
+    ) -> None:
         """Insert extracted entities for an email.
 
         Each entity is (entity_text, entity_type, normalized_form).
@@ -23,7 +44,8 @@ class EntityMixin:
             commit: If False, skip the final commit (caller is responsible).
         """
         cur = self.conn.cursor()
-        for text, etype, norm in entities:
+        for entity in entities:
+            text, etype, norm = self._coerce_entity_row(entity)
             row = cur.execute(
                 """INSERT INTO entities(entity_text, entity_type, normalized_form)
                    VALUES(?, ?, ?)
@@ -34,14 +56,44 @@ class EntityMixin:
             ).fetchone()
             entity_id = row[0]
             cur.execute(
-                """INSERT INTO entity_mentions(entity_id, email_uid, mention_count)
-                   VALUES(?, ?, 1)
+                """INSERT INTO entity_mentions(
+                       entity_id, email_uid, mention_count, extractor_key, extraction_version, extracted_at
+                   )
+                   VALUES(?, ?, 1, ?, ?, datetime('now'))
                    ON CONFLICT(entity_id, email_uid) DO UPDATE SET
-                     mention_count = entity_mentions.mention_count + 1""",
-                (entity_id, email_uid),
+                     mention_count = entity_mentions.mention_count + 1,
+                     extractor_key = excluded.extractor_key,
+                     extraction_version = excluded.extraction_version,
+                     extracted_at = datetime('now')""",
+                (entity_id, email_uid, str(extractor_key or ""), str(extraction_version or "")),
             )
         if commit:
             self.conn.commit()
+
+    def delete_entity_mentions_for_email(self, email_uid: str, *, commit: bool = True) -> int:
+        """Delete entity mentions for one email and prune now-orphaned entities."""
+        cur = self.conn.cursor()
+        deleted = cur.execute("DELETE FROM entity_mentions WHERE email_uid = ?", (email_uid,)).rowcount
+        cur.execute(
+            """DELETE FROM entities
+               WHERE id NOT IN (SELECT DISTINCT entity_id FROM entity_mentions)"""
+        )
+        if commit:
+            self.conn.commit()
+        return deleted
+
+    def entity_provenance_summary(self) -> dict[str, Any]:
+        """Return counts grouped by persisted entity extractor provenance."""
+        rows = self.conn.execute(
+            """SELECT COALESCE(NULLIF(extractor_key, ''), 'unknown') AS extractor_key,
+                      COALESCE(NULLIF(extraction_version, ''), 'unknown') AS extraction_version,
+                      COUNT(*) AS mention_rows,
+                      COUNT(DISTINCT email_uid) AS email_count
+               FROM entity_mentions
+               GROUP BY extractor_key, extraction_version
+               ORDER BY mention_rows DESC, extractor_key ASC"""
+        ).fetchall()
+        return {"rows": [dict(row) for row in rows]}
 
     def search_by_entity(self, entity_text: str, entity_type: str | None = None, limit: int = 20) -> list[dict]:
         """Find emails mentioning an entity (LIKE match)."""
