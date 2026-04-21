@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 
 def _get_email_db_and_texts(db: EmailDatabase) -> tuple[list[str], list[str]]:
     """Return (uids, texts) for all emails with non-empty body text."""
-    rows = db.conn.execute(
-        "SELECT uid, COALESCE(body_text, '') FROM emails WHERE TRIM(COALESCE(body_text, '')) != ''"
-    ).fetchall()
+    rows = db.conn.execute("SELECT uid, COALESCE(body_text, '') FROM emails WHERE TRIM(COALESCE(body_text, '')) != ''").fetchall()
     uids = [str(r[0]) for r in rows]
     texts = [str(r[1]) for r in rows]
     return uids, texts

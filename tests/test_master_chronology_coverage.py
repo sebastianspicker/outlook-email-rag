@@ -142,15 +142,11 @@ def test_build_master_chronology_deduplicates_event_records() -> None:
             "sources": [
                 {
                     "uid": "u1",
-                    "event_records": [
-                        {"event_key": "dup_key", "event_kind": "absence", "event_date": "2024-01-01"}
-                    ],
+                    "event_records": [{"event_key": "dup_key", "event_kind": "absence", "event_date": "2024-01-01"}],
                 },
                 {
                     "uid": "u2",
-                    "event_records": [
-                        {"event_key": "dup_key", "event_kind": "absence", "event_date": "2024-01-01"}
-                    ],
+                    "event_records": [{"event_key": "dup_key", "event_kind": "absence", "event_date": "2024-01-01"}],
                 },
             ],
         },
@@ -171,9 +167,7 @@ def test_build_master_chronology_skips_event_record_without_date() -> None:
             "sources": [
                 {
                     "uid": "u1",
-                    "event_records": [
-                        {"event_key": "no_date", "event_kind": "absence", "event_date": ""}
-                    ],
+                    "event_records": [{"event_key": "no_date", "event_kind": "absence", "event_date": ""}],
                 }
             ],
         },
@@ -187,12 +181,15 @@ def test_build_master_chronology_skips_event_record_without_date() -> None:
 
 def test_build_master_chronology_returns_none_for_non_dict_case_bundle() -> None:
     """Line 132: non-dict case_bundle → None."""
-    assert build_master_chronology(
-        case_bundle=None,
-        timeline={"events": []},
-        multi_source_case_bundle={"chronology_anchors": [], "sources": []},
-        finding_evidence_index={"findings": []},
-    ) is None
+    assert (
+        build_master_chronology(
+            case_bundle=None,
+            timeline={"events": []},
+            multi_source_case_bundle={"chronology_anchors": [], "sources": []},
+            finding_evidence_index={"findings": []},
+        )
+        is None
+    )
 
 
 def test_build_master_chronology_skips_anchor_with_unknown_source_id() -> None:
@@ -286,7 +283,6 @@ def test_build_master_chronology_skips_timeline_event_without_date() -> None:
     assert payload is not None
     timeline_entries = [e for e in payload["entries"] if "timeline" in e.get("entry_type", "")]
     assert len(timeline_entries) == 0
-
 
     """Line 143: non-dict item in chronology_anchors is skipped."""
     payload = build_master_chronology(

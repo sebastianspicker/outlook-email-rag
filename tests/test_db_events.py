@@ -139,10 +139,12 @@ class TestEventRecordsForEmail:
 
     def test_ordered_by_segment_then_char_start(self, db: EmailDatabase) -> None:
         _insert_email(db, "u1")
-        db.upsert_event_records([
-            _row("k1", "u1", segment_ordinal=2, char_start=5),
-            _row("k2", "u1", segment_ordinal=1, char_start=99),
-        ])
+        db.upsert_event_records(
+            [
+                _row("k1", "u1", segment_ordinal=2, char_start=5),
+                _row("k2", "u1", segment_ordinal=1, char_start=99),
+            ]
+        )
         result = db.event_records_for_email("u1")
         assert result[0]["event_key"] == "k2"  # segment 1 first
         assert result[1]["event_key"] == "k1"

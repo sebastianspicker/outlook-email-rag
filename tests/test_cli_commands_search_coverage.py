@@ -28,7 +28,7 @@ def _make_results(n: int = 2) -> list[_FakeResult]:
                 "subject": f"Subject {i}",
                 "sender_name": f"Sender {i}",
                 "sender_email": f"s{i}@test.invalid",
-                "date": f"2024-0{i+1}-01",
+                "date": f"2024-0{i + 1}-01",
                 "folder": "Inbox",
             },
             distance=0.1 * i,
@@ -44,9 +44,7 @@ def test_render_single_query_plain_impl_output(capsys) -> None:
     from src.cli_commands_search import render_single_query_plain_impl
 
     results = _make_results(2)
-    render_single_query_plain_impl(
-        query="test query", results=results, sanitize_text=lambda t: t
-    )
+    render_single_query_plain_impl(query="test query", results=results, sanitize_text=lambda t: t)
     out = capsys.readouterr().out
     assert "test query" in out
     assert "Subject 1" in out
@@ -99,10 +97,12 @@ def test_run_browse_impl_import_error_fallback(capsys) -> None:
     db = _make_db(page)
 
     with patch("builtins.__import__") as mock_import:
+
         def _side_effect(name, *args, **kwargs):
             if name.startswith("rich"):
                 raise ImportError(f"mocked: {name}")
             return original_import(name, *args, **kwargs)
+
         mock_import.side_effect = _side_effect
 
         run_browse_impl(
@@ -152,10 +152,12 @@ def test_run_interactive_impl_without_rich(capsys) -> None:
     retriever = MagicMock()
 
     with patch("builtins.__import__") as mock_import:
+
         def _side_effect(name, *args, **kwargs):
             if name.startswith("rich"):
                 raise ImportError(f"mocked: {name}")
             return original_import(name, *args, **kwargs)
+
         mock_import.side_effect = _side_effect
 
         run_interactive_impl(
