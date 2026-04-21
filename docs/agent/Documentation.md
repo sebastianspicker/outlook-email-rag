@@ -606,3 +606,53 @@ Purpose:
   - Result: PASS
     - `3315` passed
     - `3` skipped
+
+## 2026-04-21 main CI answer-context budget fix
+
+### Scope
+
+- preserved compact behavioral candidate surfaces during answer-context budget
+  trimming
+- kept top-level `case_patterns` available for scoped behavioral answer-context
+  responses instead of treating it as an optional removable sidecar
+- added low-budget regression coverage for the CI failures where
+  `language_rhetoric` and `case_patterns` disappeared from the JSON payload
+
+### Verification
+
+- `pytest -q --tb=short tests/test_search_answer_context_behavioral.py`
+  - Why: targeted regression for the two failing CI behavioral answer-context
+    tests and adjacent behavioral context cases.
+  - Gate type: targeted regression.
+  - Result: PASS
+    - `8` passed
+- `ruff check src/tools/search_answer_context_runtime_budgeting.py src/tools/search_answer_context_evidence_payloads.py tests/_search_answer_context_behavioral_language_cases.py tests/_search_answer_context_behavioral_reply_pattern_cases.py`
+  - Why: targeted lint for touched source and test files.
+  - Gate type: targeted lint.
+  - Result: PASS
+- `ruff format --check src/tools/search_answer_context_runtime_budgeting.py src/tools/search_answer_context_evidence_payloads.py tests/_search_answer_context_behavioral_language_cases.py tests/_search_answer_context_behavioral_reply_pattern_cases.py`
+  - Why: targeted format check after applying `ruff format` to the touched
+    budgeting module.
+  - Gate type: targeted format check.
+  - Result: PASS
+    - `4` files already formatted
+- `mypy src`
+  - Why: full source type check after changing answer-context runtime helpers.
+  - Gate type: full type check.
+  - Result: PASS
+    - `Success: no issues found in 270 source files`
+- `ruff check .`
+  - Why: full lint before committing the CI fix.
+  - Gate type: full lint.
+  - Result: PASS
+- `ruff format --check .`
+  - Why: full format check before committing the CI fix.
+  - Gate type: full format check.
+  - Result: PASS
+    - `665` files already formatted
+- `pytest -q --tb=short`
+  - Why: full local regression before committing the CI fix.
+  - Gate type: full test suite.
+  - Result: PASS
+    - `3359` passed
+    - `3` skipped

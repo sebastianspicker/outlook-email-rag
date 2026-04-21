@@ -326,7 +326,6 @@ def _compact_optional_case_surfaces(payload: dict[str, Any], *, budget: int) -> 
         "communication_graph",
         "retaliation_analysis",
         "comparative_treatment",
-        "case_patterns",
         "behavioral_strength_rubric",
         "evidence_table",
         "finding_evidence_index",

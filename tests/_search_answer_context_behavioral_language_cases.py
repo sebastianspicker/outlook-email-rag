@@ -15,6 +15,7 @@ from src.mcp_models import (
 async def test_email_answer_context_emits_authored_vs_quoted_language_rhetoric(monkeypatch):
     import src.tools.search as search_mod
     import src.tools.search_answer_context as answer_context_mod
+    from src.config import get_settings
 
     class DummyRetriever:
         def search_filtered(self, query, top_k=10, **kwargs):
@@ -102,19 +103,24 @@ async def test_email_answer_context_emits_authored_vs_quoted_language_rhetoric(m
             },
         ],
     )
+    monkeypatch.setenv("MCP_MAX_JSON_RESPONSE_CHARS", "18000")
+    get_settings.cache_clear()
 
-    payload = await search_mod.email_answer_context(
-        EmailAnswerContextInput(
-            question="What was the tone of the follow-up?",
-            max_results=1,
-            case_scope=BehavioralCaseScopeInput(
-                target_person=CasePartyInput(name="Alex Example", email="alex@example.com"),
-                suspected_actors=[CasePartyInput(name="Morgan Manager", email="manager@example.com")],
-                allegation_focus=["retaliation"],
-                analysis_goal="hr_review",
-            ),
+    try:
+        payload = await search_mod.email_answer_context(
+            EmailAnswerContextInput(
+                question="What was the tone of the follow-up?",
+                max_results=1,
+                case_scope=BehavioralCaseScopeInput(
+                    target_person=CasePartyInput(name="Alex Example", email="alex@example.com"),
+                    suspected_actors=[CasePartyInput(name="Morgan Manager", email="manager@example.com")],
+                    allegation_focus=["retaliation"],
+                    analysis_goal="hr_review",
+                ),
+            )
         )
-    )
+    finally:
+        get_settings.cache_clear()
     data = json.loads(payload)
 
     authored_signal_ids = [

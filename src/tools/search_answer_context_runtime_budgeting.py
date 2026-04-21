@@ -31,7 +31,12 @@ from .search_answer_context_budget import (
     _summarize_timeline_for_budget,
     _weakest_evidence_target,
 )
-from .search_answer_context_case_payloads import _apply_actor_ids_to_candidates, _apply_actor_ids_to_case_bundle
+from .search_answer_context_case_payloads import (
+    _apply_actor_ids_to_candidates,
+    _apply_actor_ids_to_case_bundle,
+    _compact_language_rhetoric_payload,
+    _compact_message_findings_payload,
+)
 from .search_answer_context_rendering import (
     _answer_policy,
     _answer_quality,
@@ -82,6 +87,16 @@ def _trim_candidate_for_budget(item: Any) -> dict[str, Any]:
             "filename": attachment.get("filename"),
             "evidence_strength": attachment.get("evidence_strength"),
             "text_available": attachment.get("text_available"),
+        }
+    if isinstance(item.get("language_rhetoric"), dict):
+        trimmed["language_rhetoric"] = _compact_language_rhetoric_payload(item.get("language_rhetoric"))
+    if isinstance(item.get("message_findings"), dict):
+        trimmed["message_findings"] = _compact_message_findings_payload(item.get("message_findings"))
+    reply_pairing = item.get("reply_pairing")
+    if isinstance(reply_pairing, dict):
+        trimmed["reply_pairing"] = {
+            "response_status": reply_pairing.get("response_status"),
+            "supports_selective_non_response_inference": reply_pairing.get("supports_selective_non_response_inference"),
         }
     return trimmed
 

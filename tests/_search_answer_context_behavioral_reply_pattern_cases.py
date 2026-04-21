@@ -160,6 +160,7 @@ async def test_email_answer_context_emits_selective_non_response_for_target_auth
 async def test_email_answer_context_emits_case_patterns(monkeypatch):
     import src.tools.search as search_mod
     import src.tools.search_answer_context as answer_context_mod
+    from src.config import get_settings
 
     class DummyRetriever:
         def search_filtered(self, query, top_k=10, **kwargs):
@@ -264,19 +265,24 @@ async def test_email_answer_context_emits_case_patterns(monkeypatch):
             }
         ],
     )
+    monkeypatch.setenv("MCP_MAX_JSON_RESPONSE_CHARS", "18000")
+    get_settings.cache_clear()
 
-    payload = await search_mod.email_answer_context(
-        EmailAnswerContextInput(
-            question="Is there a repeated pattern?",
-            max_results=2,
-            case_scope=BehavioralCaseScopeInput(
-                target_person=CasePartyInput(name="Alex Example", email="alex@example.com"),
-                suspected_actors=[CasePartyInput(name="Morgan Manager", email="manager@example.com")],
-                allegation_focus=["retaliation", "exclusion"],
-                analysis_goal="hr_review",
-            ),
+    try:
+        payload = await search_mod.email_answer_context(
+            EmailAnswerContextInput(
+                question="Is there a repeated pattern?",
+                max_results=2,
+                case_scope=BehavioralCaseScopeInput(
+                    target_person=CasePartyInput(name="Alex Example", email="alex@example.com"),
+                    suspected_actors=[CasePartyInput(name="Morgan Manager", email="manager@example.com")],
+                    allegation_focus=["retaliation", "exclusion"],
+                    analysis_goal="hr_review",
+                ),
+            )
         )
-    )
+    finally:
+        get_settings.cache_clear()
     data = json.loads(payload)
 
     assert data["case_patterns"]["version"] == "1"
