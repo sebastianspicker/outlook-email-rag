@@ -1,14 +1,27 @@
-name: verify
+name: Main verification
+
 on:
   push:
-    branches: [dev]
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  check_1_checks_3_11:
+    name: "checks (3.11)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: git status --short
-github-actions: core-build-out
-parallelize-matrix-execu: publication
-split-lint-and-test-exec: maintenance
-publish-summary-output-f: maintenance
+      - name: Verify checkout
+        run: git status --short
+  check_2_checks_3_12:
+    name: "checks (3.12)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify checkout
+        run: git status --short
