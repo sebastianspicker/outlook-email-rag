@@ -439,7 +439,7 @@ def _average_metric(results: list[dict[str, Any]], metric: str) -> dict[str, flo
     values = [float(result[metric]) for result in results if result.get(metric) is not None]
     if not values:
         return {"scorable": 0, "average": 0.0}
-    return {"scorable": len(values), "average": sum(values) / len(values)}
+    return {"scorable": len(values), "average": round(sum(values) / len(values), 12)}
 
 
 __all__ = [

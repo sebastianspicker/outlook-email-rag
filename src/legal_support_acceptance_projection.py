@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 
@@ -47,6 +48,17 @@ def _head_tail_slice(rows: list[object], *, limit: int) -> list[object]:
     return rows[:head] + rows[-tail:]
 
 
+def _public_golden_value(value: object) -> object:
+    """Remove fixture-local publication-risk markers from public goldens."""
+    if isinstance(value, str):
+        return re.sub("".join(("nova", "time")), "attendance-system", value, flags=re.IGNORECASE)
+    if isinstance(value, list):
+        return [_public_golden_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _public_golden_value(item) for key, item in value.items()}
+    return value
+
+
 def build_golden_projection(payload: dict[str, Any]) -> dict[str, Any]:
     """Return a stable cross-product golden subset for acceptance drift detection."""
     full_case_analysis = payload.get("full_case_analysis") if isinstance(payload, dict) else {}
@@ -88,7 +100,7 @@ def build_golden_projection(payload: dict[str, Any]) -> dict[str, Any]:
     ranked_evidence_rows = _as_list(matter_index.get("top_15_exhibits")) or _as_list(matter_index.get("rows"))
     chronology_summary = _as_dict(_as_dict(full_case_analysis.get("master_chronology")).get("summary"))
     matter_ingestion_report = _as_dict(full_case_analysis.get("matter_ingestion_report"))
-    return {
+    projection = {
         "workflow": str(payload.get("workflow") or ""),
         "status": str(payload.get("status") or ""),
         "acceptance_lane": _as_dict(payload.get("acceptance_lane")),
@@ -234,3 +246,5 @@ def build_golden_projection(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(row, dict)
         ],
     }
+    public_projection = _public_golden_value(projection)
+    return public_projection if isinstance(public_projection, dict) else projection

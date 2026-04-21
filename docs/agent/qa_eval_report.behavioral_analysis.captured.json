@@ -1249,11 +1249,11 @@
     },
     "support_uid_recall": {
       "scorable": 6,
-      "average": 0.8333333333333334
+      "average": 0.833333333333
     },
     "support_source_id_recall": {
       "scorable": 6,
-      "average": 0.8333333333333334
+      "average": 0.833333333333
     },
     "evidence_precision": {
       "scorable": 6,

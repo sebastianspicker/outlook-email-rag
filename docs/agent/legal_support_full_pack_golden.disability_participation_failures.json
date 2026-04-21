@@ -32,6 +32,18 @@
       {
         "chronology_id": "CHR-002",
         "date": "[REDACTED: phone]",
+        "issue_category": [],
+        "linked_source_ids": [],
+        "source_id": "manifest:file:cbe450456356d8bf:1",
+        "source_ids": [
+          "manifest:file:cbe450456356d8bf:1"
+        ],
+        "supporting_citation_ids": [],
+        "title": "attendance-system-attendance.csv"
+      },
+      {
+        "chronology_id": "CHR-003",
+        "date": "[REDACTED: phone]",
         "issue_category": [
           "participation duty gap"
         ],
@@ -44,19 +56,19 @@
         "title": "sbv-participation-record.txt"
       },
       {
-        "chronology_id": "CHR-003",
+        "chronology_id": "CHR-004",
         "date": "[REDACTED: phone]",
         "issue_category": [],
         "linked_source_ids": [],
-        "source_id": "manifest:file:cbe450456356d8bf:1",
+        "source_id": "manifest:file:cbe450456356d8bf:2",
         "source_ids": [
-          "manifest:file:cbe450456356d8bf:1"
+          "manifest:file:cbe450456356d8bf:2"
         ],
         "supporting_citation_ids": [],
         "title": "time-system-attendance.csv"
       },
       {
-        "chronology_id": "CHR-004",
+        "chronology_id": "CHR-005",
         "date": "2025-02-03T10:00:00",
         "issue_category": [
           "participation duty gap"
@@ -75,7 +87,7 @@
         "title": "Return-to-office and process"
       },
       {
-        "chronology_id": "CHR-005",
+        "chronology_id": "CHR-006",
         "date": "[REDACTED: phone]",
         "issue_category": [
           "participation duty gap"
@@ -172,6 +184,16 @@
           "summary": null,
           "supporting_source_ids": null,
           "supporting_uids": null,
+          "title": "attendance-system-attendance.csv"
+        },
+        {
+          "entry_id": null,
+          "evidence_hint": null,
+          "gap_id": null,
+          "group_id": null,
+          "summary": null,
+          "supporting_source_ids": null,
+          "supporting_uids": null,
           "title": "sbv-participation-record.txt"
         },
         {
@@ -183,16 +205,6 @@
           "supporting_source_ids": null,
           "supporting_uids": null,
           "title": "time-system-attendance.csv"
-        },
-        {
-          "entry_id": null,
-          "evidence_hint": null,
-          "gap_id": null,
-          "group_id": null,
-          "summary": null,
-          "supporting_source_ids": null,
-          "supporting_uids": null,
-          "title": "Return-to-office and process"
         }
       ],
       "main_actors": [
@@ -445,7 +457,7 @@
           "evidence_hint": null,
           "gap_id": null,
           "group_id": null,
-          "summary": "Part of the record reaches back 441 day(s), so limitation or deadline review may matter.",
+          "summary": "Part of the record reaches back 442 day(s), so limitation or deadline review may matter.",
           "supporting_source_ids": null,
           "supporting_uids": null,
           "title": null
@@ -555,11 +567,11 @@
           "policy_reason": "The available support is suggestive but remains too limited for a stronger interpretation.",
           "supporting_chronology_ids": [
             "CHR-001",
-            "CHR-004"
+            "CHR-005"
           ],
           "supporting_exhibit_ids": [
             "EXH-004",
-            "EXH-009"
+            "EXH-010"
           ],
           "supporting_source_ids": [
             "manifest:file:e87579010ae69805:1",
@@ -588,7 +600,7 @@
       },
       {
         "document_type": "email",
-        "exhibit_id": "EXH-009",
+        "exhibit_id": "EXH-010",
         "main_issue_tags": [
           "mobile_work_home_office",
           "sbv_participation",
@@ -632,15 +644,15 @@
       },
       {
         "document_type": "time_record",
-        "exhibit_id": "EXH-008",
+        "exhibit_id": "EXH-009",
         "main_issue_tags": [
           "medical_recommendations_ignored"
         ],
         "source_conflict_status": "stable",
-        "source_id": "manifest:file:cbe450456356d8bf:1",
+        "source_id": "manifest:file:cbe450456356d8bf:2",
         "strength": "strong",
         "supporting_source_ids": [
-          "manifest:file:cbe450456356d8bf:1"
+          "manifest:file:cbe450456356d8bf:2"
         ]
       },
       {
@@ -747,12 +759,12 @@
         "source_id": "manifest:file:e2684f281348e474:1"
       },
       {
-        "promotability_status": "promotable_direct",
-        "source_id": "manifest:file:199e99c681ae7c2b:1"
+        "promotability_status": "promotable_with_original_check",
+        "source_id": "manifest:file:cbe450456356d8bf:1"
       },
       {
-        "promotability_status": "lead_only_manual_review",
-        "source_id": "manifest:file:09ce4345b12e5647:1"
+        "promotability_status": "promotable_direct",
+        "source_id": "manifest:file:199e99c681ae7c2b:1"
       },
       {
         "promotability_status": "promotable_with_original_check",
@@ -768,33 +780,33 @@
       },
       {
         "promotability_status": "promotable_with_original_check",
-        "source_id": "manifest:file:cbe450456356d8bf:1"
+        "source_id": "manifest:file:cbe450456356d8bf:2"
       }
     ],
     "matter_ingestion_status": "complete",
     "matter_ingestion_summary": {
-      "accounted_artifacts": 8,
+      "accounted_artifacts": 9,
       "accounted_coverage": 1.0,
-      "chronology_ready_artifacts": 8,
-      "contradiction_ready_artifacts": 7,
+      "chronology_ready_artifacts": 9,
+      "contradiction_ready_artifacts": 8,
       "custodian_counts": {},
       "degraded_artifacts": 1,
       "excluded_artifacts": 0,
       "lead_only_manual_review_artifacts": 1,
       "low_confidence_lead_count": 1,
       "not_yet_reviewed_artifacts": 0,
-      "parsed_artifacts": 7,
-      "promotable_artifacts": 7,
-      "promotable_coverage": 0.875,
+      "parsed_artifacts": 8,
+      "promotable_artifacts": 8,
+      "promotable_coverage": 0.8889,
       "promotable_direct_artifacts": 5,
-      "promotable_with_original_check_artifacts": 2,
+      "promotable_with_original_check_artifacts": 3,
       "reference_only_not_promotable_artifacts": 0,
       "review_status_counts": {
         "degraded": 1,
-        "parsed": 7
+        "parsed": 8
       },
       "source_class_counts": {
-        "attendance_export": 1,
+        "attendance_export": 2,
         "calendar_export": 1,
         "chat_export": 1,
         "formal_document": 2,
@@ -802,7 +814,7 @@
         "participation_record": 1,
         "screenshot": 1
       },
-      "total_supplied_artifacts": 8,
+      "total_supplied_artifacts": 9,
       "unaccounted_artifacts": 0,
       "unsupported_artifacts": 0
     },
@@ -812,7 +824,7 @@
       ],
       "strongest_evidence": [
         "EXH-004: Return-to-office and process: [REDACTED: phone] | manager -> employee Subject: Return-to-office and process Mobile work remains denied despite the attached medical recommendatio []",
-        "EXH-009: Return-to-office and process: Mobile work remains denied despite the attached medical recommendation; SBV can be involved later. []",
+        "EXH-010: Return-to-office and process: Mobile work remains denied despite the attached medical recommendation; SBV can be involved later. []",
         "EXH-006: gedaechtnisprotokoll.md: # Gedächtnisprotokoll [REDACTED: phone] - employee asked for accommodation based on a medical recommendation. - manager said the office-presence ru []"
       ]
     },

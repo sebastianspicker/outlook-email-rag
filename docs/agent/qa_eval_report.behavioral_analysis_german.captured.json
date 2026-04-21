@@ -3669,7 +3669,7 @@
     },
     "evidence_precision": {
       "scorable": 17,
-      "average": 0.9411764705882353
+      "average": 0.941176470588
     },
     "top_uid_match": {
       "scorable": 17,

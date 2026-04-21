@@ -1475,7 +1475,7 @@
     },
     "evidence_precision": {
       "scorable": 10,
-      "average": 0.9333333333333333
+      "average": 0.933333333333
     },
     "top_uid_match": {
       "scorable": 10,

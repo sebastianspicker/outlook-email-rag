@@ -39,10 +39,22 @@
           "manifest:file:449a439d3ae01e28:1"
         ],
         "supporting_citation_ids": [],
-        "title": "time-system-attendance.csv"
+        "title": "attendance-system-attendance.csv"
       },
       {
         "chronology_id": "CHR-003",
+        "date": "[REDACTED: phone]",
+        "issue_category": [],
+        "linked_source_ids": [],
+        "source_id": "manifest:file:449a439d3ae01e28:2",
+        "source_ids": [
+          "manifest:file:449a439d3ae01e28:2"
+        ],
+        "supporting_citation_ids": [],
+        "title": "time-system-attendance.csv"
+      },
+      {
+        "chronology_id": "CHR-004",
         "date": "2025-04-02T09:00:00",
         "issue_category": [],
         "linked_source_ids": [
@@ -59,7 +71,7 @@
         "title": "Task redistribution"
       },
       {
-        "chronology_id": "CHR-004",
+        "chronology_id": "CHR-005",
         "date": "[REDACTED: phone]",
         "issue_category": [],
         "linked_source_ids": [],
@@ -71,7 +83,7 @@
         "title": "gedaechtnisprotokoll.md"
       },
       {
-        "chronology_id": "CHR-005",
+        "chronology_id": "CHR-006",
         "date": "[REDACTED: phone]",
         "issue_category": [],
         "linked_source_ids": [],
@@ -164,6 +176,16 @@
           "summary": null,
           "supporting_source_ids": null,
           "supporting_uids": null,
+          "title": "attendance-system-attendance.csv"
+        },
+        {
+          "entry_id": null,
+          "evidence_hint": null,
+          "gap_id": null,
+          "group_id": null,
+          "summary": null,
+          "supporting_source_ids": null,
+          "supporting_uids": null,
           "title": "time-system-attendance.csv"
         },
         {
@@ -175,16 +197,6 @@
           "supporting_source_ids": null,
           "supporting_uids": null,
           "title": "Task redistribution"
-        },
-        {
-          "entry_id": null,
-          "evidence_hint": null,
-          "gap_id": null,
-          "group_id": null,
-          "summary": null,
-          "supporting_source_ids": null,
-          "supporting_uids": null,
-          "title": "gedaechtnisprotokoll.md"
         }
       ],
       "main_actors": [
@@ -416,7 +428,7 @@
           "evidence_hint": null,
           "gap_id": null,
           "group_id": null,
-          "summary": "Part of the record reaches back 383 day(s), so limitation or deadline review may matter.",
+          "summary": "Part of the record reaches back 384 day(s), so limitation or deadline review may matter.",
           "supporting_source_ids": null,
           "supporting_uids": null,
           "title": null
@@ -516,11 +528,11 @@
           "policy_reason": "The available support is suggestive but remains too limited for a stronger interpretation.",
           "supporting_chronology_ids": [
             "CHR-001",
-            "CHR-003"
+            "CHR-004"
           ],
           "supporting_exhibit_ids": [
             "EXH-002",
-            "EXH-008"
+            "EXH-009"
           ],
           "supporting_source_ids": [
             "manifest:file:271e1822bed3473d:1",
@@ -558,7 +570,7 @@
       },
       {
         "document_type": "email",
-        "exhibit_id": "EXH-008",
+        "exhibit_id": "EXH-009",
         "main_issue_tags": [],
         "source_conflict_status": "stable",
         "source_id": "email:ing-1",
@@ -580,17 +592,6 @@
         ]
       },
       {
-        "document_type": "note_record",
-        "exhibit_id": "EXH-006",
-        "main_issue_tags": [],
-        "source_conflict_status": "stable",
-        "source_id": "manifest:file:2bf0d5537b8fb007:1",
-        "strength": "strong",
-        "supporting_source_ids": [
-          "manifest:file:2bf0d5537b8fb007:1"
-        ]
-      },
-      {
         "document_type": "time_record",
         "exhibit_id": "EXH-007",
         "main_issue_tags": [],
@@ -599,6 +600,17 @@
         "strength": "strong",
         "supporting_source_ids": [
           "manifest:file:449a439d3ae01e28:1"
+        ]
+      },
+      {
+        "document_type": "time_record",
+        "exhibit_id": "EXH-008",
+        "main_issue_tags": [],
+        "source_conflict_status": "stable",
+        "source_id": "manifest:file:449a439d3ae01e28:2",
+        "strength": "strong",
+        "supporting_source_ids": [
+          "manifest:file:449a439d3ae01e28:2"
         ]
       },
       {
@@ -694,6 +706,10 @@
         "source_id": "manifest:file:de34e18bdae0fb21:1"
       },
       {
+        "promotability_status": "promotable_with_original_check",
+        "source_id": "manifest:file:449a439d3ae01e28:1"
+      },
+      {
         "promotability_status": "promotable_direct",
         "source_id": "manifest:file:d7649a91720269f3:1"
       },
@@ -707,39 +723,39 @@
       },
       {
         "promotability_status": "promotable_with_original_check",
-        "source_id": "manifest:file:449a439d3ae01e28:1"
+        "source_id": "manifest:file:449a439d3ae01e28:2"
       }
     ],
     "matter_ingestion_status": "complete",
     "matter_ingestion_summary": {
-      "accounted_artifacts": 7,
+      "accounted_artifacts": 8,
       "accounted_coverage": 1.0,
-      "chronology_ready_artifacts": 7,
-      "contradiction_ready_artifacts": 6,
+      "chronology_ready_artifacts": 8,
+      "contradiction_ready_artifacts": 7,
       "custodian_counts": {},
       "degraded_artifacts": 1,
       "excluded_artifacts": 0,
       "lead_only_manual_review_artifacts": 1,
       "low_confidence_lead_count": 1,
       "not_yet_reviewed_artifacts": 0,
-      "parsed_artifacts": 6,
-      "promotable_artifacts": 6,
-      "promotable_coverage": 0.8571,
+      "parsed_artifacts": 7,
+      "promotable_artifacts": 7,
+      "promotable_coverage": 0.875,
       "promotable_direct_artifacts": 4,
-      "promotable_with_original_check_artifacts": 2,
+      "promotable_with_original_check_artifacts": 3,
       "reference_only_not_promotable_artifacts": 0,
       "review_status_counts": {
         "degraded": 1,
-        "parsed": 6
+        "parsed": 7
       },
       "source_class_counts": {
-        "attendance_export": 1,
+        "attendance_export": 2,
         "calendar_export": 1,
         "formal_document": 3,
         "note_record": 1,
         "screenshot": 1
       },
-      "total_supplied_artifacts": 7,
+      "total_supplied_artifacts": 8,
       "unaccounted_artifacts": 0,
       "unsupported_artifacts": 0
     },
@@ -750,7 +766,7 @@
       "strongest_evidence": [
         "EXH-003: task-board.ocr.txt: Screenshot transcript: TD coordination reassigned to another colleague in the planning board. []",
         "EXH-002: Task redistribution: [REDACTED: phone] | manager -> employee Subject: Task redistribution The claimant will no longer perform the TD-heavy coordination tasks listed in []",
-        "EXH-008: Task redistribution: The claimant will no longer perform the TD-heavy coordination tasks listed in the Tätigkeitsdarstellung. []"
+        "EXH-009: Task redistribution: The claimant will no longer perform the TD-heavy coordination tasks listed in the Tätigkeitsdarstellung. []"
       ]
     },
     "provenance_examples": [
@@ -768,7 +784,7 @@
       },
       {
         "source_conflict_status": "stable",
-        "source_id": "manifest:file:449a439d3ae01e28:1",
+        "source_id": "manifest:file:449a439d3ae01e28:2",
         "source_language": "unknown",
         "source_link_ambiguity": null
       },

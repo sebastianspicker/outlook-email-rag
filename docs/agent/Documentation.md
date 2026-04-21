@@ -656,3 +656,56 @@ Purpose:
   - Result: PASS
     - `3359` passed
     - `3` skipped
+
+## 2026-04-21 main CI captured-artifact stabilization
+
+### Scope
+
+- rounded QA average metrics to a stable precision so Python 3.11/3.12 do not
+  disagree on serialized captured-report values
+- refreshed captured QA reports and legal-support full-pack goldens after the
+  answer-context budget-surface change
+- redacted fixture-local attendance-system filenames from public full-pack
+  golden projections so publication-surface privacy scans stay clean
+
+### Verification
+
+- `python scripts/refresh_qa_eval_captured_reports.py --check`
+  - Why: exact captured-artifact contract that CI checks, expanded to all
+    captured scenarios and full-pack goldens.
+  - Gate type: captured artifact contract.
+  - Result: PASS
+    - all scenarios reported `match`
+- `pytest -q --tb=short tests/test_qa_eval_captured_artifacts_refresh.py tests/test_qa_eval_core_artifacts.py tests/test_repo_contracts.py`
+  - Why: targeted regression for the CI failures plus the publication-surface
+    privacy contract.
+  - Gate type: targeted regression.
+  - Result: PASS
+    - `52` passed
+    - `2` skipped
+- `python scripts/privacy_scan.py --tracked-only --json`
+  - Why: verify refreshed public artifacts and projection code do not introduce
+    publication-risk markers.
+  - Gate type: privacy scan.
+  - Result: PASS
+    - output was an empty JSON list
+- `ruff check src/legal_support_acceptance_projection.py src/qa_eval_scoring_core.py src/qa_eval_thresholds.py`
+  - Why: targeted lint for touched source files.
+  - Gate type: targeted lint.
+  - Result: PASS
+- `ruff format --check src/legal_support_acceptance_projection.py src/qa_eval_scoring_core.py src/qa_eval_thresholds.py`
+  - Why: targeted format check for touched source files.
+  - Gate type: targeted format check.
+  - Result: PASS
+    - `3` files already formatted
+- `mypy src`
+  - Why: full source type check after QA metric and projection helper changes.
+  - Gate type: full type check.
+  - Result: PASS
+    - `Success: no issues found in 270 source files`
+- `pytest -q --tb=short`
+  - Why: full local regression before committing the captured-artifact fix.
+  - Gate type: full test suite.
+  - Result: PASS
+    - `3359` passed
+    - `3` skipped

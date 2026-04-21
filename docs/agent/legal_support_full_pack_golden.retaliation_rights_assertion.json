@@ -36,10 +36,24 @@
           "manifest:file:74132b186bb038da:1"
         ],
         "supporting_citation_ids": [],
-        "title": "time-system-attendance.csv"
+        "title": "attendance-system-attendance.csv"
       },
       {
         "chronology_id": "CHR-003",
+        "date": "[REDACTED: phone]",
+        "issue_category": [
+          "retaliation after protected event"
+        ],
+        "linked_source_ids": [],
+        "source_id": "manifest:file:74132b186bb038da:2",
+        "source_ids": [
+          "manifest:file:74132b186bb038da:2"
+        ],
+        "supporting_citation_ids": [],
+        "title": "time-system-attendance.csv"
+      },
+      {
+        "chronology_id": "CHR-004",
         "date": "2025-03-01T09:00:00",
         "issue_category": [
           "retaliation after protected event"
@@ -53,7 +67,7 @@
         "title": "Complaint to HR"
       },
       {
-        "chronology_id": "CHR-004",
+        "chronology_id": "CHR-005",
         "date": "[REDACTED: phone]",
         "issue_category": [
           "retaliation after protected event"
@@ -67,7 +81,7 @@
         "title": "gedaechtnisprotokoll.md"
       },
       {
-        "chronology_id": "CHR-005",
+        "chronology_id": "CHR-006",
         "date": "[REDACTED: phone]",
         "issue_category": [
           "eingruppierung dispute"
@@ -81,7 +95,7 @@
         "title": "task-board.ocr.txt"
       },
       {
-        "chronology_id": "CHR-006",
+        "chronology_id": "CHR-007",
         "date": "[REDACTED: phone]",
         "issue_category": [
           "eingruppierung dispute"
@@ -95,7 +109,7 @@
         "title": "task-board.png"
       },
       {
-        "chronology_id": "CHR-007",
+        "chronology_id": "CHR-008",
         "date": "2025-03-05T15:10:00",
         "issue_category": [],
         "linked_source_ids": [],
@@ -190,6 +204,16 @@
           "summary": null,
           "supporting_source_ids": null,
           "supporting_uids": null,
+          "title": "attendance-system-attendance.csv"
+        },
+        {
+          "entry_id": null,
+          "evidence_hint": null,
+          "gap_id": null,
+          "group_id": null,
+          "summary": null,
+          "supporting_source_ids": null,
+          "supporting_uids": null,
           "title": "time-system-attendance.csv"
         },
         {
@@ -201,16 +225,6 @@
           "supporting_source_ids": null,
           "supporting_uids": null,
           "title": "Complaint to HR"
-        },
-        {
-          "entry_id": null,
-          "evidence_hint": null,
-          "gap_id": null,
-          "group_id": null,
-          "summary": null,
-          "supporting_source_ids": null,
-          "supporting_uids": null,
-          "title": "gedaechtnisprotokoll.md"
         }
       ],
       "main_actors": [
@@ -450,7 +464,7 @@
           "evidence_hint": null,
           "gap_id": null,
           "group_id": null,
-          "summary": "Part of the record reaches back 415 day(s), so limitation or deadline review may matter.",
+          "summary": "Part of the record reaches back 416 day(s), so limitation or deadline review may matter.",
           "supporting_source_ids": null,
           "supporting_uids": null,
           "title": null
@@ -549,10 +563,10 @@
           "finding_id": "finding-retaliation-timing",
           "policy_reason": "The available support is suggestive but remains too limited for a stronger interpretation.",
           "supporting_chronology_ids": [
-            "CHR-007"
+            "CHR-008"
           ],
           "supporting_exhibit_ids": [
-            "EXH-009"
+            "EXH-010"
           ],
           "supporting_source_ids": [
             "email:ret-2"
@@ -592,7 +606,7 @@
       },
       {
         "document_type": "email",
-        "exhibit_id": "EXH-008",
+        "exhibit_id": "EXH-009",
         "main_issue_tags": [
           "retaliation_massregelung",
           "sbv_participation"
@@ -619,7 +633,7 @@
       },
       {
         "document_type": "email",
-        "exhibit_id": "EXH-009",
+        "exhibit_id": "EXH-010",
         "main_issue_tags": [],
         "source_conflict_status": "stable",
         "source_id": "email:ret-2",
@@ -731,6 +745,10 @@
       },
       {
         "promotability_status": "promotable_with_original_check",
+        "source_id": "manifest:file:74132b186bb038da:1"
+      },
+      {
+        "promotability_status": "promotable_with_original_check",
         "source_id": "manifest:file:86b4a906ea106791:1"
       },
       {
@@ -747,40 +765,40 @@
       },
       {
         "promotability_status": "promotable_with_original_check",
-        "source_id": "manifest:file:74132b186bb038da:1"
+        "source_id": "manifest:file:74132b186bb038da:2"
       }
     ],
     "matter_ingestion_status": "complete",
     "matter_ingestion_summary": {
-      "accounted_artifacts": 7,
+      "accounted_artifacts": 8,
       "accounted_coverage": 1.0,
-      "chronology_ready_artifacts": 7,
-      "contradiction_ready_artifacts": 6,
+      "chronology_ready_artifacts": 8,
+      "contradiction_ready_artifacts": 7,
       "custodian_counts": {},
       "degraded_artifacts": 1,
       "excluded_artifacts": 0,
       "lead_only_manual_review_artifacts": 1,
       "low_confidence_lead_count": 1,
       "not_yet_reviewed_artifacts": 0,
-      "parsed_artifacts": 6,
-      "promotable_artifacts": 6,
-      "promotable_coverage": 0.8571,
+      "parsed_artifacts": 7,
+      "promotable_artifacts": 7,
+      "promotable_coverage": 0.875,
       "promotable_direct_artifacts": 4,
-      "promotable_with_original_check_artifacts": 2,
+      "promotable_with_original_check_artifacts": 3,
       "reference_only_not_promotable_artifacts": 0,
       "review_status_counts": {
         "degraded": 1,
-        "parsed": 6
+        "parsed": 7
       },
       "source_class_counts": {
-        "attendance_export": 1,
+        "attendance_export": 2,
         "calendar_export": 1,
         "chat_export": 1,
         "formal_document": 2,
         "note_record": 1,
         "screenshot": 1
       },
-      "total_supplied_artifacts": 7,
+      "total_supplied_artifacts": 8,
       "unaccounted_artifacts": 0,
       "unsupported_artifacts": 0
     },
@@ -791,7 +809,7 @@
       "strongest_evidence": [
         "EXH-004: Complaint and request for SBV involvement: [REDACTED: phone] | employee -> Hanna HR Subject: Complaint and request for SBV involvement I request review of the accommodation denial and formal []",
         "EXH-006: gedaechtnisprotokoll.md: # Meeting note [REDACTED: phone] - HR confirmed receipt of the complaint. - employee repeated the request for SBV participation. - manager said pro []",
-        "EXH-008: Complaint to HR: I request SBV participation and review of the accommodation denial. []"
+        "EXH-009: Complaint to HR: I request SBV participation and review of the accommodation denial. []"
       ]
     },
     "provenance_examples": [

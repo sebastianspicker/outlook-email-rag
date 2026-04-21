@@ -137,7 +137,7 @@ def _derived_metric_average(results: list[dict[str, Any]], metric: str) -> dict[
     values = [float(result[metric]) for result in results if isinstance(result, dict) and result.get(metric) is not None]
     if not values:
         return {"scorable": 0, "average": 0.0}
-    return {"scorable": len(values), "average": sum(values) / len(values)}
+    return {"scorable": len(values), "average": round(sum(values) / len(values), 12)}
 
 
 def _derive_behavioral_analysis_german_metrics(report: dict[str, Any]) -> dict[str, Any]:
