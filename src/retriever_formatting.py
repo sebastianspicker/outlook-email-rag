@@ -10,6 +10,13 @@ if TYPE_CHECKING:
     from .retriever import EmailRetriever, SearchResult
 
 
+def _result_header(result_num: int, result: SearchResult) -> str:
+    """Return a header that does not overstate synthetic keyword-only scores."""
+    if getattr(result, "score_calibration", "calibrated") == "synthetic":
+        return f"=== Email Result {result_num} (hybrid keyword hit; score not calibrated) ==="
+    return f"=== Email Result {result_num} (relevance: {result.score:.2f}) ==="
+
+
 def format_results_for_llm_impl(
     retriever: EmailRetriever,
     results: list[SearchResult],
@@ -70,7 +77,7 @@ def format_results_for_llm_impl(
                     result.score,
                     max_body_chars=max_body_chars,
                 )
-                header = f"=== Email Result {result_num} (relevance: {result.score:.2f}) ==="
+                header = _result_header(result_num, result)
                 if not within_budget(header + "\n" + block):
                     budget_exhausted = True
                     break
@@ -92,7 +99,7 @@ def format_results_for_llm_impl(
             result.score,
             max_body_chars=max_body_chars,
         )
-        header = f"=== Email Result {result_num} (relevance: {result.score:.2f}) ==="
+        header = _result_header(result_num, result)
         if not within_budget(header + "\n" + block):
             budget_exhausted = True
             break
@@ -126,19 +133,28 @@ def serialize_results_impl(
 
     out: list[dict[str, Any]] = []
     cumulative_tokens = 0
+    total_count = len(results)
+    truncation_note = ""
     for result in results:
         entry = result.to_dict()
         if max_body_chars > 0:
             entry["text"] = truncate_body(entry.get("text", ""), max_body_chars)
         entry_tokens = estimate_tokens(str(entry))
         if max_response_tokens > 0 and cumulative_tokens + entry_tokens > max_response_tokens and out:
-            remaining = len(results) - len(out)
-            out.append({"note": f"{remaining} more result(s) omitted — narrow your search or use email_deep_context"})
+            remaining = total_count - len(out)
+            truncation_note = f"{remaining} more result(s) omitted — narrow your search or use email_deep_context"
             break
         out.append(entry)
         cumulative_tokens += entry_tokens
+    returned_count = len(out)
+    omitted_count = max(total_count - returned_count, 0)
     return {
         "query": query,
-        "count": len(results),
+        "count": returned_count,
+        "total_count": total_count,
+        "returned_count": returned_count,
+        "omitted_count": omitted_count,
+        "results_truncated": omitted_count > 0,
+        "truncation_note": truncation_note,
         "results": out,
     }
