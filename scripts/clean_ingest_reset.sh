@@ -11,6 +11,7 @@ case source inputs.
 Preserved by default:
   - private/files/
   - private/matter.md
+  - private/ingest/example-export.olm
   - private/ingest/my-export.olm
   - private/README.local.md
   - private/tests/materials/
@@ -88,6 +89,7 @@ ensure_dir() {
 echo "Preserving case inputs:"
 echo "  - ${repo_root}/private/files"
 echo "  - ${repo_root}/private/matter.md"
+echo "  - ${repo_root}/private/ingest/example-export.olm"
 echo "  - ${repo_root}/private/ingest/my-export.olm"
 echo "  - ${repo_root}/private/README.local.md"
 echo "  - ${repo_root}/private/tests/materials"

@@ -59,6 +59,21 @@ require_python() {
 
 require_python
 
+require_python_version() {
+	"$python_bin" - <<'PY'
+import sys
+
+if sys.version_info < (3, 11):
+	current = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+	raise SystemExit(
+		"run_acceptance_matrix.sh requires Python 3.11+ "
+		f"(current interpreter: {current})."
+	)
+PY
+}
+
+require_python_version
+
 if [[ "$profile" == "ci" ]]; then
 	echo "Running CI profile. Ensure dependencies are installed: pip install -r requirements-dev.txt"
 elif [[ "$profile" == "release" ]]; then

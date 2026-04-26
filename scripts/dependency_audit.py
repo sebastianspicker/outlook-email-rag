@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import subprocess
 import sys
@@ -37,6 +38,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    if importlib.util.find_spec("pip_audit") is None:
+        print(
+            "pip-audit is not installed in this environment. "
+            "Install dev dependencies (e.g. `pip install -e .[dev]`) and rerun.",
+            file=sys.stderr,
+        )
+        return 2
+
     command = [
         sys.executable,
         "-m",

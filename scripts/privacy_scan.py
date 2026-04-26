@@ -169,20 +169,22 @@ def _history_paths() -> list[str]:
 
 
 def _history_blobs() -> list[tuple[str, str]]:
+    """Return unique (blob_hash, path) pairs reachable from history.
+
+    Uses ``git rev-list --objects --all`` instead of per-commit ``ls-tree`` scans.
+    This is significantly faster on large histories while preserving equivalent
+    path coverage for history content scanning.
+    """
+
     blob_paths: dict[tuple[str, str], None] = {}
-    for commit in _run_git(["rev-list", "--all"]):
-        for record in _run_git_bytes(["ls-tree", "-rz", commit]).split(b"\0"):
-            line = record.decode("utf-8", errors="ignore")
-            if not line:
-                continue
-            try:
-                meta, path = line.split("\t", 1)
-                _mode, kind, blob_hash = meta.split(" ", 2)
-            except ValueError:
-                continue
-            if kind != "blob":
-                continue
-            blob_paths[(blob_hash, path)] = None
+    for line in _run_git(["rev-list", "--objects", "--all"]):
+        if " " not in line:
+            # Commit/tree objects are emitted without paths; skip.
+            continue
+        blob_hash, path = line.split(" ", 1)
+        if not path:
+            continue
+        blob_paths[(blob_hash, path)] = None
     return sorted(blob_paths)
 
 
